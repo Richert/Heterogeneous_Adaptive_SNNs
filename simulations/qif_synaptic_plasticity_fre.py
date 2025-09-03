@@ -1,0 +1,91 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
+from scipy.ndimage import gaussian_filter1d
+
+# parameters
+M = 40
+edge_vars = {"a_ltp": 0.1, "a_ltd": 0.1}
+Delta = 1.0
+eta = -3.1
+#etas = eta + Delta * np.linspace(-0.5, 0.5, num=M)
+indices = np.arange(1, M+1)
+etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
+deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*indices-M-1.5)/(M+1)))
+node_vars = {"tau": 1.0, "J": 20.0 / M, "eta": etas, "tau_ltp": 2.0, "tau_ltd": 2.0, "tau_s": 0.2, "Delta": deltas,
+             "tau_a": 20.0, "kappa": 0.2, "A0": 0.5}
+T = 500.0
+dt = 1e-3
+dts = 1e-1
+I_ext = 0.0
+I_start = 100.0
+I_stop = 400.0
+noise_lvl = 10.0
+noise_sigma = 1000.0
+
+# node and edge template initiation
+edge, edge_op = "stdp_edge", "stdp_op"
+node, node_op = "qif_sp", "qif_sp_op"
+node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
+edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
+for key, val in edge_vars.items():
+    edge_temp.update_var(edge_op, key, val)
+
+# create network
+edges = []
+for i in range(M):
+    for j in range(M):
+        edges.append((f"p{j}/{node_op}/s", f"p{i}/{node_op}/s_in", edge_temp,
+                      {"weight": 1.0, f"{edge}/{edge_op}/r_in": f"p{j}/{node_op}/s",
+                       f"{edge}/{edge_op}/r_t": f"p{i}/{node_op}/s", f"{edge}/{edge_op}/x_ltp": f"p{j}/{node_op}/u_ltp",
+                       f"{edge}/{edge_op}/x_ltd": f"p{i}/{node_op}/u_ltd",
+                       }))
+net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)
+net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
+
+# define extrinsic input
+inp = np.zeros((int(T/dt),))
+inp[int(I_start/dt):int(I_stop/dt)] = I_ext
+noise = noise_lvl*np.random.randn(inp.shape[0])
+noise = gaussian_filter1d(noise, sigma=noise_sigma)
+inp += noise
+
+# run simulation
+res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp},
+              outputs={"r": f"all/{node_op}/r", "u_ltp": f"all/{node_op}/u_ltp", "a": f"all/{node_op}/a"},
+              solver="heun", clear=False, sampling_step_size=dts)
+
+# extract synaptic weights
+mapping, weights, etas = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
+idx = np.argsort(etas)
+W = np.asarray([weights[mapping[i, :] > 0.0] for i in idx])
+W = W[:, idx]
+clear(net)
+
+# plotting
+fig = plt.figure(figsize=(16, 6))
+grid = fig.add_gridspec(nrows=3, ncols=3)
+ax1 = fig.add_subplot(grid[0, :2])
+ax1.plot(res.index, res["r"])
+ax1.plot(res.index, np.mean(res["r"].values, axis=1), color="black")
+ax1.set_ylabel("r (Hz)")
+ax = fig.add_subplot(grid[1, :2])
+ax.sharex(ax1)
+ax.plot(res.index, res["u_ltp"])
+ax.set_ylabel("u_ltp")
+ax = fig.add_subplot(grid[2, :2])
+ax.sharex(ax1)
+ax.plot(res.index, res["a"])
+ax.set_ylabel("a")
+ax.set_xlabel("time")
+ax = fig.add_subplot(grid[:, 2])
+im = ax.imshow(W, aspect="auto", interpolation="none", cmap="cividis")
+plt.colorbar(im, ax=ax)
+step = 4
+labels = np.round(etas[idx][::step], decimals=2)
+ax.set_xticks(ticks=np.arange(0, M, step=step), labels=labels)
+ax.set_yticks(ticks=np.arange(0, M, step=step), labels=labels)
+ax.invert_yaxis()
+ax.invert_xaxis()
+plt.tight_layout()
+plt.show()
