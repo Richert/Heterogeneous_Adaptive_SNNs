@@ -21,27 +21,25 @@ def correlate(x, y):
 # parameters
 M = 40
 edge_vars = {
-    "a": 0.1, #"b": 2.0
+    "a": 1.0, #"b": 2.0
 }
-Delta = 3.2
+Delta = 0.2
 eta = -4.0
 # etas = eta + Delta * np.linspace(-0.5, 0.5, num=M)
 indices = np.arange(1, M+1)
 etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
 deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*indices-M-1.5)/(M+1)))
 node_vars = {"tau": 1.0, "J": 20.0 / (0.5*M), "eta": etas, "tau_u": 10.0, "tau_s": 0.2, "Delta": deltas,
-             "tau_a": 20.0, "kappa": 0.1, "A0": 0.5}
+             "tau_a": 20.0, "kappa": 0.1, "A0": 0.0}
 T = 500.0
 dt = 5e-4
 dts = 1e-1
-I_ext = 2.0
-I_start = 100.0
-I_stop = 900.0
-noise_lvl = 200.0
-noise_sigma = 1000.0
+I_ext = 4.0
+I_start = [100.0, 200.0, 300.0, 400.0]
+I_dur = 10.0
 
 # node and edge template initiation
-edge, edge_op = "stdp_edge", "stdp_op"
+edge, edge_op = "oja_b_ah_edge", "oja_b_ah_op"
 node, node_op = "qif_sp", "qif_sp_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
@@ -66,10 +64,8 @@ net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.
 
 # define extrinsic input
 inp = np.zeros((int(T/dt),))
-inp[int(I_start/dt):int(I_stop/dt)] = I_ext
-noise = noise_lvl*np.random.randn(inp.shape[0])
-noise = gaussian_filter1d(noise, sigma=noise_sigma)
-inp += noise
+for start in I_start:
+    inp[int(start/dt):int((start+I_dur)/dt)] = I_ext
 
 # run simulation
 res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp},

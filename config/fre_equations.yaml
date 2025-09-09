@@ -1,5 +1,5 @@
-# operator templates
-####################
+# operator templates for nodes
+##############################
 
 # qif operator
 qif_stdp_op:
@@ -8,19 +8,16 @@ qif_stdp_op:
     - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
     - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
     - "s' = (r-s)/tau_s"
-    - "u_ltp' = -u_ltp / tau_ltp + r"
-    - "u_ltd' = -u_ltd / tau_ltd + r"
+    - "u' = (r-u)/tau_u"
   variables:
     r: output(0.01)
     v: variable(-60.0)
     s: variable(0.0)
-    u_ltp: variable(0.0)
-    u_ltd: variable(0.0)
+    u: variable(0.0)
     Delta: 0.1
     tau: 10.0
     J: 20.0
-    tau_ltp: 100.0
-    tau_ltd: 20.0
+    tau_u: 100.0
     tau_s: 5.0
     eta: 0.0
     I_ext: input(0.0)
@@ -31,26 +28,23 @@ qif_sp_op:
   base: OperatorTemplate
   equations:
     - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
-    - "v' = (v^2 - (pi*tau*r)^2 + a*tau*J*s_in + eta + I_ext) / tau"
-    - "s' = (r-s)/tau_s"
-    - "a' = (1-a)/tau_a + (A0-sqrt(a))*kappa*r"
-    - "u_ltp' = -u_ltp / tau_ltp + r"
-    - "u_ltd' = -u_ltd / tau_ltd + r"
+    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
+    - "s' = (a*r-s)/tau_s"
+    - "a' = (1-a)/tau_a + (A0-a)*kappa*r"
+    - "u' = (r-u)/tau_u"
   variables:
     r: output(0.01)
     v: variable(-60.0)
     s: variable(0.0)
     a: variable(1.0)
-    u_ltp: variable(0.0)
-    u_ltd: variable(0.0)
+    u: variable(0.0)
     Delta: 0.1
     kappa: 0.0
     A0: 0.0
     tau_a: 50.0
     tau: 10.0
     J: 20.0
-    tau_ltp: 100.0
-    tau_ltd: 20.0
+    tau_u: 100.0
     tau_s: 5.0
     eta: 0.0
     I_ext: input(0.0)
@@ -61,9 +55,9 @@ qif_sd_op:
   base: OperatorTemplate
   equations:
     - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
-    - "v' = (v^2 - (pi*tau*r)^2 + a*tau*J*s + eta + I_ext) / tau"
-    - "s' = (r-s)/tau_s"
-    - "a' = (1-a)/tau_a + (A0-sqrt(a))*kappa*r"
+    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
+    - "s' = (a*r-s)/tau_s"
+    - "a' = (1-a)/tau_a + (A0-a)*kappa*r"
   variables:
     r: output(0.01)
     v: variable(-60.0)
@@ -81,21 +75,71 @@ qif_sd_op:
     I_ext: input(0.0)
     s_in: input(0.0)
 
-# edge operator
+# operator templates for edges
+##############################
+
+# hebbian STDP rule
 stdp_op:
   base: OperatorTemplate
   equations:
-    - "w' = a_ltp*x_ltp*r_t - sqrt(w)*a_ltd*x_ltd*r_in"
-    - "r_out = r_in*w"
+    - "w' = a*(b*((1-w)*x_s*r_t - w*x_t*r_s) + (1-b)*(x_s*r_t - x_t*r_s)*(w-w^2))"
+    - "r_out = r_s*w"
   variables:
     r_out: output(0.0)
     w: variable(1.0)
-    a_ltp: 0.1
-    a_ltd: 0.05
-    r_in: input(0.0)
+    a: 0.1
+    b: 0.5
+    r_s: input(0.0)
     r_t: input(0.0)
-    x_ltp: input(0.0)
-    x_ltd: input(0.0)
+    x_s: input(0.0)
+    x_t: input(0.0)
+
+# anti-hebbian STDP rule
+stdp_ah_op:
+  base: OperatorTemplate
+  equations:
+    - "w' = a*(b*((1-w)*x_t*r_s - w*x_s*r_t) + (1-b)*(x_t*r_s - x_s*r_t)*(w-w^2))"
+    - "r_out = r_s*w"
+  variables:
+    r_out: output(0.0)
+    w: variable(1.0)
+    a: 0.1
+    b: 0.5
+    r_s: input(0.0)
+    r_t: input(0.0)
+    x_s: input(0.0)
+    x_t: input(0.0)
+
+# hebbian Oja's rule
+oja_op:
+  base: OperatorTemplate
+  equations:
+    - "w' = a*(b*((1-w)*x_s*r_t - w*x_t^2) + (1-b)*(x_s*r_t - x_t^2)*(w-w^2))"
+    - "r_out = r_s*w"
+  variables:
+    r_out: output(0.0)
+    w: variable(1.0)
+    a: 0.1
+    b: 0.5
+    r_s: input(0.0)
+    r_t: input(0.0)
+    x_s: input(0.0)
+    x_t: input(0.0)
+
+# anti-hebbian Oja's rule
+oja_ah_op:
+  base: OperatorTemplate
+  equations:
+    - "w' = a*(b*((1-w)*r_s^2 - w*x_s*r_t) + (1-b)*(r_s^2 - x_s*r_t)*(w-w^2))"
+    - "r_out = r_s*w"
+  variables:
+    r_out: output(0.0)
+    w: variable(1.0)
+    a: 0.1
+    r_s: input(0.0)
+    r_t: input(0.0)
+    x_s: input(0.0)
+    x_t: input(0.0)
 
 # node templates
 ################
@@ -115,10 +159,28 @@ qif_sd_pop:
   operators:
     - qif_sd_op
 
+# edge templates
+################
+
 stdp_edge:
   base: EdgeTemplate
   operators:
     - stdp_op
+
+stdp_ah_edge:
+  base: EdgeTemplate
+  operators:
+    - stdp_ah_op
+
+oja_edge:
+  base: EdgeTemplate
+  operators:
+    - oja_op
+
+oja_ah_edge:
+  base: EdgeTemplate
+  operators:
+    - oja_ah_op
 
 # circuit templates
 ###################
@@ -132,6 +194,8 @@ qif_sd:
   base: CircuitTemplate
   nodes:
     p: qif_sd_pop
+  edges:
+    - [p/qif_sd_op/s, p/qif_sd_op/s_in, null, weight: 1.0]
 
 qif_sp:
   base: CircuitTemplate

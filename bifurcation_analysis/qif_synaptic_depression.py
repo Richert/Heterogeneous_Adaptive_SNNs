@@ -29,7 +29,7 @@ auto_dir = "~/PycharmProjects/auto-07p"
 config_dir = "../config"
 
 # model parameters
-node_vars = {"tau": 1.0, "J": 20.0, "eta": -4.0, "Delta": 1.0, "tau_s": 0.2, "kappa": 0.0, "tau_a": 20.0, "A0": 0.5}
+node_vars = {"tau": 1.0, "J": 20.0, "eta": -10.0, "Delta": 1.0, "tau_s": 0.2, "kappa": 0.01, "tau_a": 20.0, "A0": 0.0}
 
 # initialize model
 op = "qif_sd_op"
@@ -54,28 +54,28 @@ t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NP
 # continuation in independent parameter
 p1 = "kappa"
 p1_idx = 8
-p1_vals = [0.1, 0.2, 0.3]
+p1_vals = [0.0, 0.1, 0.2]
 c1_sols, c1_cont = ode.run(starting_point='UZ1', c='1d', ICP=p1_idx, NPAR=n_params, NDIM=n_dim, name=f'{p1}:0',
                            origin="t", NMX=8000, DSMAX=0.05, UZR={p1_idx: p1_vals}, STOP=[],
-                           NPR=20, RL1=1.0, RL0=0.0, EPSS=1e-4, bidirectional=True)
+                           NPR=20, RL1=1.0, RL0=-0.01, EPSL=1e-7, EPSU=1e-7, EPSS=1e-4, bidirectional=True)
 
 # continuations in eta
 eta_idx = 5
 for i, p1_val in enumerate(p1_vals):
 
     c2_sols, c2_cont = ode.run(starting_point=f'UZ{i+1}', ICP=eta_idx, name=f'eta:{i+1}', DSMAX=0.01,
-                               origin=c1_cont, UZR={}, STOP=[], NPR=5, RL1=12.0, RL0=-12.0, bidirectional=True,
-                               variables=["U(1)"])
+                               origin=c1_cont, UZR={}, STOP=[], NPR=5, RL1=12.0, RL0=-12.0, bidirectional=False,
+                               variables=["U(1)"], DS=1e-4)
 
     try:
         ode.run(starting_point="HB1", ICP=[eta_idx, 11], name=f"eta:{i+1}:lc:1", origin=c2_cont, ISW=-1, IPS=2, NMX=6000,
-                DSMAX=0.04, NCOL=6, NTST=200, STOP=["LP6", "BP2"], EPSL=1e-7, EPSU=1e-7, EPSS=1e-4, NPR=10,
+                DSMAX=0.04, NCOL=6, NTST=200, STOP=["LP6", "BP2"], EPSL=1e-6, EPSU=1e-6, EPSS=1e-4, NPR=10,
                 variables=["U(1)"])
     except KeyError:
         pass
     try:
         ode.run(starting_point="HB2", ICP=[eta_idx, 11], name=f"eta:{i+1}:lc:2", origin=c2_cont, ISW=-1, IPS=2, NMX=6000,
-                DSMAX=0.04, NCOL=6, NTST=200, STOP=["LP6", "BP2"], EPSL=1e-7, EPSU=1e-7, EPSS=1e-4, NPR=10,
+                DSMAX=0.04, NCOL=6, NTST=200, STOP=["LP6", "BP2"], EPSL=1e-6, EPSU=1e-6, EPSS=1e-4, NPR=10,
                 variables=["U(1)"])
     except KeyError:
         pass
@@ -107,42 +107,42 @@ pd_bifurcation = True
 tr_bifurcation = True
 try:
     ode.run(starting_point='LP1', ICP=[p1_idx, eta_idx], name=f'{p1}/eta:lp1', origin=f"eta:{p1_val_idx+1}", NMX=4000,
-            DSMAX=dsmax, NPR=10, RL1=2.0, RL0=0.0, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
+            DSMAX=dsmax, NPR=10, RL1=2.0, RL0=-0.01, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
             variables=["U(1)"], get_stability=False)
     ode.run(starting_point='LP2', ICP=[p1_idx, eta_idx], name=f'{p1}/eta:lp2', origin=f"eta:{p1_val_idx+1}",
-            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=0.0, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
+            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=-0.01, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
             variables=["U(1)"], get_stability=False)
 except KeyError:
     fold_bifurcations = False
 try:
     ode.run(starting_point='HB1', ICP=[p1_idx, eta_idx], name=f'{p1}/eta:hb1', origin=f"eta:{p1_val_idx+1}", NMX=4000,
-            DSMAX=dsmax, NPR=10, RL1=2.0, RL0=0.0, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
+            DSMAX=dsmax, NPR=10, RL1=2.0, RL0=-0.01, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
             variables=["U(1)"], get_stability=False)
 except KeyError:
     hopf_bifurcation_1 = False
 try:
     ode.run(starting_point='HB2', ICP=[p1_idx, eta_idx], name=f'{p1}/eta:hb2', origin=f"eta:{p1_val_idx+1}",
-            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=0.0, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
+            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=-0.01, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
             variables=["U(1)"], get_stability=False)
 except KeyError:
     hopf_bifurcation_2 = False
 try:
     ode.run(starting_point='PD1', ICP=[p1_idx, eta_idx], name=f'{p1}/eta:pd1', origin=f"eta:{p1_val_idx + 1}:lc:2",
-            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=0.0, bidirectional=True, ILP=0, IPS=2, ISW=2, NTST=400,
+            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=-0.01, bidirectional=True, ILP=0, IPS=2, ISW=2, NTST=400,
             get_stability=False, variables=["U(1)"])
 except KeyError:
     pd_bifurcation = False
 try:
     ode.run(starting_point='TR1', ICP=[p1_idx, eta_idx], name=f'{p1}/eta:tr1', origin=f"eta:{p1_val_idx + 1}:lc:2",
-            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=0.0, bidirectional=True, ILP=0, IPS=2, ISW=2, NTST=400,
+            NMX=4000, DSMAX=dsmax, NPR=10, RL1=2.0, RL0=-0.01, bidirectional=True, ILP=0, IPS=2, ISW=2, NTST=400,
             get_stability=False, variables=["U(1)"])
 except KeyError:
     tr_bifurcation = False
 
 # 2D continuation II
-params_2d = ["Delta", "A0"]
-params_idx = [2, 7]
-for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, 0.0], [5.0, 1.0]):
+params_2d = ["Delta", "J"]
+params_idx = [2, 3]
+for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, 0.0], [5.0, 60.0]):
     if fold_bifurcations:
         ode.run(starting_point='LP1', ICP=[p2_idx, eta_idx], name=f'{p2}/eta:lp1', origin=f"eta:{p1_val_idx+1}",
                 NMX=4000, DSMAX=dsmax, NPR=10, RL1=p2_max, RL0=p2_min, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
