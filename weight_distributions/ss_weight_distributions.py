@@ -15,7 +15,7 @@ def get_xy(fr_source: float, fr_target: float, condition: str) -> tuple:
         raise ValueError(f"Invalid condition: {condition}.")
     return x, y
 
-def get_w_solution(x: float, y: float, b: float) -> float:
+def get_w_solution(w0: float, x: float, y: float, b: float) -> float:
     if b < 1.0 and x != y:
         a_term = 2*(b-1) * (x-y)
         b_term = x*(2*b-1) + y
@@ -25,13 +25,13 @@ def get_w_solution(x: float, y: float, b: float) -> float:
         ws = []
         for w in (w1, w2):
             sd = second_derivative(w, x, y, b)
-            if 0 <= w <= 1 and sd <= 0.0:
+            if 0 <= w <= 1 and (sd <= 0.0 or np.abs(w0 - w) < 1e-6):
                 ws.append(w)
         return np.random.choice(ws)
     elif x + y > 0.0:
         return x / (x + y)
     else:
-        return np.random.uniform(low=0.0, high=1.0)
+        return w0
 
 def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
     x = np.arange(1, N+1)
@@ -47,9 +47,9 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / (2*np.pi)
 
 # parameter definition
-condition = "antihebbian"
+condition = "hebbian"
 distribution = "lorentzian"
-N = 10000
+N = 1000
 m = 100
 eta = 1.0
 deltas = np.linspace(0.1, 3.0, num=m)
@@ -70,7 +70,8 @@ for b in bs:
         ws = []
         for source_fr in fr_source:
             x, y = get_xy(source_fr, target_fr, condition=condition)
-            w = get_w_solution(x, y, b)
+            w0 = np.random.choice([0.0, 0.33, 0.66, 1.0])
+            w = get_w_solution(w0, x, y, b)
             ws.append(w)
 
         # save results
@@ -101,7 +102,7 @@ for i, b in enumerate(bs):
     # ax.set_ylabel("Delta")
     # ax.set_title(f"Firing Rates (b = {b})")
 
-fig.suptitle("Synaptic Weights for Anti-Hebbian Learning (Theory)")
+fig.suptitle("Weight Distribution for Hebbian Learning (Theory)")
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig(f"../results/ss_weight_distribution_{condition}.svg")

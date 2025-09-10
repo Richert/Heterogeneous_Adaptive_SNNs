@@ -28,7 +28,7 @@ def qif_rhs(y: np.ndarray, eta: np.ndarray, tau_u: np.ndarray, tau_s: np.ndarray
     dw = a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
     return np.concatenate([dv, ds, du, dw], axis=0)
 
-def spiking(y: np.ndarray, spikes: np.ndarray, dt: float, v_cutoff: float):
+def spiking(y: np.ndarray, spikes: np.ndarray, dt: float, v_cutoff: float, N: int):
     idx = np.argwhere((v_cutoff - y[:N]) < 0.0).squeeze()
     spikes[:] = 0.0
     y[idx] = -v_cutoff
@@ -38,18 +38,17 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: float, tau_s: float, 
               a: float, b: float, v_cutoff: float, N: int, condition: str):
 
     y = np.zeros((4*N,))
+    y[3*N:] = np.random.choice([0.0, 0.33, 0.66, 1.0], size=(N,))
     spikes = np.zeros((N,))
     t = 0.0
-    time, y_col = [], []
+
     while t < T:
-        y_col.append(y[:])
-        time.append(t)
-        spiking(y, spikes, dt, v_cutoff)
+        spiking(y, spikes, dt, v_cutoff, N)
         dy = qif_rhs(y, eta, tau_u, tau_s, J, spikes, a, b, N, condition)
         y = y + dt * dy
         t += dt
 
-    return np.asarray(y_col), np.asarray(time)
+    return y[3*N:]
 
 def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
     x = np.arange(1, N+1)
@@ -61,18 +60,19 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 # parameter definition
 condition = "oja_hebbian"
 distribution = "lorentzian"
-N = 1000
+N = 200
 m = 100
 eta = 1.0
 deltas = np.linspace(0.1, 2.0, num=m)
-target_eta = 0.2
+target_fr = 0.2
+target_eta = 2*np.pi*target_fr**2
 a = 1.0
 bs = [0.0, 0.125, 0.25, 0.5, 1.0]
 tau_u = 10.0
 tau_s = 1.0
 J = np.zeros((N+1, N+1))
 J[-1, :] = 0.0
-v_cutoff = 100.0
+v_cutoff = 1000.0
 res = {"b": bs, "delta": deltas, "data": {}}
 
 # simulation parameters
@@ -82,15 +82,14 @@ solver_kwargs = {}
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
-    data = {"w": [], "fr": []}
+    data = {"w": []}
     for Delta in deltas:
 
         # define source firing rate distribution
         etas = np.asarray(f(N, eta, Delta).tolist() + [target_eta])
 
         # solve equations
-        ys, time = solve_ivp(T, dt, etas, tau_u, tau_s, J, a, b, v_cutoff, N+1, condition)
-        ws = ys[-1, 3*(N+1):3*(N+1)+N]
+        ws = solve_ivp(T, dt, etas, tau_u, tau_s, J, a, b, v_cutoff, N+1, condition)
 
         # save results
         data["w"].append(ws)
@@ -99,17 +98,18 @@ for b in bs:
     res["data"][b] = data
 
 # plotting
-fig, axes = plt.subplots(ncols=len(bs), figsize=(12, 4))
+fig, axes = plt.subplots(ncols=len(bs), figsize=(12, 3))
 ticks = np.arange(0, m, int(m/5))
 for i, b in enumerate(bs):
 
     # weight distribution
     ax = axes[i]
-    im = ax.imshow(np.asarray(res["data"][b]["w"]), aspect="auto", interpolation="none", cmap="cividis",
+    im = ax.imshow(np.asarray(res["data"][b]["w"]), aspect="auto", interpolation="none", cmap="viridis",
                    vmax=1.0, vmin=0.0)
     ax.set_xlabel("neuron")
     ax.set_ylabel("Delta")
     ax.set_yticks(ticks, labels=np.round(deltas[ticks], decimals=1))
+    # ax.set_title(f"W (b = {b})")
 
     # # firing rate distribution
     # ax = axes[1, i]
@@ -119,8 +119,8 @@ for i, b in enumerate(bs):
     # ax.set_ylabel("Delta")
     # ax.set_title(f"Firing Rates (b = {b})")
 
-fig.suptitle(f"Synaptic Weights for {'Hebbian' if 'hebbian' in condition else 'Anti-Hebbian'} Learning (Simulation)")
+fig.suptitle("Weight Distribution for Hebbian Learning (QIF Simulation)")
 plt.tight_layout()
 fig.canvas.draw()
-plt.savefig(f"../results/ss_weight_distribution_{condition}.svg")
+plt.savefig(f"../results/qif_weight_distribution_{condition}.svg")
 plt.show()
