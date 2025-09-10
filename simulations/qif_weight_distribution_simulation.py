@@ -1,0 +1,126 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def get_xy(fr_source: float, fr_target: float, trace_source: float, trace_target: float, condition: str) -> tuple:
+    if condition == "oja_hebbian":
+        x = fr_source*trace_target
+        y = trace_target*fr_target
+    elif condition == "oja_antihebbian":
+        x = trace_source*fr_source
+        y = fr_source*trace_target
+    elif condition == "stdp_hebbian":
+        x = fr_target * trace_source
+        y = fr_source * trace_target
+    elif condition == "stdp_antihebbian":
+        x = fr_source * trace_target
+        y = fr_target * trace_source
+    else:
+        raise ValueError(f"Invalid condition: {condition}.")
+    return x, y
+
+def qif_rhs(y: np.ndarray, eta: np.ndarray, tau_u: np.ndarray, tau_s: np.ndarray, J: np.ndarray,
+            spikes: np.ndarray, a: float, b: float, N: int, condition: str):
+    v, s, u, w = y[:N], y[N:2*N], y[2*N:3*N], y[3*N:]
+    x, y = get_xy(s[:], s[-1], u[:], u[-1], condition=condition)
+    dv = v**2 + eta + J @ (w*s)
+    ds = (spikes-s) / tau_s
+    du = (spikes-u) / tau_u
+    dw = a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
+    return np.concatenate([dv, ds, du, dw], axis=0)
+
+def spiking(y: np.ndarray, spikes: np.ndarray, dt: float, v_cutoff: float):
+    idx = np.argwhere((v_cutoff - y[:N]) < 0.0).squeeze()
+    spikes[:] = 0.0
+    y[idx] = -v_cutoff
+    spikes[idx] = 1.0/dt
+
+def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: float, tau_s: float, J: np.ndarray,
+              a: float, b: float, v_cutoff: float, N: int, condition: str):
+
+    y = np.zeros((4*N,))
+    spikes = np.zeros((N,))
+    t = 0.0
+    time, y_col = [], []
+    while t < T:
+        y_col.append(y[:])
+        time.append(t)
+        spiking(y, spikes, dt, v_cutoff)
+        dy = qif_rhs(y, eta, tau_u, tau_s, J, spikes, a, b, N, condition)
+        y = y + dt * dy
+        t += dt
+
+    return np.asarray(y_col), np.asarray(time)
+
+def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
+    x = np.arange(1, N+1)
+    return eta + Delta*np.tan(0.5*np.pi*(2*x-N-1)/(N+1))
+
+def gaussian(N, eta: float, Delta: float) -> np.ndarray:
+    return eta + Delta*np.random.randn(N)
+
+# parameter definition
+condition = "oja_hebbian"
+distribution = "lorentzian"
+N = 1000
+m = 100
+eta = 1.0
+deltas = np.linspace(0.1, 2.0, num=m)
+target_eta = 0.2
+a = 1.0
+bs = [0.0, 0.125, 0.25, 0.5, 1.0]
+tau_u = 10.0
+tau_s = 1.0
+J = np.zeros((N+1, N+1))
+J[-1, :] = 0.0
+v_cutoff = 100.0
+res = {"b": bs, "delta": deltas, "data": {}}
+
+# simulation parameters
+T = 200.0
+dt = 1e-3
+solver_kwargs = {}
+
+f = lorentzian if distribution == "lorentzian" else gaussian
+for b in bs:
+    data = {"w": [], "fr": []}
+    for Delta in deltas:
+
+        # define source firing rate distribution
+        etas = np.asarray(f(N, eta, Delta).tolist() + [target_eta])
+
+        # solve equations
+        ys, time = solve_ivp(T, dt, etas, tau_u, tau_s, J, a, b, v_cutoff, N+1, condition)
+        ws = ys[-1, 3*(N+1):3*(N+1)+N]
+
+        # save results
+        data["w"].append(ws)
+
+    print(f"Finished simulations for b = {b}")
+    res["data"][b] = data
+
+# plotting
+fig, axes = plt.subplots(ncols=len(bs), figsize=(12, 4))
+ticks = np.arange(0, m, int(m/5))
+for i, b in enumerate(bs):
+
+    # weight distribution
+    ax = axes[i]
+    im = ax.imshow(np.asarray(res["data"][b]["w"]), aspect="auto", interpolation="none", cmap="cividis",
+                   vmax=1.0, vmin=0.0)
+    ax.set_xlabel("neuron")
+    ax.set_ylabel("Delta")
+    ax.set_yticks(ticks, labels=np.round(deltas[ticks], decimals=1))
+
+    # # firing rate distribution
+    # ax = axes[1, i]
+    # im = ax.imshow(np.asarray(res["data"][b]["fr"]), aspect="auto", interpolation="none", cmap="cividis", vmax=fr_max)
+    # plt.colorbar(im, ax=ax)
+    # ax.set_xlabel("eta")
+    # ax.set_ylabel("Delta")
+    # ax.set_title(f"Firing Rates (b = {b})")
+
+fig.suptitle(f"Synaptic Weights for {'Hebbian' if 'hebbian' in condition else 'Anti-Hebbian'} Learning (Simulation)")
+plt.tight_layout()
+fig.canvas.draw()
+plt.savefig(f"../results/ss_weight_distribution_{condition}.svg")
+plt.show()

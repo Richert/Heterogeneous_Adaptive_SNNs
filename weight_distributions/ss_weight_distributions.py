@@ -47,12 +47,12 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / (2*np.pi)
 
 # parameter definition
-condition = "hebbian"
+condition = "antihebbian"
 distribution = "lorentzian"
 N = 10000
 m = 100
 eta = 1.0
-deltas = np.linspace(0.1, 2.0, num=m)
+deltas = np.linspace(0.1, 3.0, num=m)
 target_fr = 0.2
 bs = [0.0, 0.125, 0.25, 0.5, 1.0]
 res = {"b": bs, "delta": deltas, "data": {}}
@@ -80,16 +80,18 @@ for b in bs:
     res["data"][b] = data
 
 # plotting
-fig, axes = plt.subplots(ncols=len(bs), figsize=(12, 4))
+fig, axes = plt.subplots(ncols=len(bs), figsize=(12, 3))
+ticks = np.arange(0, m, int(m/5))
 for i, b in enumerate(bs):
 
     # weight distribution
     ax = axes[i]
-    im = ax.imshow(np.asarray(res["data"][b]["w"]), aspect="auto", interpolation="none", cmap="cividis",
+    im = ax.imshow(np.asarray(res["data"][b]["w"]), aspect="auto", interpolation="none", cmap="viridis",
                    vmax=1.0, vmin=0.0)
-    ax.set_xlabel("eta")
+    ax.set_xlabel("neuron")
     ax.set_ylabel("Delta")
-    ax.set_title(f"Weights (b = {b})")
+    ax.set_yticks(ticks, labels=np.round(deltas[ticks], decimals=1))
+    # ax.set_title(f"W (b = {b})")
 
     # # firing rate distribution
     # ax = axes[1, i]
@@ -99,6 +101,8 @@ for i, b in enumerate(bs):
     # ax.set_ylabel("Delta")
     # ax.set_title(f"Firing Rates (b = {b})")
 
-fig.suptitle("Theory")
+fig.suptitle("Synaptic Weights for Anti-Hebbian Learning (Theory)")
 plt.tight_layout()
+fig.canvas.draw()
+plt.savefig(f"../results/ss_weight_distribution_{condition}.svg")
 plt.show()
