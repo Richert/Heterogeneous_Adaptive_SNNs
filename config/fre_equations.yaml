@@ -114,7 +114,7 @@ stdp_ah_op:
 oja_op:
   base: OperatorTemplate
   equations:
-    - "w' = a*(b*((1-w)*x_s*r_t - w*x_t^2) + (1-b)*(x_s*r_t - x_t^2)*(w-w^2))"
+    - "w' = a*(b*((1-w)*x_s*r_t - w*x_t*r_t) + (1-b)*(x_s*r_t - x_t*r_t)*(w-w^2))"
     - "r_out = r_s*w"
   variables:
     r_out: output(0.0)
@@ -130,12 +130,13 @@ oja_op:
 oja_ah_op:
   base: OperatorTemplate
   equations:
-    - "w' = a*(b*((1-w)*r_s^2 - w*x_s*r_t) + (1-b)*(r_s^2 - x_s*r_t)*(w-w^2))"
+    - "w' = a*(b*((1-w)*r_s*x_s - w*x_s*r_t) + (1-b)*(r_s*x_s - x_s*r_t)*(w-w^2))"
     - "r_out = r_s*w"
   variables:
     r_out: output(0.0)
     w: variable(1.0)
     a: 0.1
+    b: 0.5
     r_s: input(0.0)
     r_t: input(0.0)
     x_s: input(0.0)

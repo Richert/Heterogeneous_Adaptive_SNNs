@@ -44,16 +44,16 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 def get_qif_fr(x: np.ndarray) -> np.ndarray:
     fr = np.zeros_like(x)
     fr[x > 0] = np.sqrt(x[x > 0])
-    return fr / (2*np.pi)
+    return fr / np.pi
 
 # parameter definition
-condition = "hebbian"
+condition = "antihebbian"
 distribution = "lorentzian"
 N = 1000
 m = 100
 eta = 1.0
 deltas = np.linspace(0.1, 3.0, num=m)
-target_fr = 0.2
+target_fr = 0.7
 bs = [0.0, 0.125, 0.25, 0.5, 1.0]
 res = {"b": bs, "delta": deltas, "data": {}}
 
@@ -102,8 +102,8 @@ for i, b in enumerate(bs):
     # ax.set_ylabel("Delta")
     # ax.set_title(f"Firing Rates (b = {b})")
 
-fig.suptitle("Weight Distribution for Hebbian Learning (Theory)")
+fig.suptitle("Weight Distribution for Anti-Hebbian Learning (Theory, rate-adjusted)")
 plt.tight_layout()
 fig.canvas.draw()
-plt.savefig(f"../results/ss_weight_distribution_{condition}.svg")
+plt.savefig(f"../results/ss_weight_distribution_{condition}_10.svg")
 plt.show()

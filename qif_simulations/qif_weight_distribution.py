@@ -3,17 +3,17 @@ import matplotlib.pyplot as plt
 
 def get_xy(fr_source: float, fr_target: float, trace_source: float, trace_target: float, condition: str) -> tuple:
     if condition == "oja_hebbian":
-        x = fr_source*trace_target
+        x = trace_source*fr_target
         y = trace_target*fr_target
     elif condition == "oja_antihebbian":
         x = trace_source*fr_source
-        y = fr_source*trace_target
+        y = trace_source*fr_target
     elif condition == "stdp_hebbian":
-        x = fr_target * trace_source
-        y = fr_source * trace_target
+        x = trace_source*fr_target
+        y = trace_target*fr_source
     elif condition == "stdp_antihebbian":
-        x = fr_source * trace_target
-        y = fr_target * trace_source
+        x = trace_target*fr_source
+        y = trace_source*fr_target
     else:
         raise ValueError(f"Invalid condition: {condition}.")
     return x, y
@@ -60,18 +60,18 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 # parameter definition
 condition = "oja_hebbian"
 distribution = "lorentzian"
-N = 200
+N = 1000
 m = 100
 eta = 1.0
-deltas = np.linspace(0.1, 2.0, num=m)
+deltas = np.linspace(0.1, 3.0, num=m)
 target_fr = 0.2
-target_eta = 2*np.pi*target_fr**2
+target_eta = (np.pi*target_fr)**2
 a = 1.0
 bs = [0.0, 0.125, 0.25, 0.5, 1.0]
 tau_u = 10.0
 tau_s = 1.0
 J = np.zeros((N+1, N+1))
-J[-1, :] = 0.0
+J[-1, :] = 20.0 / N
 v_cutoff = 1000.0
 res = {"b": bs, "delta": deltas, "data": {}}
 
@@ -122,5 +122,5 @@ for i, b in enumerate(bs):
 fig.suptitle("Weight Distribution for Hebbian Learning (QIF Simulation)")
 plt.tight_layout()
 fig.canvas.draw()
-plt.savefig(f"../results/qif_weight_distribution_{condition}.svg")
+plt.savefig(f"../results/qif_weight_distribution_{condition}_20.svg")
 plt.show()
