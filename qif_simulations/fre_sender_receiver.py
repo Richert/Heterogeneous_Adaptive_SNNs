@@ -3,25 +3,26 @@ import matplotlib.pyplot as plt
 from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
 from copy import deepcopy
 
+def gaussian(N, eta: float, Delta: float) -> np.ndarray:
+    return eta + Delta*np.random.randn(N)
+
 # parameters
 M = 100
 edge_vars = {
-    "a": 1.0, "b": 1.0
+    "a": 1.0, "b": 0.125
 }
-Delta = 1.0
-eta = 1.0
-indices = np.arange(1, M+1)
-etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
-deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*indices-M-1.5)/(M+1)))
-deltas = np.asarray(deltas.tolist() + deltas.tolist())
-etas = np.asarray(etas.tolist() + etas.tolist())
-node_vars = {"tau": 1.0, "J": 10.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 1.0, "Delta": deltas}
+Delta_source, Delta_target = 1.0, 1.0
+eta_source, eta_target = 1.0, 0.0
+etas_source = gaussian(M, eta_source, Delta_source)
+etas_target = gaussian(M, eta_target, Delta_target)
+etas = np.asarray(etas_source.tolist() + etas_target.tolist())
+node_vars = {"tau": 1.0, "J": 10.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 1.0, "Delta": 0.01}
 T = 200.0
 dt = 1e-4
 dts = 1e-1
 
 # node and edge template initiation
-edge, edge_op = "oja_edge", "oja_op"
+edge, edge_op = "oja_ah_edge", "oja_ah_op"
 node, node_op = "qif_stdp", "qif_stdp_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
@@ -49,7 +50,7 @@ net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.
 # run simulation
 res = net.run(simulation_time=T, step_size=dt,
               outputs={"r": f"all/{node_op}/r"},
-              solver="scipy", clear=False, sampling_step_size=dts, max_step=1e-2)
+              solver="scipy", clear=False, sampling_step_size=dts, max_step=2e-2)
 
 # extract synaptic weights
 mapping, weights, etas = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
@@ -82,7 +83,7 @@ ax.set_title("Target population dynamics")
 ax = fig.add_subplot(grid[:, 2])
 im = ax.imshow(W, aspect="auto", interpolation="none", cmap="viridis")
 plt.colorbar(im, ax=ax)
-step = 4
+step = int(M/5)
 row_labels = np.round(etas[M+idx_row][::step], decimals=2)
 col_labels = np.round(etas[idx_col][::step], decimals=2)
 ax.set_xticks(ticks=np.arange(0, M, step=step), labels=col_labels)

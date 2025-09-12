@@ -70,8 +70,9 @@ a = 1.0
 bs = [0.0, 0.125, 0.25, 0.5, 1.0]
 tau_u = 10.0
 tau_s = 1.0
+J0 = 0.0
 J = np.zeros((N+1, N+1))
-J[-1, :] = 20.0 / N
+J[-1, :] = J0 / N
 v_cutoff = 1000.0
 res = {"b": bs, "delta": deltas, "data": {}}
 
@@ -122,5 +123,5 @@ for i, b in enumerate(bs):
 fig.suptitle("Weight Distribution for Hebbian Learning (QIF Simulation)")
 plt.tight_layout()
 fig.canvas.draw()
-plt.savefig(f"../results/qif_weight_distribution_{condition}_20.svg")
-plt.show()
+plt.savefig(f"../results/qif_weight_distribution_{condition}_{int(J0)}.svg")
+# plt.show()
