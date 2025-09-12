@@ -55,11 +55,12 @@ def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
     return eta + Delta*np.tan(0.5*np.pi*(2*x-N-1)/(N+1))
 
 def gaussian(N, eta: float, Delta: float) -> np.ndarray:
-    return eta + Delta*np.random.randn(N)
+    etas = eta + Delta * np.random.randn(N)
+    return np.sort(etas)
 
 # parameter definition
 condition = "oja_hebbian"
-distribution = "lorentzian"
+distribution = "gaussian"
 N = 1000
 m = 100
 eta = 1.0
@@ -112,15 +113,7 @@ for i, b in enumerate(bs):
     ax.set_yticks(ticks, labels=np.round(deltas[ticks], decimals=1))
     # ax.set_title(f"W (b = {b})")
 
-    # # firing rate distribution
-    # ax = axes[1, i]
-    # im = ax.imshow(np.asarray(res["data"][b]["fr"]), aspect="auto", interpolation="none", cmap="cividis", vmax=fr_max)
-    # plt.colorbar(im, ax=ax)
-    # ax.set_xlabel("eta")
-    # ax.set_ylabel("Delta")
-    # ax.set_title(f"Firing Rates (b = {b})")
-
-fig.suptitle("Weight Distribution for Hebbian Learning (QIF Simulation)")
+fig.suptitle(f"Weight Distribution for {'Anti-Hebbian' if 'anti' in condition else 'Hebbian'} Learning (QIF Simulation)")
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig(f"../results/qif_weight_distribution_{condition}_{int(J0)}.svg")
