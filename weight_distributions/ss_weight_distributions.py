@@ -47,13 +47,13 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-condition = "hebbian"
+condition = "antihebbian"
 distribution = "gaussian"
-N = 1000
+N = 200
 m = 100
 eta = 1.0
 deltas = np.linspace(0.1, 2.0, num=m)
-target_fr = 0.2
+target_fr = 0.55
 bs = [0.0, 0.125, 0.25, 0.5, 1.0]
 res = {"b": bs, "delta": deltas, "data": {}}
 
@@ -105,5 +105,5 @@ for i, b in enumerate(bs):
 fig.suptitle(f"Weight Distribution for {'Hebbian' if condition == 'hebbian' else 'Anti-Hebbian'} Learning (Theory, rate-adjusted)")
 plt.tight_layout()
 fig.canvas.draw()
-plt.savefig(f"../results/ss_weight_distribution_{condition}.svg")
+plt.savefig(f"../results/ss_weight_distribution_{condition}_10.svg")
 plt.show()

@@ -7,22 +7,22 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
     return eta + Delta*np.random.randn(N)
 
 # parameters
-M = 100
+M = 50
 edge_vars = {
-    "a": 0.2, "b": 0.125
+    "a": 0.2, "b": 0.5
 }
 Delta_source, Delta_target = 1.0, 1.0
-eta_source, eta_target = 1.0, 0.0
+eta_source, eta_target = 1.0, 1.0
 etas_source = gaussian(M, eta_source, Delta_source)
 etas_target = gaussian(M, eta_target, Delta_target)
 etas = np.asarray(etas_source.tolist() + etas_target.tolist())
-node_vars = {"tau": 1.0, "J": 10.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 1.0, "Delta": 0.01}
-T = 200.0
+node_vars = {"tau": 1.0, "J": 5.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 1.0, "Delta": 0.01}
+T = 300.0
 dt = 1e-4
 dts = 1e-1
 
 # node and edge template initiation
-edge, edge_op = "oja_ah_edge", "oja_ah_op"
+edge, edge_op = "oja_edge", "oja_op"
 node, node_op = "qif_stdp", "qif_stdp_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
@@ -72,6 +72,7 @@ ax1 = fig.add_subplot(grid[0, :2])
 ax1.plot(time, r_source*100.0)
 ax1.plot(time, np.mean(r_source, axis=1)*100.0, color="black")
 ax1.set_ylabel("r (Hz)")
+ax1.set_ylim([0.0, 150.0])
 ax1.set_title("Source population dynamics")
 ax = fig.add_subplot(grid[1, :2])
 ax.sharex(ax1)
@@ -79,6 +80,7 @@ ax.plot(time, r_target*100.0)
 ax.plot(time, np.mean(r_target, axis=1)*100.0, color="black")
 ax.set_ylabel("r (Hz)")
 ax.set_xlabel("time")
+ax.set_ylim([0.0, 150.0])
 ax.set_title("Target population dynamics")
 ax = fig.add_subplot(grid[:, 2])
 im = ax.imshow(W, aspect="auto", interpolation="none", cmap="viridis")
