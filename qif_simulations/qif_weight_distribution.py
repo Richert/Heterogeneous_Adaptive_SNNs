@@ -62,7 +62,7 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 condition = "oja_hebbian"
 distribution = "gaussian"
 N = 100
-m = 100
+m = 10
 eta = 1.0
 deltas = np.linspace(0.1, 2.0, num=m)
 target_fr = 0.2
