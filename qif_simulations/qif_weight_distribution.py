@@ -64,10 +64,10 @@ distribution = "gaussian"
 N = 1000
 m = 100
 eta = 1.0
-deltas = np.linspace(0.1, 3.0, num=m)
+deltas = np.linspace(0.1, 2.0, num=m)
 target_fr = 0.2
 target_eta = (np.pi*target_fr)**2
-a = 1.0
+a = 0.2
 bs = [0.0, 0.125, 0.25, 0.5, 1.0]
 tau_u = 10.0
 tau_s = 1.0
@@ -95,8 +95,8 @@ for b in bs:
 
         # save results
         data["w"].append(ws)
+        print(f"Finished simulations for b = {b} and Delta = {Delta}")
 
-    print(f"Finished simulations for b = {b}")
     res["data"][b] = data
 
 # plotting

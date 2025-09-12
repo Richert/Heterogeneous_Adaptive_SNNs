@@ -9,7 +9,7 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 # parameters
 M = 100
 edge_vars = {
-    "a": 1.0, "b": 0.125
+    "a": 0.2, "b": 0.125
 }
 Delta_source, Delta_target = 1.0, 1.0
 eta_source, eta_target = 1.0, 0.0
@@ -50,7 +50,7 @@ net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.
 # run simulation
 res = net.run(simulation_time=T, step_size=dt,
               outputs={"r": f"all/{node_op}/r"},
-              solver="scipy", clear=False, sampling_step_size=dts, max_step=2e-2)
+              solver="scipy", clear=False, sampling_step_size=dts, max_step=1e-2)
 
 # extract synaptic weights
 mapping, weights, etas = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
