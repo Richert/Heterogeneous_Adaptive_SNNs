@@ -1,8 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.integrate import solve_ivp
 
-def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, condition: str) -> tuple:
+def second_derivative(w, x, y, b):
+    return -b*(x+y)  + (1-b)*(x-y) - 2*w*(1-b)*(x-y)
+
+def get_xy(fr_source: float, fr_target: float, condition: str) -> tuple:
     if condition == "hebbian":
         x = fr_target * fr_source
         y = fr_target**2
@@ -13,16 +15,23 @@ def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, condition: str) -> tupl
         raise ValueError(f"Invalid condition: {condition}.")
     return x, y
 
-def delta_w(w: np.ndarray, r_source: np.ndarray, eta: float, J: float, b: float, a: float, condition: str) -> np.ndarray:
-    r_target = get_qif_fr(eta + J*np.dot(w, r_source) / N)
-    x, y = get_xy(r_source, r_target, condition=condition)
-    return a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
-
-def get_w_solution(w0: np.ndarray, r_source: np.ndarray, eta: float, J: float, b: float, a: float, T: float, **kwargs
-                   ) -> np.ndarray:
-    sols = solve_ivp(lambda t, w: delta_w(w, r_source, eta, J, b, a, condition), t_span=(0.0, T), y0=np.asarray(w0),
-                     **kwargs)
-    return sols.y[:, -1]
+def get_w_solution(w0: float, x: float, y: float, b: float) -> float:
+    if b < 1.0 and x != y:
+        a_term = 2*(b-1) * (x-y)
+        b_term = x*(2*b-1) + y
+        sqrt_term = np.sqrt((x-y)**2 + 4*x*y*b**2)
+        w1 = (b_term + sqrt_term) / a_term
+        w2 = (b_term - sqrt_term) / a_term
+        ws = []
+        for w in (w1, w2):
+            sd = second_derivative(w, x, y, b)
+            if 0 <= w <= 1 and (sd <= 0.0 or np.abs(w0 - w) < 1e-6):
+                ws.append(w)
+        return np.random.choice(ws)
+    elif x + y > 0.0:
+        return x / (x + y)
+    else:
+        return w0
 
 def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
     x = np.arange(1, N+1)
@@ -43,32 +52,32 @@ distribution = "gaussian"
 N = 200
 m = 100
 eta = 1.0
+J = 8.0
 deltas = np.linspace(0.1, 3.0, num=m)
 target_eta = 0.2
-a = 0.2
-J = 8.0
 bs = [0.0, 0.125]
 res = {"b": bs, "w": {}}
-
-# simulation parameters
-T = 1000.0
-solver_kwargs = {}
+n_reps = 10
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
     ws = []
     for Delta in deltas:
 
-        # define initial condition
+        # define source firing rate distribution
         inp = f(N, eta, Delta)
         fr_source = get_qif_fr(inp)
-        w0 = np.random.uniform(0.01, 0.99, size=(N,))
 
         # get weight solutions
-        ws.append(get_w_solution(w0, fr_source, target_eta, J, b, a, T, **solver_kwargs))
+        w = np.random.uniform(0.01, 0.99, size=(N,))
+        for _ in range(n_reps):
+            target_fr = get_qif_fr(target_eta + J * np.dot(w, fr_source) / N)
+            for i, source_fr in enumerate(fr_source):
+                x, y = get_xy(source_fr, target_fr, condition=condition)
+                w[i] = get_w_solution(w[i], x, y, b)
 
+        ws.append(w)
     res["w"][b] = np.asarray(ws)
-    print(f"Finished simulations for b = {b}")
 
 # plotting
 fig, axes = plt.subplots(ncols=len(bs), figsize=(3*len(bs), 3), layout="constrained")
@@ -93,7 +102,7 @@ for i, b in enumerate(bs):
     # ax.set_ylabel("Delta")
     # ax.set_title(f"Firing Rates (b = {b})")
 
-fig.suptitle(f"{'Hebbian' if condition == 'hebbian' else 'Anti-Hebbian'} Learning (J = {int(J)}, Rate Simulation)")
+fig.suptitle(f"{'Hebbian' if condition == 'hebbian' else 'Anti-Hebbian'} Learning (J = {int(J)}, Theory)")
 fig.canvas.draw()
-plt.savefig(f"../results/ss_weight_simulation_{condition}_{int(J)}.svg")
+plt.savefig(f"../results/ss_weight_solutions_{condition}_{int(J)}.svg")
 plt.show()
