@@ -60,7 +60,7 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
     return np.sort(etas)
 
 # parameter definition
-condition = "oja_hebbian"
+condition = "oja_antihebbian"
 distribution = "gaussian"
 N = 200
 m = 10

@@ -9,16 +9,16 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 # parameters
 M = 50
 edge_vars = {
-    "a": 0.2, "b": 0.5
+    "a": 0.2, "b": 0.125
 }
-Delta_source, Delta_target = 1.0, 1.0
-eta_source, eta_target = 1.0, 1.0
+Delta_source, Delta_target = 0.25, 1.0
+eta_source, eta_target = 1.0, 0.0
 etas_source = gaussian(M, eta_source, Delta_source)
 etas_target = gaussian(M, eta_target, Delta_target)
 etas = np.asarray(etas_source.tolist() + etas_target.tolist())
-node_vars = {"tau": 1.0, "J": 5.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 1.0, "Delta": 0.01}
-T = 300.0
-dt = 1e-4
+node_vars = {"tau": 1.0, "J": 8.0 / M, "eta": etas, "tau_u": 1.0, "tau_s": 1.0, "Delta": 0.01}
+T = 1000.0
+dt = 1e-3
 dts = 1e-1
 
 # node and edge template initiation
@@ -50,7 +50,7 @@ net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.
 # run simulation
 res = net.run(simulation_time=T, step_size=dt,
               outputs={"r": f"all/{node_op}/r"},
-              solver="scipy", clear=False, sampling_step_size=dts, max_step=1e-2)
+              solver="scipy", clear=False, sampling_step_size=dts)
 
 # extract synaptic weights
 mapping, weights, etas = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
