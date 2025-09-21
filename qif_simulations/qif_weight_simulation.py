@@ -18,14 +18,14 @@ def get_xy(fr_source: float, fr_target: float, trace_source: float, trace_target
         raise ValueError(f"Invalid condition: {condition}.")
     return x, y
 
-def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, tau_s: float, J: float, a: float,
+def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, tau_s: float, tau_u: float, J: float, a: float,
             b: float, N: int, condition: str):
     v, s, u, w = y[:N], y[N:2*N], y[2*N:3*N], y[3*N:]
-    x, y = get_xy(s[:], s[-1], s[:], s[-1], condition=condition)
+    x, y = get_xy(s[:], s[-1], u[:], u[-1], condition=condition)
     dv = v**2 + eta
     dv[-1] += J*np.dot(w[:-1], s[:-1]) / (N-1)
-    ds = u / tau_s
-    du = (spikes-2*u-s) / tau_s
+    ds = (spikes-s) / tau_s
+    du = (spikes-u) / tau_u
     dw = a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
     return np.concatenate([dv, ds, du, dw], axis=0)
 
@@ -35,7 +35,7 @@ def spiking(y: np.ndarray, spikes: np.ndarray, dt: float, v_cutoff: float, N: in
     y[idx] = -y[idx]
     spikes[idx] = 1.0/dt
 
-def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_s: float, J: float,
+def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_s: float, tau_u: float, J: float,
               a: float, b: float, v_cutoff: float, N: int, condition: str):
 
     y = np.zeros((4*N,))
@@ -45,7 +45,7 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_s: float, J: float,
 
     while t < T:
         spiking(y, spikes, dt, v_cutoff, N)
-        dy = qif_rhs(y, spikes, eta, tau_s, J, a, b, N, condition)
+        dy = qif_rhs(y, spikes, eta, tau_s, tau_u, J, a, b, N, condition)
         y = y + dt * dy
         t += dt
 
@@ -60,22 +60,23 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
     return np.sort(etas)
 
 # parameter definition
-condition = "oja_antihebbian"
+condition = "stdp_antihebbian"
 distribution = "gaussian"
-N = 200
+N = 10
 m = 10
 eta = 1.0
 deltas = np.linspace(0.1, 3.0, num=m)
-target_eta = 0.2
+target_eta = 0.5
 a = 0.2
 bs = [0.0, 0.125]
 tau_s = 1.0
-J = 2.0
-v_cutoff = 200.0
+tau_u = 10.0
+J = 10.0
+v_cutoff = 100.0
 res = {"b": bs, "w": {}}
 
 # simulation parameters
-T = 1000.0
+T = 2000.0
 dt = 1e-3
 solver_kwargs = {}
 
@@ -88,7 +89,7 @@ for b in bs:
         etas = np.asarray(f(N, eta, Delta).tolist() + [target_eta])
 
         # solve equations
-        ws.append(solve_ivp(T, dt, etas, tau_s, J, a, b, v_cutoff, N+1, condition))
+        ws.append(solve_ivp(T, dt, etas, tau_s, tau_u, J, a, b, v_cutoff, N+1, condition))
         print(f"Finished simulations for b = {b} and Delta = {np.round(Delta, decimals=1)}")
 
     # save results
@@ -117,7 +118,7 @@ for i, b in enumerate(bs):
     # ax.set_ylabel("Delta")
     # ax.set_title(f"Firing Rates (b = {b})")
 
-fig.suptitle(f"{'Hebbian' if condition == 'hebbian' else 'Anti-Hebbian'} Learning (J = {int(J)}, QIF Simulation)")
+fig.suptitle(f"{'Anti-Hebbian' if 'antihebbian' in condition else 'Hebbian'} Learning (J = {int(J)}, QIF Simulation)")
 fig.canvas.draw()
 plt.savefig(f"../results/qif_weight_simulation_{condition}_{int(J)}.svg")
 plt.show()

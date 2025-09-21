@@ -2,10 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
 from scipy.ndimage import gaussian_filter1d
-from gtda.homology import FlagserPersistence
-from gtda.graphs import GraphGeodesicDistance
-from gtda.plotting import plot_diagram
-from plotly.io import write_images
 from copy import deepcopy
 
 def normalize(x):
@@ -19,9 +15,10 @@ def correlate(x, y):
     return c[0, 1]
 
 # parameters
-M = 40
+M = 50
+p = 0.5
 edge_vars = {
-    "a": 0.1, #"b": 2.0
+    "a": 1.0, "b": 0.1
 }
 Delta = 3.2
 eta = -4.0
@@ -29,7 +26,7 @@ eta = -4.0
 indices = np.arange(1, M+1)
 etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
 deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*indices-M-1.5)/(M+1)))
-node_vars = {"tau": 1.0, "J": 20.0 / (0.5*M), "eta": etas, "tau_u": 10.0, "tau_s": 0.2, "Delta": deltas,
+node_vars = {"tau": 1.0, "J": 30.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 0.5, "Delta": deltas,
              "tau_a": 20.0, "kappa": 0.1, "A0": 0.5}
 T = 500.0
 dt = 5e-4
@@ -53,7 +50,11 @@ edges = []
 for i in range(M):
     for j in range(M):
         edge_tmp = deepcopy(edge_temp)
-        edge_tmp.update_var(edge_op, "w", float(np.random.uniform(0.0, 1.0)))
+        if np.random.uniform() <= p:
+            w = float(np.random.uniform(0.0, 1.0))
+        else:
+            w = 0.0
+        edge_tmp.update_var(edge_op, "w", w)
         edges.append((f"p{j}/{node_op}/s", f"p{i}/{node_op}/s_in", edge_tmp,
                       {"weight": 1.0,
                        f"{edge}/{edge_op}/r_s": f"p{j}/{node_op}/s",
@@ -117,11 +118,3 @@ ax.invert_xaxis()
 ax.set_title(f"C(etas, sum(W, 1)) = {corr}")
 plt.tight_layout()
 plt.show()
-
-# perform tda
-# W[W > 0.3] = 1.0
-# W[W < 0.3] = 0.0
-# X_ggd = GraphGeodesicDistance(directed=True, unweighted=False).fit_transform([W])
-# X_fp = FlagserPersistence(directed=True).fit_transform(X_ggd)
-# fig1 = plot_diagram(X_fp[1])
-# write_images(fig1, file="/home/richard-gast/Documents/test.pdf")
