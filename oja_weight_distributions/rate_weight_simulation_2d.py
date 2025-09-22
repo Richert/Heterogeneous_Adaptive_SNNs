@@ -39,7 +39,7 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-condition = "antihebbian"
+condition = "hebbian"
 distribution = "gaussian"
 N = 200
 m = 100
@@ -48,7 +48,7 @@ Delta_target = 1.0
 eta_source, eta_target = 1.0, 0.0
 a = 0.2
 J = 8.0
-bs = [0.0, 0.125]
+bs = [0.0, 0.1]
 res = {"b": [], "w": [], "delta": [], "eta_source": [], "eta_target": []}
 
 # simulation parameters
@@ -107,5 +107,7 @@ for i, b in enumerate(bs):
 
 fig.suptitle(f"{'Hebbian' if condition == 'hebbian' else 'Anti-Hebbian'} Learning (J = {int(J)}, Rate Simulation)")
 fig.canvas.draw()
-plt.savefig(f"../results/rate_weight_simulation_2d_{condition}_{int(J)}.svg")
+conn = int(J)
+conn = f"{conn}_inh" if conn < 0 else f"{conn}"
+plt.savefig(f"../results/rate_weight_simulation_2d_{condition}_{conn}.svg")
 plt.show()

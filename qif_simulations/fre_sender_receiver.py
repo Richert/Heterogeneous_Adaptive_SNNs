@@ -10,20 +10,20 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 M = 50
 p = 0.5
 edge_vars = {
-    "a": 10.0, "b": 0.01
+    "a": 0.2, "b": 0.01
 }
-Delta_source, Delta_target = 1.0, 1.0
-eta_source, eta_target = 0.5, 0.0
+Delta_source, Delta_target = 2.0, 1.0
+eta_source, eta_target = 0.5, 1.0
 etas_source = gaussian(M, eta_source, Delta_source)
 etas_target = gaussian(M, eta_target, Delta_target)
 etas = np.asarray(etas_source.tolist() + etas_target.tolist())
-node_vars = {"tau": 1.0, "J": 10.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 0.5, "Delta": 0.05}
+node_vars = {"tau": 1.0, "J": -4.0 / M, "eta": etas, "tau_u": 10.0, "tau_s": 0.5, "Delta": 0.05}
 T = 500.0
 dt = 5e-4
 dts = 1e-1
 
 # node and edge template initiation
-edge, edge_op = "stdp_edge", "stdp_op"
+edge, edge_op = "oja_ah_edge", "oja_ah_op"
 node, node_op = "qif_stdp", "qif_stdp_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
