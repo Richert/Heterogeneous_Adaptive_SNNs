@@ -9,9 +9,9 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 # parameters
 M = 50
 p = 0.5
-exc_edge_vars = {"a": 10.0, "b": 0.01}
-inh_edge_vars = {"a": 10.0, "b": 0.0}
-Delta_e, Delta_i = 0.5, 0.8
+exc_edge_vars = {"a": 1.0, "b": 0.0}
+inh_edge_vars = {"a": 1.0, "b": 0.01}
+Delta_e, Delta_i = 0.5, 2.0
 eta_e, eta_i = 1.0, 0.0
 etas_e = gaussian(M, eta_e, Delta_e)
 etas_i = gaussian(M, eta_i, Delta_i)

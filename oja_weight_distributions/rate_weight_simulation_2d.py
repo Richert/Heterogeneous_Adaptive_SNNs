@@ -39,20 +39,20 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-condition = "hebbian"
+condition = "antihebbian"
 distribution = "gaussian"
-N = 200
+N = 1000
 m = 100
-Deltas_source = [0.25, 0.5, 1.0]
+Deltas_source = [0.1, 0.3, 0.9]
 Delta_target = 1.0
-eta_source, eta_target = 1.0, 0.0
-a = 0.2
-J = 8.0
-bs = [0.0, 0.1]
+eta_source, eta_target = 1.0, 2.0
+a = 0.1
+J = -5.0
+bs = [0.0, 0.01, 0.1, 1.0]
 res = {"b": [], "w": [], "delta": [], "eta_source": [], "eta_target": []}
 
 # simulation parameters
-T = 1000.0
+T = 2000.0
 solver_kwargs = {}
 
 f = lorentzian if distribution == "lorentzian" else gaussian
@@ -77,10 +77,11 @@ for b in bs:
         print(f"Finished simulations for b = {b}, Delta = {Delta}")
 
 # plotting
-fig, axes = plt.subplots(ncols=len(Deltas_source), nrows=len(bs), figsize=(12, 6), layout="constrained")
+fig, axes = plt.subplots(nrows=len(Deltas_source), ncols=len(bs), figsize=(3*len(bs), 3*len(Deltas_source)),
+                         layout="constrained")
 ticks = np.arange(0, N, int(N/5))
-for i, b in enumerate(bs):
-    for j, Delta in enumerate(Deltas_source):
+for j, b in enumerate(bs):
+    for i, Delta in enumerate(Deltas_source):
 
         # weight distribution
         ax = axes[i, j]
@@ -94,7 +95,7 @@ for i, b in enumerate(bs):
         ax.set_yticks(ticks, labels=np.round(res["eta_target"][idx][ticks], decimals=1))
         ax.set_xticks(ticks, labels=np.round(res["eta_source"][idx][ticks], decimals=1))
         ax.set_title(f"W (b = {b}, Delta = {Delta})")
-        if j == len(Deltas_source) - 1:
+        if j == len(bs) - 1:
             plt.colorbar(im, ax=ax, shrink=0.8)
 
         # # firing rate distribution

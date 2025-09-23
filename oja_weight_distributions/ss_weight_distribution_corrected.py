@@ -47,17 +47,17 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-condition = "antihebbian"
+condition = "hebbian"
 distribution = "gaussian"
-N = 200
+N = 10000
 m = 100
 eta = 1.0
-J = 8.0
+J = 5.0
 deltas = np.linspace(0.1, 3.0, num=m)
 target_eta = 0.2
-bs = [0.0, 0.125]
+bs = [0.0, 0.01, 0.1, 1.0]
 res = {"b": bs, "w": {}}
-n_reps = 10
+n_reps = 5
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
