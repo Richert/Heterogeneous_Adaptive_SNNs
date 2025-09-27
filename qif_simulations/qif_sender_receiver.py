@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 
 def get_xy(fr_source: float, fr_target: float, trace_source: float, trace_target: float, condition: str) -> tuple:
     if condition == "oja_hebbian":
-        x = fr_source*trace_target
-        y = trace_target*fr_target
+        x = fr_target*trace_source
+        y = fr_target*trace_target
     elif condition == "oja_antihebbian":
-        x = trace_source*fr_source
+        x = fr_source*trace_source
         y = fr_source*trace_target
     elif condition == "stdp_hebbian":
         x = fr_target * trace_source
@@ -51,9 +51,9 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: np.ndarray, tau_s: np
 
 # parameter definition
 N = 2
-T = 100.0
+T = 10.0
 dt = 1e-3
-etas = np.asarray([0.5, 0.8])
+etas = np.asarray([0.8, 1.0])
 tau_u = np.asarray([20.0, 20.0])
 tau_s = np.asarray([5.0, 5.0])
 J = np.zeros((N, N))
@@ -64,31 +64,39 @@ v_cutoff = 100.0
 ys, time = solve_ivp(T, dt, etas, tau_u, tau_s, J, v_cutoff, N)
 
 # calculate quantities of interest
-condition = "stdp_antihebbian"
 s_source, s_target, trace_source, trace_target = ys[:, N], ys[:, N+1], ys[:, 2*N], ys[:, 2*N+1]
-x, y = get_xy(s_source, s_target, trace_source, trace_target, condition=condition)
+x_h_oja, y_h_oja = get_xy(s_source, s_target, trace_source, trace_target, condition="oja_hebbian")
+x_ah_oja, y_ah_oja = get_xy(s_source, s_target, trace_source, trace_target, condition="oja_antihebbian")
+# x_h_stdp, y_h_stdp = get_xy(s_source, s_target, trace_source, trace_target, condition="stdp_hebbian")
+# x_ah_stdp, y_ah_stdp = get_xy(s_source, s_target, trace_source, trace_target, condition="stdp_antihebbian")
 
 # plotting
-fig, axes = plt.subplots(nrows=3, figsize=(12, 6))
+fig, axes = plt.subplots(nrows=2, figsize=(6, 3))
 ax = axes[0]
 ax.plot(time, ys[:, 0], label="sender")
 ax.plot(time, ys[:, 1], label="receiver")
 ax.legend()
-ax.set_xlabel("time")
 ax.set_ylabel("v")
 ax.set_title("QIF dynamics")
 ax = axes[1]
-ax.plot(time, ys[:, N], label="sender")
-ax.plot(time, ys[:, N+1], label="receiver")
+ax1 = ax.twinx()
+ax.plot(time, x_h_oja, label="Oja, Hebbian", color="black")
+ax1.plot(time, y_h_oja, label="Oja, hebbian", color="darkorange")
+ax.plot(time, x_ah_oja, label="Oja, anti-Hebbian", color="black", linestyle="dashed")
+ax1.plot(time, y_ah_oja, label="y (anti-hebbian)", color="darkorange", linestyle="dashed")
 ax.legend()
+# ax1.legend()
+ax.set_ylabel("LTP")
+ax1.set_ylabel("LTD")
 ax.set_xlabel("time")
-ax.set_ylabel("s")
-ax = axes[2]
-ax.plot(time, x, label="LTP")
-ax.plot(time, y, label="LTD")
-ax.legend()
-ax.set_xlabel("time")
-ax.set_ylabel("trace")
-ax.set_title("plasticity drivers")
+ax.set_title("LTP/LTD signals for Oja's rule")
+# ax = axes[2]
+# ax.plot(time, x_h_stdp, label="x (hebbian)")
+# ax.plot(time, y_h_stdp, label="y (hebbian)")
+# ax.plot(time, x_ah_stdp, label="x (anti-hebbian)")
+# ax.plot(time, y_ah_stdp, label="y (anti-hebbian)")
+# ax.legend()
+# ax.set_ylabel("LTP/LTD")
+# ax.set_title("Plasticity drivers for STDP")
 plt.tight_layout()
 plt.show()

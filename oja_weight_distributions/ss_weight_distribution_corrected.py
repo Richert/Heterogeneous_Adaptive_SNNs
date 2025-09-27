@@ -1,5 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import entropy
+
+def get_prob(x):
+    unique, count = np.unique(x, return_counts=True, axis=0)
+    return count / len(x)
 
 def second_derivative(w, x, y, b):
     return -b*(x+y)  + (1-b)*(x-y) - 2*w*(1-b)*(x-y)
@@ -53,15 +58,15 @@ N = 10000
 m = 100
 eta = 1.0
 J = 5.0
-deltas = np.linspace(0.1, 3.0, num=m)
+deltas = np.linspace(0.1, 1.0, num=m)
 target_eta = 0.2
 bs = [0.0, 0.01, 0.1, 1.0]
-res = {"b": bs, "w": {}}
+res = {"b": bs, "w": {}, "MI": {}, "H": {}, "V": {}}
 n_reps = 5
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
-    ws = []
+    ws, mis, hs, vs = [], [], [], []
     for Delta in deltas:
 
         # define source firing rate distribution
@@ -76,31 +81,61 @@ for b in bs:
                 x, y = get_xy(source_fr, target_fr, condition=condition)
                 w[i] = get_w_solution(w[i], x, y, b)
 
+        # calculate entropy of weight distribution
+        h_w = entropy(get_prob(w))
+
+        # calculate variance of weight distribution
+        v = np.var(w)
+
+        # calculate correlation between source etas and weights
+        mi = np.corrcoef(inp, w)[0, 1]
+
+        # save results
         ws.append(w)
+        mis.append(mi)
+        hs.append(h_w)
+        vs.append(v)
+
     res["w"][b] = np.asarray(ws)
+    res["H"][b] = np.asarray(hs)
+    res["MI"][b] = np.asarray(mis)
+    res["V"][b] = np.asarray(vs)
 
 # plotting
-fig, axes = plt.subplots(ncols=len(bs), figsize=(3*len(bs), 3), layout="constrained")
+fig, axes = plt.subplots(nrows=4, ncols=len(bs), figsize=(3*len(bs), 6), layout="constrained")
 ticks = np.arange(0, m, int(m/5))
 for i, b in enumerate(bs):
 
     # weight distribution
-    ax = axes[i]
-    im = ax.imshow(np.asarray(res["w"][b]), aspect="auto", interpolation="none", cmap="viridis", vmax=1.0, vmin=0.0)
-    ax.set_xlabel("neuron")
-    ax.set_ylabel("Delta")
-    ax.set_yticks(ticks, labels=np.round(deltas[ticks], decimals=1))
+    ax = axes[0, i]
+    im = ax.imshow(np.asarray(res["w"][b]).T, aspect="auto", interpolation="none", cmap="viridis", vmax=1.0, vmin=0.0)
+    ax.set_ylabel("neuron")
+    ax.set_xlabel("Delta")
+    ax.set_xticks(ticks, labels=np.round(deltas[ticks], decimals=1))
     if i == len(bs) - 1:
         plt.colorbar(im, ax=ax, shrink=0.8)
-    ax.set_title(f"W (b = {b})")
+    ax.set_title(f"w (b = {b})")
 
-    # # firing rate distribution
-    # ax = axes[1, i]
-    # im = ax.imshow(np.asarray(res["data"][b]["fr"]), aspect="auto", interpolation="none", cmap="cividis", vmax=fr_max)
-    # plt.colorbar(im, ax=ax)
-    # ax.set_xlabel("eta")
-    # ax.set_ylabel("Delta")
-    # ax.set_title(f"Firing Rates (b = {b})")
+    # mutual information
+    ax = axes[1, i]
+    ax.plot(deltas, res["MI"][b])
+    ax.set_xlabel("Delta")
+    ax.set_ylabel("C")
+    ax.set_title("correlation(w, eta)")
+
+    # entropy
+    ax = axes[2, i]
+    ax.plot(deltas, res["H"][b])
+    ax.set_xlabel("Delta")
+    ax.set_ylabel("H")
+    ax.set_title("entropy(w)")
+
+    # variance
+    ax = axes[3, i]
+    ax.plot(deltas, res["V"][b])
+    ax.set_xlabel("Delta")
+    ax.set_ylabel("var")
+    ax.set_title("variance(w)")
 
 fig.suptitle(f"{'Hebbian' if condition == 'hebbian' else 'Anti-Hebbian'} Learning (J = {int(J)}, Theory)")
 fig.canvas.draw()

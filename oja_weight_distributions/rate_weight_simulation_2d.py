@@ -43,13 +43,13 @@ condition = "antihebbian"
 distribution = "gaussian"
 N = 1000
 m = 100
-Deltas_source = [0.1, 0.3, 0.9]
+Deltas_source = np.linspace(0.1, 2.0, num=m)
 Delta_target = 1.0
 eta_source, eta_target = 1.0, 2.0
 a = 0.1
-J = -5.0
+J = 5.0
 bs = [0.0, 0.01, 0.1, 1.0]
-res = {"b": [], "w": [], "delta": [], "eta_source": [], "eta_target": []}
+res = {"b": [], "w": [], "H": [], "MI": [], "V": [], "delta": [], "eta_source": [], "eta_target": []}
 
 # simulation parameters
 T = 2000.0

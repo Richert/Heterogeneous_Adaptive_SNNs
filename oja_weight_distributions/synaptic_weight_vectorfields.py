@@ -10,10 +10,9 @@ def get_w_vectorfield(x: np.ndarray, y:np.ndarray, w: float, b: float) -> np.nda
     return deltas
 
 # parameter definition
-condition = "hebbian"
 N = 1000
 m = 1000
-bs = np.asarray([0.0, 0.125, 0.25, 0.5, 1.0])
+bs = np.asarray([0.0, 0.2, 1.0])
 ws = np.linspace(0.0, 1.0, num=N)
 xs = np.linspace(0.0, 1.0, num=m)
 res = {"b": bs, "delta_w": {}, "w": ws, "x": xs}
@@ -31,7 +30,7 @@ for b in bs:
     res["delta_w"][b] = data
 
 # plotting
-fig, axes = plt.subplots(ncols=len(bs), figsize=(12, 3))
+fig, axes = plt.subplots(ncols=len(bs), figsize=(len(bs)*2, 3))
 ticks = np.arange(0, 2*N+1, step=int(N/2), dtype=np.int16)
 ticks_half = ticks[:2]
 xlabels = np.round(xs[ticks_half], decimals=1)
