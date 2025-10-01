@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.stats import entropy
 
-def get_prob(x):
-    unique, count = np.unique(x, return_counts=True, axis=0)
-    return count / len(x)
+def get_prob(x, bins: int = 100):
+    counts, _ = np.histogram(x, bins=bins)
+    return counts / np.sum(counts)
 
 def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, condition: str) -> tuple:
     if condition == "hebbian":
@@ -45,12 +45,12 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 # parameter definition
 condition = "antihebbian"
 distribution = "gaussian"
-N = 500
-m = 10
-Deltas = np.linspace(0.1, 1.0, num=m)
-eta = 0.5
+N = 1000
+m = 5
+Deltas = np.linspace(0.1, 1.5, num=m)
+eta = 2.0
 a = 0.1
-J = 5.0
+J = -5.0
 bs = [0.0, 0.01, 0.1]
 res = {"b": [], "w": [], "delta": [], "eta": [], "H": {}, "C": {}, "V": {}}
 
@@ -73,8 +73,9 @@ for b in bs:
 
         hs, cs, vs = [], [], []
         for i in range(N):
+            v = np.var(w[i, :])
             hs.append(entropy(get_prob(w[i, :])))
-            vs.append(np.var(w[i, :]))
+            vs.append(v if v < 1.0 else 0.0)
             cs.append(np.corrcoef(etas, w[i, :])[0, 1])
         h_col.append(hs)
         c_col.append(cs)
@@ -92,10 +93,11 @@ for b in bs:
     res["C"][b] = np.asarray(c_col)
 
 # plotting
-fig, axes = plt.subplots(ncols=len(Deltas), nrows=len(bs), figsize=(12, 6), layout="constrained")
+skip_deltas = 3
+fig, axes = plt.subplots(ncols=int(len(Deltas)/skip_deltas), nrows=len(bs), figsize=(12, 6), layout="constrained")
 ticks = np.arange(0, N, int(N/5))
 for i, b in enumerate(bs):
-    for j, Delta in enumerate(Deltas):
+    for j, Delta in enumerate(Deltas[::skip_deltas]):
 
         # weight distribution
         ax = axes[i, j]

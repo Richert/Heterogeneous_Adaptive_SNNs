@@ -2,9 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import entropy
 
-def get_prob(x):
-    unique, count = np.unique(x, return_counts=True, axis=0)
-    return count / len(x)
+def get_prob(x, bins: int = 100):
+    counts, _ = np.histogram(x, bins=bins)
+    return counts / np.sum(counts)
 
 def second_derivative(w, x, y, b):
     return -b*(x+y)  + (1-b)*(x-y) - 2*w*(1-b)*(x-y)
@@ -52,21 +52,21 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-condition = "hebbian"
+condition = "antihebbian"
 distribution = "gaussian"
 N = 10000
 m = 100
 eta = 1.0
-J = 5.0
-deltas = np.linspace(0.1, 1.0, num=m)
-target_eta = 0.2
-bs = [0.0, 0.01, 0.1, 1.0]
-res = {"b": bs, "w": {}, "MI": {}, "H": {}, "V": {}}
+J = -5.0
+deltas = np.linspace(0.1, 1.5, num=m)
+target_eta = 2.0
+bs = [0.0, 0.01, 0.1]
+res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}}
 n_reps = 5
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
-    ws, mis, hs, vs = [], [], [], []
+    ws, cs, hs, vs = [], [], [], []
     for Delta in deltas:
 
         # define source firing rate distribution
@@ -88,21 +88,21 @@ for b in bs:
         v = np.var(w)
 
         # calculate correlation between source etas and weights
-        mi = np.corrcoef(inp, w)[0, 1]
+        c = np.corrcoef(inp, w)[0, 1]
 
         # save results
         ws.append(w)
-        mis.append(mi)
+        cs.append(c)
         hs.append(h_w)
         vs.append(v)
 
     res["w"][b] = np.asarray(ws)
     res["H"][b] = np.asarray(hs)
-    res["MI"][b] = np.asarray(mis)
+    res["C"][b] = np.asarray(cs)
     res["V"][b] = np.asarray(vs)
 
 # plotting
-fig, axes = plt.subplots(nrows=4, ncols=len(bs), figsize=(3*len(bs), 6), layout="constrained")
+fig, axes = plt.subplots(nrows=3, ncols=len(bs), figsize=(3*len(bs), 5), layout="constrained")
 ticks = np.arange(0, m, int(m/5))
 for i, b in enumerate(bs):
 
@@ -118,7 +118,7 @@ for i, b in enumerate(bs):
 
     # mutual information
     ax = axes[1, i]
-    ax.plot(deltas, res["MI"][b])
+    ax.plot(deltas, res["C"][b])
     ax.set_xlabel("Delta")
     ax.set_ylabel("C")
     ax.set_title("correlation(w, eta)")
@@ -130,12 +130,12 @@ for i, b in enumerate(bs):
     ax.set_ylabel("H")
     ax.set_title("entropy(w)")
 
-    # variance
-    ax = axes[3, i]
-    ax.plot(deltas, res["V"][b])
-    ax.set_xlabel("Delta")
-    ax.set_ylabel("var")
-    ax.set_title("variance(w)")
+    # # variance
+    # ax = axes[3, i]
+    # ax.plot(deltas, res["V"][b])
+    # ax.set_xlabel("Delta")
+    # ax.set_ylabel("var")
+    # ax.set_title("variance(w)")
 
 fig.suptitle(f"{'Hebbian' if condition == 'hebbian' else 'Anti-Hebbian'} Learning (J = {int(J)}, Theory)")
 fig.canvas.draw()
