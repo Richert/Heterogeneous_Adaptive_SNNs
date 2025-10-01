@@ -9,9 +9,9 @@ def get_prob(x, bins: int = 100):
 def second_derivative(w, x, y, b):
     return -b*(x+y)  + (1-b)*(x-y) - 2*w*(1-b)*(x-y)
 
-def get_xy(fr_source: float, fr_target: float, condition: str) -> tuple:
+def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, condition: str) -> tuple:
     if condition == "hebbian":
-        x = fr_target * fr_source
+        x = fr_target*fr_source
         y = fr_target**2
     elif condition == "antihebbian":
         x = fr_source**2
@@ -20,23 +20,28 @@ def get_xy(fr_source: float, fr_target: float, condition: str) -> tuple:
         raise ValueError(f"Invalid condition: {condition}.")
     return x, y
 
-def get_w_solution(w0: float, x: float, y: float, b: float) -> float:
-    if b < 1.0 and x != y:
+def get_w_solution(w0: np.ndarray, x: np.ndarray, y: np.ndarray, b: float) -> np.ndarray:
+    w = np.zeros_like(w0) + w0
+    idx = []
+    if b < 1.0:
+        idx = np.argwhere(x != y).squeeze()
         a_term = 2*(b-1) * (x-y)
         b_term = x*(2*b-1) + y
         sqrt_term = np.sqrt((x-y)**2 + 4*x*y*b**2)
-        w1 = (b_term + sqrt_term) / a_term
-        w2 = (b_term - sqrt_term) / a_term
-        ws = []
-        for w in (w1, w2):
-            sd = second_derivative(w, x, y, b)
-            if 0 <= w <= 1 and (sd <= 0.0 or np.abs(w0 - w) < 1e-6):
-                ws.append(w)
-        return np.random.choice(ws)
-    elif x + y > 0.0:
-        return x / (x + y)
-    else:
-        return w0
+        for i in idx:
+            w1 = (b_term[i] + sqrt_term[i]) / a_term[i]
+            w2 = (b_term[i] - sqrt_term[i]) / a_term[i]
+            ws = []
+            for w_tmp in (w1, w2):
+                sd = second_derivative(w_tmp, x[i], y[i], b)
+                if 0 <= w_tmp <= 1 and (sd <= 0.0 or np.abs(w0[i] - w_tmp) < 1e-6):
+                    ws.append(w_tmp)
+            w[i] = np.random.choice(ws)
+    idx2 = np.argwhere(x + y > 0.0).squeeze()
+    for i in idx2:
+        if i not in idx:
+            w[i] = x[i] / (x[i] + y[i])
+    return w
 
 def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
     x = np.arange(1, N+1)
@@ -52,17 +57,17 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-condition = "antihebbian"
+condition = "hebbian"
 distribution = "gaussian"
-N = 10000
+N = 1000
 m = 100
 eta = 1.0
-J = -5.0
+J = 5.0
 deltas = np.linspace(0.1, 1.5, num=m)
-target_eta = 2.0
-bs = [0.0, 0.01, 0.1]
+target_eta = 0.0
+bs = [0.0, 0.05, 0.2]
 res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}}
-n_reps = 5
+n_reps = 4
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
@@ -77,9 +82,9 @@ for b in bs:
         w = np.random.uniform(0.01, 0.99, size=(N,))
         for _ in range(n_reps):
             target_fr = get_qif_fr(target_eta + J * np.dot(w, fr_source) / N)
-            for i, source_fr in enumerate(fr_source):
-                x, y = get_xy(source_fr, target_fr, condition=condition)
-                w[i] = get_w_solution(w[i], x, y, b)
+            x, y = get_xy(fr_source, np.zeros_like(fr_source) + target_fr, condition=condition)
+            w = get_w_solution(w, x, y, b)
+        print(f"Finished simulations for b = {b}, Delta = {Delta}")
 
         # calculate entropy of weight distribution
         h_w = entropy(get_prob(w))
