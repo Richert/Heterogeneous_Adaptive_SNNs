@@ -73,7 +73,7 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 
 # parameter definition
 rep = int(sys.argv[-1])
-condition = "oja_hebbian"
+condition = "oja_antihebbian"
 distribution = "gaussian"
 N = 1000
 m = 15
