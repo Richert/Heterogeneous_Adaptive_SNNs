@@ -19,7 +19,10 @@ for IDX in $(seq 0 $range_end); do
   # python calls
   (
   echo "Starting job #$((IDX+1)) of ${n} jobs."
-  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py $IDX
+  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "hebbian" 5 $IDX
+  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "antihebbian" 5 $IDX
+  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "hebbian" -5 $IDX
+  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "antihebbian" -5 $IDX
   sleep 1
   ) &
 

@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.stats import entropy
+import pickle
 
 def get_prob(x, bins: int = 100):
     counts, _ = np.histogram(x, bins=bins)
@@ -43,7 +44,8 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-condition = "hebbian"
+save_results = True
+condition = "antihebbian"
 distribution = "gaussian"
 N = 10000
 m = 100
@@ -53,7 +55,7 @@ target_eta = 2.0
 a = 0.1
 J = -5.0
 bs = [0.0, 0.05, 0.2]
-res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}}
+res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}, "deltas": deltas}
 
 # simulation parameters
 T = 2000.0
@@ -64,9 +66,9 @@ for b in bs:
     ws, cs, hs, vs = [], [], [], []
     for Delta in deltas:
 
-        c = 0.0
+        diff = 1.0
         attempt = 0
-        while c < 0.01 and attempt < 10:
+        while diff > 0.1 and attempt < 20:
 
             # define initial condition
             inp = f(N, eta, Delta)
@@ -87,8 +89,14 @@ for b in bs:
             # calculate correlation between source etas and weights
             c = np.corrcoef(inp, w)[1, 0]
 
+            try:
+                diff = np.abs(c - cs[-1]) + np.abs(h_w - hs[-1])
+            except IndexError:
+                diff = 0.0
+            attempt += 1
+
         # save results
-        print(f"Finished simulations for b = {b} and Delta = {np.round(Delta, decimals=1)}")
+        print(f"Finished simulations for b = {b} and Delta = {np.round(Delta, decimals=2)} after {attempt} attempts")
         ws.append(w)
         cs.append(c)
         hs.append(h_w)
@@ -99,6 +107,14 @@ for b in bs:
     res["H"][b] = np.asarray(hs)
     res["C"][b] = np.asarray(cs)
     res["V"][b] = np.asarray(vs)
+
+# save results
+conn = int(J)
+conn = f"{conn}_inh" if conn < 0 else f"{conn}"
+if save_results:
+    pickle.dump(res,
+                open(f"../results/rate_weight_simulations_{condition}_{conn}.pkl", "wb")
+                )
 
 # plotting
 fig, axes = plt.subplots(nrows=3, ncols=len(bs), figsize=(3 * len(bs), 5), layout="constrained")
@@ -138,5 +154,5 @@ for i, b in enumerate(bs):
 
 fig.suptitle(f"{'Anti-Hebbian' if 'antihebbian' in condition else 'Hebbian'} Learning (J = {int(J)}, Rate Simulation)")
 fig.canvas.draw()
-plt.savefig(f"../results/ss_weight_simulation_{condition}_{int(J)}.svg")
+plt.savefig(f"../results/ss_weight_simulation_{condition}_{conn}.svg")
 plt.show()

@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.stats import entropy
+import pickle
 
 def get_prob(x, bins: int = 100):
     counts, _ = np.histogram(x, bins=bins)
@@ -43,6 +44,7 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
+save_results = True
 condition = "antihebbian"
 distribution = "gaussian"
 N = 1000
@@ -91,6 +93,14 @@ for b in bs:
     res["H"][b] = np.asarray(h_col)
     res["V"][b] = np.asarray(v_col)
     res["C"][b] = np.asarray(c_col)
+
+# save results
+conn = int(J)
+conn = f"{conn}_inh" if conn < 0 else f"{conn}"
+if save_results:
+    pickle.dump(res,
+                open(f"../results/rate_weight_simulations_recurrent_{condition}_{conn}.pkl", "wb")
+                )
 
 # plotting
 skip_deltas = 3
@@ -160,7 +170,5 @@ for i, b in enumerate(bs):
         plt.colorbar(im, ax=ax, shrink=0.8)
     ax.set_title(f"corr(w, eta) for b = {b}")
 
-conn = int(J)
-conn = f"{conn}_inh" if conn < 0 else f"{conn}"
 plt.savefig(f"../results/rate_weight_simulations_recurrent_{condition}_{conn}.svg")
 plt.show()
