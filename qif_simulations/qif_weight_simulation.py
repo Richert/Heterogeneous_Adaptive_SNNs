@@ -73,18 +73,18 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 
 # parameter definition
 rep = int(sys.argv[-1])
-condition = "oja_antihebbian"
+condition = "oja_hebbian"
 distribution = "gaussian"
 N = 1000
 m = 15
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)
-target_eta = 0.0
+target_eta = 2.0
 a = 0.1
 bs = [0.0, 0.05, 0.2]
 tau_s = 0.5
 tau_u = 10.0
-J = 5.0
+J = -5.0
 v_cutoff = 100.0
 res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}}
 
