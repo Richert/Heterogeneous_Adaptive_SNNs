@@ -129,7 +129,7 @@ for b in bs:
 # save results
 conn = int(J)
 conn = f"{conn}_inh" if conn < 0 else f"{conn}"
-f = open(f"/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/results/qif_weight_simulation_{condition}_{conn}_{rep}.pkl", "wb")
+f = open(f"/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/results/qif_weight_simulation_{condition}_{conn}_{rep}.pkl", "wb")
 pickle.dump(res, f)
 
 # plotting
