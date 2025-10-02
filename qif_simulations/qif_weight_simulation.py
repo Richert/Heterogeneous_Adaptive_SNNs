@@ -77,11 +77,11 @@ rep = int(sys.argv[-1])
 J = float(sys.argv[-2])
 condition = f"oja_{str(sys.argv[-3])}"
 distribution = "gaussian"
-N = 100
+N = 1000
 m = 15
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)
-target_eta = 0.0
+target_eta = 0.0 if J > 0 else 2.0
 a = 0.1
 bs = [0.0, 0.05, 0.2]
 tau_s = 0.5
@@ -90,7 +90,7 @@ v_cutoff = 100.0
 res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}, "deltas": deltas}
 
 # simulation parameters
-T = 1000.0
+T = 2000.0
 dt = 1e-3
 solver_kwargs = {}
 

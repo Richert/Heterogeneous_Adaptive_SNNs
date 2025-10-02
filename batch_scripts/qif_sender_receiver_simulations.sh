@@ -4,6 +4,8 @@
 n=10
 batch_size=40
 range_end=$((n-1))
+ps=( "hebbian" "antihebbian" )
+conn=( 5 -5 )
 
 # limit amount of threads that each Python process can work with
 n_threads=8
@@ -15,22 +17,23 @@ export VECLIB_MAXIMUM_THREADS=$n_threads
 
 # execute python scripts in batches of batch_size
 for IDX in $(seq 0 $range_end); do
+  for p in "${ps[@]}"; do
+    for c in "${conn[@]}"; do
 
-  # python calls
-  (
-  echo "Starting job #$((IDX+1)) of ${n} jobs."
-  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "hebbian" 5 $IDX
-  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "antihebbian" 5 $IDX
-  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "hebbian" -5 $IDX
-  python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py "antihebbian" -5 $IDX
-  sleep 1
-  ) &
+      # python calls
+      (
+      echo "Starting job #$((IDX+1)) of ${n} jobs for for p = ${p} and J = ${c}."
+      python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_weight_simulation.py $p $c $IDX
+      sleep 1
+      ) &
 
-  # batch control
-  if [[ $(jobs -r -p | wc -l) -ge $batch_size ]]; then
-        wait -n
-  fi
+      # batch control
+      if [[ $(jobs -r -p | wc -l) -ge $batch_size ]]; then
+            wait -n
+      fi
 
+    done
+  done
 done
 
 wait
