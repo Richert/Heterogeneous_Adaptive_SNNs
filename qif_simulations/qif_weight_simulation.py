@@ -74,7 +74,8 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
 
 # parameter definition
 rep = int(sys.argv[-1])
-condition = f"oja_{str(sys.argv[-2])}"
+J = float(sys.argv[-2])
+condition = f"oja_{str(sys.argv[-3])}"
 distribution = "gaussian"
 N = 100
 m = 15
@@ -85,7 +86,6 @@ a = 0.1
 bs = [0.0, 0.05, 0.2]
 tau_s = 0.5
 tau_u = 10.0
-J = float(sys.argv[-3])
 v_cutoff = 100.0
 res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}, "deltas": deltas}
 
