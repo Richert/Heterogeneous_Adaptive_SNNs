@@ -120,7 +120,7 @@ for b in bs:
 
 # save results
 conn = int(J)
-f = open(f"/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/results/qif_oja_simulation_{condition}_{conn}_{rep}.pkl", "wb")
+f = open(f"/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/results/qif_oja_simulation_{condition}_{int(tau)}_{conn}_{rep}.pkl", "wb")
 pickle.dump(res, f)
 
 # # plotting
