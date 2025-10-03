@@ -57,7 +57,7 @@ spike_data = pd.DataFrame.from_dict(spike_data)
 # select data to plot
 bs = [0.0, 0.05, 0.2]
 p = "hebbian"
-J = 5
+J = -5
 rep = 2
 
 # figure settings
@@ -66,7 +66,7 @@ plt.rcParams["font.family"] = "sans"
 plt.rc('text', usetex=True)
 plt.rcParams['figure.constrained_layout.use'] = True
 plt.rcParams['figure.dpi'] = 200
-plt.rcParams['figure.figsize'] = (6, 8)
+plt.rcParams['figure.figsize'] = (6, 6)
 plt.rcParams['font.size'] = 12.0
 plt.rcParams['axes.titlesize'] = 12
 plt.rcParams['axes.labelsize'] = 12
@@ -101,23 +101,32 @@ for i, b in enumerate(bs):
 
     # correlation
     ax = axes[2, i]
+    sb.pointplot(spike_data.loc[(spike_data.loc[:, "b"] == b) & (spike_data.loc[:, "projection"] == 5), :],
+                 x="delta", y="correlation", hue="plasticity", capsize=0.3, native_scale=True, linestyle="none",
+                 errorbar=None, marker="*", markersize=markersize, markeredgewidth=3, ax=ax, legend=False)
+    sb.pointplot(spike_data.loc[(spike_data.loc[:, "b"] == b) & (spike_data.loc[:, "projection"] == -5), :],
+                 x="delta", y="correlation", hue="plasticity", capsize=0.3, native_scale=True, linestyle="none",
+                 errorbar=None, marker="*", markersize=markersize, markeredgewidth=3, ax=ax, legend=False)
     sb.lineplot(rate_data.loc[rate_data.loc[:, "b"] == b, :],
                 x="delta", y="correlation", hue="plasticity", style="projection",
                 ax=ax, legend="auto" if i == len(bs) else False)
-    # sb.pointplot(spike_data.loc[spike_data.loc[:, "b"] == b, :],
-    #              x="delta", y="correlation", hue="plasticity", linestyle="none", capsize=0.3,
-    #              errorbar="sd", marker="*", markersize=markersize, markeredgewidth=3, ax=ax, legend=False)
-    # ax.set_xticks(rate_deltas[ticks], labels=np.round(rate_deltas[ticks], decimals=1))
+    ax.set_xticks(rate_deltas[ticks], labels=np.round(rate_deltas[ticks], decimals=1))
     ax.set_ylabel(r"$R$")
     ax.set_xlabel("")
     ax.set_title(r"$R = corr(w_i, \eta_i)$")
 
     # entropy
     ax = axes[3, i]
+    sb.pointplot(spike_data.loc[(spike_data.loc[:, "b"] == b) & (spike_data.loc[:, "projection"] == 5), :],
+                 x="delta", y="entropy", hue="plasticity", capsize=0.3, native_scale=True, linestyle="none",
+                 errorbar=None, marker="*", markersize=markersize, markeredgewidth=3, ax=ax, legend=False)
+    sb.pointplot(spike_data.loc[(spike_data.loc[:, "b"] == b) & (spike_data.loc[:, "projection"] == -5), :],
+                 x="delta", y="entropy", hue="plasticity", capsize=0.3, native_scale=True, linestyle="none",
+                 errorbar=None, marker="*", markersize=markersize, markeredgewidth=3, ax=ax, legend=False)
     sb.lineplot(rate_data.loc[rate_data.loc[:, "b"] == b, :],
                 x="delta", y="entropy", hue="plasticity", style="projection",
                 ax=ax, legend="auto" if i == len(bs) else False)
-    # ax.set_xticks(rate_deltas[ticks], labels=np.round(rate_deltas[ticks], decimals=1))
+    ax.set_xticks(rate_deltas[ticks], labels=np.round(rate_deltas[ticks], decimals=1))
     ax.set_xlabel(r"$\Delta$")
     ax.set_ylabel(r"$H$")
     ax.set_title(r"$H = entropy(w_i)$")

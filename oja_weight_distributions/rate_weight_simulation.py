@@ -44,16 +44,16 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-save_results = True
+save_results = False
 condition = "antihebbian"
 distribution = "gaussian"
+J = -5.0
 N = 10000
 m = 100
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)
-target_eta = 2.0
+target_eta = 0.0 if J > 0 else 2.0
 a = 0.1
-J = -5.0
 bs = [0.0, 0.05, 0.2]
 res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}, "deltas": deltas}
 
@@ -68,7 +68,7 @@ for b in bs:
 
         diff = 1.0
         attempt = 0
-        while diff > 0.1 and attempt < 20:
+        while diff > 0.2 and attempt < 20:
 
             # define initial condition
             inp = f(N, eta, Delta)
