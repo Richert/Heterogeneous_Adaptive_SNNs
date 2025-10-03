@@ -26,7 +26,7 @@ def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, tau_s: float, ta
             b: float, N: int, condition: str):
     v, s, w = y[:N], y[N:2*N], y[2*N:]
     dy = np.zeros_like(y)
-    x, y = get_xy(s[:], np.zeros_like(s) + s[-1], s[:], condition=condition)
+    x, y = get_xy(s[:], np.zeros_like(s) + s[-1], condition=condition)
     dy[:N] = v**2 + eta
     dy[N-1] += J*np.dot(w[:-1], s[:-1]) / (N-1)
     dy[N:2*N] = (spikes-s) / tau_s
