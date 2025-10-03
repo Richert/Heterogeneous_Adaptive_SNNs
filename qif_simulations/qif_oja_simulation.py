@@ -22,7 +22,7 @@ def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, condition: str) -> tupl
     return x, y
 
 @njit
-def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, tau_s: float, tau_u: float, J: float, a: float,
+def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, tau_s: float, J: float, a: float,
             b: float, N: int, condition: str):
     v, s, w = y[:N], y[N:2*N], y[2*N:]
     dy = np.zeros_like(y)
@@ -40,7 +40,7 @@ def spiking(y: np.ndarray, spikes: np.ndarray, dt: float, v_cutoff: float, N: in
     y[idx] = -y[idx]
     spikes[idx] = 1.0/dt
 
-def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_s: float, tau_u: float, J: float,
+def solve_ivp(T: float, dt: float, eta: np.ndarray, tau: float, J: float,
               a: float, b: float, v_cutoff: float, N: int, condition: str):
 
     y = np.zeros((3*N,))
@@ -50,7 +50,7 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_s: float, tau_u: float, 
 
     while t < T:
         spiking(y, spikes, dt, v_cutoff, N)
-        dy = qif_rhs(y, spikes, eta, tau_s, tau_u, J, a, b, N, condition)
+        dy = qif_rhs(y, spikes, eta, tau, J, a, b, N, condition)
         y = y + dt * dy
         t += dt
 
@@ -77,8 +77,6 @@ deltas = np.linspace(0.1, 1.5, num=m)
 target_eta = 0.0 if J > 0 else 2.0
 a = 0.1
 bs = [0.0, 0.05, 0.2]
-tau_s = 10.0
-tau_u = 10.0
 v_cutoff = 100.0
 res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}, "deltas": deltas}
 
@@ -96,7 +94,7 @@ for b in bs:
         etas = np.asarray(f(N, eta, Delta).tolist() + [target_eta])
 
         # solve equations
-        w = solve_ivp(T, dt, etas, tau_s, tau_u, J, a, b, v_cutoff, N+1, condition)
+        w = solve_ivp(T, dt, etas, tau, J, a, b, v_cutoff, N+1, condition)
         print(f"Finished simulations for b = {b} and Delta = {np.round(Delta, decimals=1)}")
 
         # calculate entropy of weight distribution
