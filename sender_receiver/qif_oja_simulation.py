@@ -27,7 +27,7 @@ def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, tau_s: float, J:
     v, s, w = y[:N], y[N:2*N], y[2*N:]
     dy = np.zeros_like(y)
     x, y = get_xy(s[:], np.zeros_like(s) + s[-1], condition=condition)
-    dy[:N] = v**2 + eta
+    dy[:N] = v**2 + eta + noise * np.random.randn(N)
     dy[N-1] += J*np.dot(w[:-1], s[:-1]) / (N-1)
     dy[N:2*N] = (spikes-s) / tau_s
     dy[2*N:] = a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
@@ -69,8 +69,9 @@ rep = int(sys.argv[-1])
 J = float(sys.argv[-2])
 tau = float(sys.argv[-3])
 condition = str(sys.argv[-4])
+noise_lvls = [0.0, 0.5, 1.0]
 distribution = "gaussian"
-N = 1000
+N = 100
 m = 10
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)
@@ -78,7 +79,7 @@ target_eta = 0.0 if J > 0 else 2.0
 a = 0.1
 bs = [0.0, 0.05, 0.2]
 v_cutoff = 100.0
-res = {"b": bs, "w": {}, "C": {}, "H": {}, "V": {}, "deltas": deltas}
+res = {"b": [], "w": [], "C": [], "H":[], "V": [], "delta": [], "noise": []}
 
 # simulation parameters
 T = 2000.0
@@ -87,79 +88,35 @@ solver_kwargs = {}
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
-    ws, cs, hs, vs = [], [], [], []
-    for Delta in deltas:
+    for noise in noise_lvls:
+        for Delta in deltas:
 
-        # define source firing rate distribution
-        etas = np.asarray(f(N, eta, Delta).tolist() + [target_eta])
+            # define source firing rate distribution
+            etas = np.asarray(f(N, eta, Delta).tolist() + [target_eta])
 
-        # solve equations
-        w = solve_ivp(T, dt, etas, tau, J, a, b, v_cutoff, N+1, condition)
-        print(f"Finished simulations for b = {b} and Delta = {np.round(Delta, decimals=1)}")
+            # solve equations
+            w = solve_ivp(T, dt, etas, tau, J, a, b, v_cutoff, N+1, condition)
+            print(f"Finished simulations for b = {b} and Delta = {np.round(Delta, decimals=1)}")
 
-        # calculate entropy of weight distribution
-        h_w = entropy(get_prob(w))
+            # calculate entropy of weight distribution
+            h_w = entropy(get_prob(w))
 
-        # calculate variance of weight distribution
-        v = np.var(w)
+            # calculate variance of weight distribution
+            v = np.var(w)
 
-        # calculate correlation between source etas and weights
-        c = np.corrcoef(etas[:-1], w)[0, 1]
+            # calculate correlation between source etas and weights
+            c = np.corrcoef(etas[:-1], w)[0, 1]
 
-        # save results
-        ws.append(w)
-        cs.append(c)
-        hs.append(h_w)
-        vs.append(v)
-
-    # save results
-    res["w"][b] = np.asarray(ws)
-    res["H"][b] = np.asarray(hs)
-    res["C"][b] = np.asarray(cs)
-    res["V"][b] = np.asarray(vs)
+            # save results
+            res["b"].append(b)
+            res["delta"].append(Delta)
+            res["noise"].append(noise)
+            res["w"].append(w)
+            res["C"].append(c)
+            res["H"].append(h_w)
+            res["V"].append(v)
 
 # save results
 conn = int(J)
 f = open(f"/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/results/qif_oja_simulation_{condition}_{int(tau)}_{conn}_{rep}.pkl", "wb")
-pickle.dump(res, f)
-
-# # plotting
-# fig, axes = plt.subplots(nrows=3, ncols=len(bs), figsize=(3*len(bs), 5), layout="constrained")
-# ticks = np.arange(0, m, int(m/5))
-# for i, b in enumerate(bs):
-#
-#     # weight distribution
-#     ax = axes[0, i]
-#     im = ax.imshow(np.asarray(res["w"][b]).T, aspect="auto", interpolation="none", cmap="viridis", vmax=1.0, vmin=0.0)
-#     ax.set_ylabel("neuron")
-#     ax.set_xlabel("Delta")
-#     ax.set_xticks(ticks, labels=np.round(deltas[ticks], decimals=1))
-#     if i == len(bs) - 1:
-#         plt.colorbar(im, ax=ax, shrink=0.8)
-#     ax.set_title(f"w (b = {b})")
-#
-#     # correlation
-#     ax = axes[1, i]
-#     ax.plot(deltas, res["C"][b])
-#     ax.set_xlabel("Delta")
-#     ax.set_ylabel("C")
-#     ax.set_title("correlation(w, eta)")
-#
-#     # entropy
-#     ax = axes[2, i]
-#     ax.plot(deltas, res["H"][b])
-#     ax.set_xlabel("Delta")
-#     ax.set_ylabel("H")
-#     ax.set_title("entropy(w)")
-#
-#     # # variance
-#     # ax = axes[3, i]
-#     # ax.plot(deltas, res["V"][b])
-#     # ax.set_xlabel("Delta")
-#     # ax.set_ylabel("var")
-#     # ax.set_title("variance(w)")
-#
-# fig.suptitle(f"{'Anti-Hebbian' if 'antihebbian' in condition else 'Hebbian'} Learning (J = {conn}, QIF Simulation)")
-# fig.canvas.draw()
-# plt.savefig(f"../results/qif_oja_simulation_{condition}_{int(J)}.svg")
-# plt.show()
+pickle.dump({"trial": rep, "J": J, "tau": tau, "condition": condition, "results": res}, f)

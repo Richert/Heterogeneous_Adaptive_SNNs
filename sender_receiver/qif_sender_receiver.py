@@ -51,7 +51,7 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: np.ndarray, tau_s: np
 
 # parameter definition
 N = 2
-T = 10.0
+T = 15.0
 dt = 1e-3
 etas = np.asarray([0.8, 1.0])
 tau_u = np.asarray([20.0, 20.0])
@@ -70,26 +70,37 @@ x_ah_oja, y_ah_oja = get_xy(s_source, s_target, trace_source, trace_target, cond
 # x_h_stdp, y_h_stdp = get_xy(s_source, s_target, trace_source, trace_target, condition="stdp_hebbian")
 # x_ah_stdp, y_ah_stdp = get_xy(s_source, s_target, trace_source, trace_target, condition="stdp_antihebbian")
 
+# figure settings
+print(f"Plotting backend: {plt.rcParams['backend']}")
+plt.rcParams["font.family"] = "sans"
+plt.rc('text', usetex=True)
+plt.rcParams['figure.constrained_layout.use'] = True
+plt.rcParams['figure.dpi'] = 200
+plt.rcParams['figure.figsize'] = (2, 2)
+plt.rcParams['font.size'] = 12.0
+plt.rcParams['axes.titlesize'] = 12
+plt.rcParams['axes.labelsize'] = 12
+plt.rcParams['lines.linewidth'] = 1.0
+markersize = 2
+
 # plotting
-fig, axes = plt.subplots(nrows=2, figsize=(6, 3))
+fig, axes = plt.subplots(nrows=2, layout="constrained")
 ax = axes[0]
 ax.plot(time, ys[:, 0], label="sender")
 ax.plot(time, ys[:, 1], label="receiver")
 ax.legend()
-ax.set_ylabel("v")
+ax.set_ylabel(r"$v$")
 ax.set_title("QIF dynamics")
 ax = axes[1]
-ax1 = ax.twinx()
-ax.plot(time, x_h_oja, label="Oja, Hebbian", color="black")
-ax1.plot(time, y_h_oja, label="Oja, hebbian", color="darkorange")
-ax.plot(time, x_ah_oja, label="Oja, anti-Hebbian", color="black", linestyle="dashed")
-ax1.plot(time, y_ah_oja, label="y (anti-hebbian)", color="darkorange", linestyle="dashed")
+ax.plot(time, x_ah_oja, label="LTP", color="black")
+ax.plot(time, y_ah_oja, label="LTD", color="darkorange")
+# ax.plot(time, x_ah_oja, label="LTP, anti-Hebbian", color="black", linestyle="dashed")
+# ax.plot(time, y_ah_oja, label="LTD, anti-Hebbian", color="darkorange", linestyle="dashed")
 ax.legend()
 # ax1.legend()
-ax.set_ylabel("LTP")
-ax1.set_ylabel("LTD")
+ax.set_ylabel(r"$x$/$y$")
 ax.set_xlabel("time")
-ax.set_title("LTP/LTD signals for Oja's rule")
+ax.set_title(r"$w$ dynamics")
 # ax = axes[2]
 # ax.plot(time, x_h_stdp, label="x (hebbian)")
 # ax.plot(time, y_h_stdp, label="y (hebbian)")
@@ -98,5 +109,7 @@ ax.set_title("LTP/LTD signals for Oja's rule")
 # ax.legend()
 # ax.set_ylabel("LTP/LTD")
 # ax.set_title("Plasticity drivers for STDP")
-plt.tight_layout()
+
+fig.canvas.draw()
+plt.savefig(f"../results/figures/qif_sender_receiver_dynamics.svg")
 plt.show()

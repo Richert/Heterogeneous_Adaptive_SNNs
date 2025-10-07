@@ -6,7 +6,7 @@ batch_size=40
 range_end=$((n-1))
 ps=( "hebbian" "antihebbian" )
 conn=( 5 -5 )
-taus=( 1.0 2.0 4.0 8.0 16.0 32.0 )
+taus=( 1.0 2.0 4.0 8.0 )
 
 # limit amount of threads that each Python process can work with
 n_threads=8
