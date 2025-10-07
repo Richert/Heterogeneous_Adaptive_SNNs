@@ -19,15 +19,18 @@ def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, condition: str) -> tupl
         raise ValueError(f"Invalid condition: {condition}.")
     return x, y
 
-def delta_w(w: np.ndarray, eta_s: np.ndarray, eta_t: float, J: float, b: float, a: float, condition: str) -> np.ndarray:
-    r_s = get_qif_fr(eta_s + noise * np.random.randn(len(eta_s)))
-    r_t = get_qif_fr(eta_t + noise * np.random.randn() + J*np.dot(w, r_s) / N)
+def delta_w(t: float, w: np.ndarray, eta_s: np.ndarray, eta_t: float, J: float, b: float, a: float, condition: str,
+            t_old: np.ndarray) -> np.ndarray:
+    dt = t - t_old[0]
+    t_old[0] = t
+    r_s = get_qif_fr(eta_s + noise * np.random.randn(len(eta_s)) * np.sqrt(dt))
+    r_t = get_qif_fr(eta_t + noise * np.random.randn() * np.sqrt(dt) + J*np.dot(w, r_s) / N)
     x, y = get_xy(r_s, r_t, condition=condition)
     return a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
 
 def get_w_solution(w0: np.ndarray, eta_source: np.ndarray, eta: float, J: float, b: float, a: float, T: float, **kwargs
                    ) -> np.ndarray:
-    sols = solve_ivp(lambda t, w: delta_w(w, eta_source, eta, J, b, a, condition), t_span=(0.0, T), y0=np.asarray(w0),
+    sols = solve_ivp(lambda t, w: delta_w(t, w, eta_source, eta, J, b, a, condition, np.zeros(1,)), t_span=(0.0, T), y0=np.asarray(w0),
                      **kwargs)
     return sols.y[:, -1]
 
@@ -45,12 +48,12 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     return fr / np.pi
 
 # parameter definition
-save_results = False
+save_results = True
 condition = "hebbian"
 distribution = "gaussian"
-noise_lvls = [0.0, 0.5, 1.0]
+noise_lvls = [0.0, 0.1, 1.0]
 J = 5.0
-N = 10000
+N = 2000
 m = 100
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)
@@ -112,4 +115,4 @@ for b in bs:
 conn = int(J)
 if save_results:
     pickle.dump({"condition": condition, "J": J, "results": res},
-                open(f"../results/rate_weight_simulations_{condition}_{conn}.pkl", "wb"))
+                open(f"../results/rate_simulation_{condition}_{conn}.pkl", "wb"))

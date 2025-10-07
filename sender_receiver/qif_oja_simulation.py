@@ -27,7 +27,7 @@ def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, tau_s: float, J:
     v, s, w = y[:N], y[N:2*N], y[2*N:]
     dy = np.zeros_like(y)
     x, y = get_xy(s[:], np.zeros_like(s) + s[-1], condition=condition)
-    dy[:N] = v**2 + eta + noise * np.random.randn(N)
+    dy[:N] = v**2 + eta + noise * np.random.randn(N) * np.sqrt(dt)
     dy[N-1] += J*np.dot(w[:-1], s[:-1]) / (N-1)
     dy[N:2*N] = (spikes-s) / tau_s
     dy[2*N:] = a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
@@ -69,7 +69,7 @@ rep = int(sys.argv[-1])
 J = float(sys.argv[-2])
 tau = float(sys.argv[-3])
 condition = str(sys.argv[-4])
-noise_lvls = [0.0, 0.5, 1.0]
+noise_lvls = [0.0, 1.0, 10.0]
 distribution = "gaussian"
 N = 100
 m = 10
@@ -118,5 +118,5 @@ for b in bs:
 
 # save results
 conn = int(J)
-f = open(f"/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/results/qif_oja_simulation_{condition}_{int(tau)}_{conn}_{rep}.pkl", "wb")
+f = open(f"/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs/results/qif_oja_simulation_{condition}_{int(tau)}_{conn}_{rep}.pkl", "wb")
 pickle.dump({"trial": rep, "J": J, "tau": tau, "condition": condition, "results": res}, f)
