@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from scipy.stats import entropy
 import pickle
@@ -51,20 +50,20 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 save_results = True
 condition = "hebbian"
 distribution = "gaussian"
-noise_lvls = [0.0, 0.1, 1.0]
+noise_lvls = [0.0, 0.01]
 J = 5.0
-N = 2000
+N = 1000
 m = 100
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)
 target_eta = 0.0 if J > 0 else 2.0
-a = 0.1
+a = 0.01
 bs = [0.0, 0.05, 0.2]
 res = {"b": [], "w": [], "C": [], "H":[], "V": [], "delta": [], "noise": []}
 
 # simulation parameters
-T = 2000.0
-solver_kwargs = {}
+T = 10000.0
+solver_kwargs = {"method": "RK23", "t_eval": [0.0, T], "atol": 1e-5}
 
 f = lorentzian if distribution == "lorentzian" else gaussian
 for b in bs:
@@ -73,7 +72,7 @@ for b in bs:
 
             diff = 1.0
             attempt = 0
-            while diff > 0.2 and attempt < 20:
+            while diff > 0.2 and attempt < 10:
 
                 # define initial condition
                 eta_source = f(N, eta, Delta)
@@ -93,10 +92,10 @@ for b in bs:
                 # calculate correlation between source etas and weights
                 c = np.corrcoef(eta_source, w)[1, 0]
 
-                try:
-                    diff = np.abs(c - res["C"][-1]) + np.abs(h_w - res["H"][-1])
-                except IndexError:
+                if Delta == np.min(deltas):
                     diff = 0.0
+                else:
+                    diff = np.abs(c - res["C"][-1]) + np.abs(h_w - res["H"][-1])
                 attempt += 1
 
             # save results

@@ -21,7 +21,7 @@ def get_xy(fr_source: float, fr_target: float, trace_source: float, trace_target
 def qif_rhs(y: np.ndarray, eta: np.ndarray, tau_u: np.ndarray, tau_s: np.ndarray, J: np.ndarray,
             spikes: np.ndarray, N: int):
     v, s, u = y[:N], y[N:2*N], y[2*N:]
-    dv = v**2 + eta + J @ s
+    dv = v**2 + eta + J @ s + noise*np.random.randn(2)*np.sqrt(dt)
     ds = (spikes-s) / tau_s
     du = (spikes-u) / tau_u
     return np.concatenate([dv, ds, du], axis=0)
@@ -53,6 +53,7 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: np.ndarray, tau_s: np
 N = 2
 T = 15.0
 dt = 1e-3
+noise = 32e3
 etas = np.asarray([0.8, 1.0])
 tau_u = np.asarray([20.0, 20.0])
 tau_s = np.asarray([5.0, 5.0])

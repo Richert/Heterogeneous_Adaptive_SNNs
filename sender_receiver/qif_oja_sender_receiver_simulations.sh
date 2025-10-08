@@ -4,9 +4,9 @@
 n=10
 batch_size=40
 range_end=$((n-1))
-conditions=( "hebbian" "antihebbian" )
-plasticities=( "oja_rate" "oja_trace" )
-Js=( 5 -5 )
+ps=( "hebbian" "antihebbian" )
+conn=( 5 -5 )
+taus=( 1.0 2.0 4.0 8.0 )
 
 # limit amount of threads that each Python process can work with
 n_threads=8
@@ -18,14 +18,14 @@ export VECLIB_MAXIMUM_THREADS=$n_threads
 
 # execute python scripts in batches of batch_size
 for IDX in $(seq 0 $range_end); do
-  for p in "${plasticities[@]}"; do
-    for c in "${conditions[@]}"; do
-      for J in "${Js[@]}"; do
+  for tau in "${taus[@]}"; do
+    for p in "${ps[@]}"; do
+      for c in "${conn[@]}"; do
 
         # python calls
         (
-        echo "Starting job #$((IDX+1)) of ${n} jobs for for p = ${p}, c = ${c} and J = ${c}."
-        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_stdp_simulation.py $c $p $J $IDX
+        echo "Starting job #$((IDX+1)) of ${n} jobs for for p = ${p} and J = ${c}."
+        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_oja_simulation.py $p $tau $c $IDX
         sleep 1
         ) &
 

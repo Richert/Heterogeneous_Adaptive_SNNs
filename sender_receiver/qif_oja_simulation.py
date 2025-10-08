@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.stats import entropy
 import sys
 import pickle
@@ -69,9 +68,9 @@ rep = int(sys.argv[-1])
 J = float(sys.argv[-2])
 tau = float(sys.argv[-3])
 condition = str(sys.argv[-4])
-noise_lvls = [0.0, 1.0, 10.0]
+noise_lvls = [0.0, 0.1, 1.0]
 distribution = "gaussian"
-N = 100
+N = 1000
 m = 10
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)

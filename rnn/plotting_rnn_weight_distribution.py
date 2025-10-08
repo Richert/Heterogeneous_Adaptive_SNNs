@@ -5,7 +5,7 @@ import seaborn as sb
 import pandas as pd
 
 # load data
-neuron_type = "rate"
+neuron_type = "rate_rnn"
 condition = "hebbian"
 J = 5
 rep = 0
@@ -16,14 +16,15 @@ else:
     data = pickle.load(open(f"../results/{neuron_type}_simulation_{condition}_{int(tau)}_{int(J)}_{rep}.pkl", "rb"))["results"]
 
 # create data frames
-weights = {"b": [], "neuron": [], "delta": [], "noise": [], "w": []}
-for b, delta, noise, ws in zip(data["b"], data["delta"], data["noise"], data["w"]):
+weights = {"b": [], "delta": [], "noise": [], "w": [], "eta": [], "neuron": []}
+for b, delta, noise, ws, eta in zip(data["b"], data["delta"], data["noise"], data["w"], data["eta"]):
     for neuron, w in enumerate(ws):
         weights["b"].append(b)
         weights["neuron"].append(neuron)
         weights["delta"].append(np.round(delta, decimals=2))
         weights["noise"].append(noise)
         weights["w"].append(w)
+        weights["eta"].append(eta)
 weights = pd.DataFrame.from_dict(weights)
 
 # plotting weight distributions
@@ -33,7 +34,7 @@ for j, b in enumerate(bs):
     for i, noise in enumerate(noise_lvls):
 
         w = weights.loc[(weights.loc[:, "b"] == b) & (weights.loc[:, "noise"] == noise)]
-        w = w.pivot(index="neuron", columns="delta", values="w")
+        w = w.pivot(index="eta", columns="neuron", values="w")
 
         # weight distribution
         ax = axes[i, j]
@@ -43,7 +44,7 @@ for j, b in enumerate(bs):
 # plotting statistics
 data.pop("w")
 data = pd.DataFrame.from_dict(data)
-fig, axes = plt.subplots(nrows=3, ncols=len(bs), figsize=(3 * len(bs), 6), layout="constrained")
+fig, axes = plt.subplots(nrows=3, ncols=len(noise_lvls), figsize=(3 * len(noise_lvls), 6), layout="constrained")
 for j, b in enumerate(bs):
 
     df = data.loc[data.loc[:, "b"] == b]
