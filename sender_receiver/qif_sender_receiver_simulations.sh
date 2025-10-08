@@ -2,7 +2,7 @@
 
 # set condition
 n=10
-batch_size=40
+batch_size=80
 range_end=$((n-1))
 conditions=( "hebbian" "antihebbian" )
 plasticities=( "oja_rate" "oja_trace" )
