@@ -25,7 +25,7 @@ for IDX in $(seq 0 $range_end); do
         # python calls
         (
         echo "Starting job #$((IDX+1)) of ${n} jobs for for p = ${p}, c = ${c} and J = ${c}."
-        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/qif_simulations/qif_stdp_simulation.py $c $p $J $IDX
+        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/sender_receiver/qif_stdp_simulation.py $c $p $J $IDX
         sleep 1
         ) &
 
