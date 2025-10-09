@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.stats import entropy
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sb
 import pickle
 
 def get_prob(x, bins: int = 100):
@@ -33,14 +35,6 @@ def get_w_solution(w0: np.ndarray, eta_source: np.ndarray, eta: float, J: float,
                      **kwargs)
     return sols.y[:, -1]
 
-def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
-    x = np.arange(1, N+1)
-    return eta + Delta*np.tan(0.5*np.pi*(2*x-N-1)/(N+1))
-
-def gaussian(N, eta: float, Delta: float) -> np.ndarray:
-    etas = eta + Delta * np.random.randn(N)
-    return np.sort(etas)
-
 def get_qif_fr(x: np.ndarray) -> np.ndarray:
     fr = np.zeros_like(x)
     fr[x > 0] = np.sqrt(x[x > 0])
@@ -48,70 +42,76 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 
 # parameter definition
 save_results = True
-condition = "hebbian"
-distribution = "gaussian"
-noise_lvls = [0.0, 0.001, 0.01]
-J = -5.0
-N = 1000
-m = 20
-eta = 1.0
-deltas = np.linspace(0.1, 1.5, num=m)
-target_eta = 0.0 if J > 0 else 2.0
-a = 0.01
+conditions = ["hebbian", "antihebbian"]
+noise_lvls = [0.0, 0.001, 0.005]
 bs = [0.0, 0.01, 0.1, 1.0]
-res = {"b": [], "w": [], "C": [], "H":[], "V": [], "delta": [], "noise": []}
+J = 5.0
+N = 1000
+m = 10
+eta_t = 0.0 if J > 0 else 2.0
+eta_min, eta_max = -2.0, 3.0
+eta_s = np.linspace(eta_min, eta_max, N)
+w0s = np.linspace(start=0.0, stop=1.0, num=m)
+a = 0.01
+res = {"condition": [], "b": [], "noise": [], "eta": [], "w": [], "w0": []}
 
-# simulation parameters
+# simulation
 T = 10000.0
 solver_kwargs = {"method": "RK23", "t_eval": [0.0, T], "atol": 1e-5}
 
-f = lorentzian if distribution == "lorentzian" else gaussian
-for b in bs:
-    for noise in noise_lvls:
-        for Delta in deltas:
-
-            diff = 1.0
-            attempt = 0
-            while diff > 0.2 and attempt < 10:
-
-                # define initial condition
-                eta_source = f(N, eta, Delta)
-                w0 = np.random.uniform(0.01, 0.99, size=(N,))
+for condition in conditions:
+    for b in bs:
+        for noise in noise_lvls:
+            for w0 in w0s:
 
                 # get weight solutions
-                w = get_w_solution(w0, eta_source, target_eta, J, b, a, T, **solver_kwargs)
-                w[w < 0.0] = 0.0
-                w[w > 1.0] = 1.0
+                ws = get_w_solution(np.zeros_like(eta_s) + w0, eta_s, eta_t, J, b, a, T, **solver_kwargs)
+                ws[ws < 0.0] = 0.0
+                ws[ws > 1.0] = 1.0
 
-                # calculate entropy of weight distribution
-                h_w = entropy(get_prob(w))
-
-                # calculate variance of weight distribution
-                v = np.var(w)
-
-                # calculate correlation between source etas and weights
-                c = np.corrcoef(eta_source, w)[1, 0]
-
-                if Delta == np.min(deltas):
-                    diff = 0.0
-                else:
-                    diff = np.abs(c - res["C"][-1]) + np.abs(h_w - res["H"][-1])
-                attempt += 1
+                # save results
+                for eta, w in zip(eta_s, ws):
+                    res["condition"].append(condition)
+                    res["b"].append(b)
+                    res["noise"].append(noise)
+                    res["w0"].append(w0)
+                    res["w"].append(w)
+                    res["eta"].append(eta)
 
             # save results
-            res["b"].append(b)
-            res["delta"].append(Delta)
-            res["noise"].append(noise)
-            res["w"].append(w)
-            res["C"].append(c)
-            res["H"].append(h_w)
-            res["V"].append(v)
-
-            # save results
-            print(f"Finished simulations for b = {b}, noise = {noise} and Delta = {np.round(Delta, decimals=2)} after {attempt} attempts")
+            print(f"Finished simulations for c = {condition}, b = {b}, and noise = {noise}.")
 
 # save results
 conn = int(J)
 if save_results:
-    pickle.dump({"condition": condition, "J": J, "results": res},
-                open(f"../results/rate_simulation_{condition}_{conn}.pkl", "wb"))
+    pickle.dump({"J": J, "results": res}, open(f"../results/rate_simulation_J{conn}.pkl", "wb"))
+
+# plotting
+res = pd.DataFrame.from_dict(res)
+print(f"Plotting backend: {plt.rcParams['backend']}")
+plt.rcParams["font.family"] = "sans"
+plt.rc('text', usetex=True)
+plt.rcParams['figure.constrained_layout.use'] = True
+plt.rcParams['figure.dpi'] = 200
+plt.rcParams['font.size'] = 12.0
+plt.rcParams['axes.titlesize'] = 12
+plt.rcParams['axes.labelsize'] = 12
+plt.rcParams['lines.linewidth'] = 1.0
+markersize = 2
+
+fig, axes = plt.subplots(ncols=2, nrows=len(noise_lvls), figsize=(6, 1.5*len(noise_lvls)))
+for j, c in enumerate(conditions):
+    res_tmp = res.loc[res.loc[:, "condition"] == c, :]
+    for i, noise in enumerate(noise_lvls):
+        res_tmp2 = res_tmp.loc[res_tmp.loc[:, "noise"] == noise, :]
+        ax = axes[i, j]
+        sb.lineplot(res_tmp2, x="eta", y="w", hue="b", palette="Dark2", ax=ax, errorbar=("pi", 100), legend=False)
+        ax.set_xlabel(r"$\eta$")
+        ax.set_ylabel(r"$w$")
+        # ax.get_legend().set_title(r"$b$")
+        c_title = "Hebbian Learning" if c == "hebbian" else "Anti-Hebbian Learning"
+        ax.set_title(f"{c}, noise lvl = {noise}")
+
+fig.canvas.draw()
+# plt.savefig(f"../results/figures/weight_update_rule.svg")
+plt.show()
