@@ -53,7 +53,7 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: np.ndarray, tau_s: np
 N = 2
 T = 15.0
 dt = 1e-3
-noise = 32e3
+noise = 10e3
 etas = np.asarray([0.8, 1.0])
 tau_u = np.asarray([20.0, 20.0])
 tau_s = np.asarray([5.0, 5.0])

@@ -7,7 +7,7 @@ import pandas as pd
 # load data
 neuron_type = "rate"
 condition = "hebbian"
-J = 5
+J = -5
 rep = 0
 tau = 4.0
 if "rate" in neuron_type:

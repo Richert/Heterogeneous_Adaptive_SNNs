@@ -50,15 +50,15 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 save_results = True
 condition = "hebbian"
 distribution = "gaussian"
-noise_lvls = [0.0, 0.01]
-J = 5.0
+noise_lvls = [0.0, 0.001, 0.01]
+J = -5.0
 N = 1000
-m = 100
+m = 20
 eta = 1.0
 deltas = np.linspace(0.1, 1.5, num=m)
 target_eta = 0.0 if J > 0 else 2.0
 a = 0.01
-bs = [0.0, 0.05, 0.2]
+bs = [0.0, 0.01, 0.1, 1.0]
 res = {"b": [], "w": [], "C": [], "H":[], "V": [], "delta": [], "noise": []}
 
 # simulation parameters
