@@ -29,7 +29,7 @@ auto_dir = "~/PycharmProjects/auto-07p"
 config_dir = "../config"
 
 # model parameters
-node_vars = {"tau": 1.0, "J": 20.0, "eta": -10.0, "Delta": 1.0, "tau_s": 0.2, "kappa": 0.01, "tau_a": 20.0, "A0": 0.0}
+node_vars = {"tau": 1.0, "J": 15.0, "eta": -10.0, "Delta": 1.0, "tau_s": 0.5, "kappa": 0.01, "tau_a": 20.0, "A0": 0.0}
 
 # initialize model
 op = "qif_sd_op"

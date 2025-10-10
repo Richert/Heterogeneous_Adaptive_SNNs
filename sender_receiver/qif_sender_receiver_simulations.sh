@@ -6,7 +6,7 @@ range_end=$((n-1))
 conditions=( "hebbian" "antihebbian" )
 plasticities=( "oja_rate" "oja_trace" )
 bs=( 0.0 0.01 0.1 1.0 )
-noises=( 0.0 1.0 4.0 16.0 )
+noises=( 0.0 0.5 1.0 2.0 )
 
 # limit amount of threads that each Python process can work with
 n_threads=2
@@ -24,7 +24,7 @@ for p in "${plasticities[@]}"; do
 
           # python calls
           (
-          echo "Starting job #$((IDX+1)) of ${n} jobs for for p = ${p}, c = ${c}, n = ${n}, and b = ${b}."
+          echo "Starting job for p = ${p}, c = ${c}, n = ${n}, and b = ${b}."
           python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/sender_receiver/qif_simulation.py $p $c $n $b
           sleep 1
           ) &

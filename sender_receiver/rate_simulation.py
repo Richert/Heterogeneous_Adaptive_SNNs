@@ -43,7 +43,7 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 # parameter definition
 save_results = True
 conditions = ["hebbian", "antihebbian"]
-noise_lvls = [0.0, 0.001, 0.005]
+noise_lvls = [0.0, 0.005, 0.01]
 bs = [0.0, 0.01, 0.1, 1.0]
 J = 5.0
 N = 1000
@@ -56,7 +56,7 @@ a = 0.01
 res = {"condition": [], "b": [], "noise": [], "eta": [], "w": [], "w0": []}
 
 # simulation
-T = 10000.0
+T = 6000.0
 solver_kwargs = {"method": "RK23", "t_eval": [0.0, T], "atol": 1e-5}
 
 for condition in conditions:
@@ -105,7 +105,7 @@ for j, c in enumerate(conditions):
     for i, noise in enumerate(noise_lvls):
         res_tmp2 = res_tmp.loc[res_tmp.loc[:, "noise"] == noise, :]
         ax = axes[i, j]
-        sb.lineplot(res_tmp2, x="eta", y="w", hue="b", palette="Dark2", ax=ax, errorbar=("pi", 100), legend=False)
+        sb.lineplot(res_tmp2, x="eta", y="w", hue="b", palette="Dark2", ax=ax, errorbar=("pi", 90), legend=False)
         ax.set_xlabel(r"$\eta$")
         ax.set_ylabel(r"$w$")
         # ax.get_legend().set_title(r"$b$")

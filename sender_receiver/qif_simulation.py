@@ -7,19 +7,19 @@ from numba import njit
 def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, trace_source: np.ndarray, trace_target: np.ndarray) -> tuple:
     if plasticity == "oja_rate":
         if condition == "hebbian":
-            x = trace_source*fr_target
-            y = trace_target*fr_target
+            x = fr_source*fr_target
+            y = fr_target*fr_target
         elif condition == "antihebbian":
-            x = trace_source*fr_source
-            y = trace_source*fr_target
+            x = fr_source*fr_source
+            y = fr_source*fr_target
         else:
             raise ValueError(f"Invalid condition: {condition}.")
     elif plasticity == "oja_trace":
         if condition == "hebbian":
             x = trace_source*trace_target
-            y = trace_target*trace_target
+            y = trace_target*fr_target
         elif condition == "antihebbian":
-            x = trace_source*trace_source
+            x = trace_source*fr_source
             y = trace_source*trace_target
         else:
             raise ValueError(f"Invalid condition: {condition}.")
