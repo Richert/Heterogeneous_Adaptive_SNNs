@@ -43,7 +43,7 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 # parameter definition
 save_results = True
 conditions = ["hebbian", "antihebbian"]
-noise_lvls = [0.0, 0.005, 0.01]
+noise_lvls = [0.0, 0.004, 0.008]
 bs = [0.0, 0.01, 0.1, 1.0]
 J = 5.0
 N = 1000
@@ -56,7 +56,7 @@ a = 0.01
 res = {"condition": [], "b": [], "noise": [], "eta": [], "w": [], "w0": []}
 
 # simulation
-T = 6000.0
+T = 20000.0
 solver_kwargs = {"method": "RK23", "t_eval": [0.0, T], "atol": 1e-5}
 
 for condition in conditions:

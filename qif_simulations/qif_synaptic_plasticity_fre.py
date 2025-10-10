@@ -16,13 +16,13 @@ def correlate(x, y):
     return c[0, 1]
 
 # parameters
-M = 50
-p = 0.5
+M = 70
+p = 1.0
 edge_vars = {
-    "a": 0.01, "b": 0.0
+    "a": 0.01, "b": 0.04
 }
-Delta = 1.0
-eta = -4.5
+Delta = 1.5
+eta = -5.0
 # etas = eta + Delta * np.linspace(-0.5, 0.5, num=M)
 indices = np.arange(1, M+1)
 etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
@@ -30,16 +30,13 @@ deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*in
 node_vars = {"tau": 1.0, "J": 30.0 / (p*M), "eta": etas, "tau_u": 30.0, "tau_s": 0.5, "Delta": deltas,
              "tau_a": 20.0, "kappa": 0.0, "A0": 0.0}
 T = 2000.0
-dt = 5e-4
-dts = 1e-1
-I_ext = 0.0
-I_start = 100.0
-I_stop = 400.0
-noise_lvl = 100.0
+dt = 1e-3
+dts = 10.0
+noise_lvl = 80.0
 noise_sigma = 1000.0
 
 # node and edge template initiation
-edge, edge_op = "oja_ah_edge", "oja_ah_op"
+edge, edge_op = "oja_edge", "oja_op"
 node, node_op = "qif_sp", "qif_sp_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
@@ -68,7 +65,6 @@ net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.
 
 # define extrinsic input
 inp = np.zeros((int(T/dt),))
-inp[int(I_start/dt):int(I_stop/dt)] = I_ext
 noise = noise_lvl*np.random.randn(inp.shape[0])
 noise = gaussian_filter1d(noise, sigma=noise_sigma)
 inp += noise
@@ -76,7 +72,8 @@ inp += noise
 # run simulation
 res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp},
               outputs={"r": f"all/{node_op}/r", "u": f"all/{node_op}/u", "a": f"all/{node_op}/a"},
-              solver="scipy", clear=False, sampling_step_size=dts, method="RK23")
+              solver="scipy", clear=False, sampling_step_size=dts, decorator=njit, float_precision="float64",
+              method="RK23", atol=1e-5, min_step=dt)
 
 # extract synaptic weights
 mapping, weights, etas = net._ir["weight"].value, net.state["w"], net._ir["eta"].value

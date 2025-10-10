@@ -9,7 +9,7 @@ plt.rcParams['backend'] = 'TkAgg'
 
 # model parameters
 tau = 1.0
-Delta = 2.0
+Delta = 1.0
 eta = -4.5
 tau_a = 20.0
 A0 = 0.0
@@ -17,7 +17,7 @@ J = 15.0
 kappa = 0.0
 tau_s = 0.5
 I_ext = 0.0
-noise_lvl = 100.0
+noise_lvl = 80.0
 noise_sigma = 1000.0
 
 params = {
@@ -26,7 +26,7 @@ params = {
 
 # define inputs
 cutoff = 0.0
-T = 500.0 + cutoff
+T = 1000.0 + cutoff
 dt = 1e-3
 dts = 1e-1
 start = 500.0 + cutoff
