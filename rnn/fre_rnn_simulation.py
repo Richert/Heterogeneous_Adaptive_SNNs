@@ -22,12 +22,12 @@ rep = int(sys.argv[-1])
 b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
 noise_lvl = float(sys.argv[-4])
-M = 10
+M = 50
 p = 1.0
 edge_vars = {
     "a": 0.1, "b": b
 }
-eta = -1.15
+eta = -1.05
 # etas = eta + Delta * np.linspace(-0.5, 0.5, num=M)
 indices = np.arange(1, M+1)
 etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))

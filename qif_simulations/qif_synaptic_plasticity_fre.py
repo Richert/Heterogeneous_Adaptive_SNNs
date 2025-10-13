@@ -16,23 +16,23 @@ def correlate(x, y):
     return c[0, 1]
 
 # parameters
-M = 10
+M = 50
 p = 1.0
 edge_vars = {
-    "a": 0.01, "b": 0.1
+    "a": 0.1, "b": 0.1
 }
-Delta = 0.25
-eta = -0.9
+Delta = 0.5
+eta = -1.05
 # etas = eta + Delta * np.linspace(-0.5, 0.5, num=M)
 indices = np.arange(1, M+1)
 etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
 deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*indices-M-1.5)/(M+1)))
-node_vars = {"tau": 1.0, "J": 24.0 / (p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": deltas,
+node_vars = {"tau": 1.0, "J": 30.0 / (p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": deltas,
              "tau_a": 20.0, "kappa": 0.2, "A0": 0.0}
-T = 2000.0
+T = 1000.0
 dt = 1e-3
 dts = 1.0
-noise_lvl = 10.0
+noise_lvl = 0.0
 noise_sigma = 1000.0
 
 # node and edge template initiation
@@ -71,7 +71,7 @@ inp += noise
 
 # run simulation
 res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp},
-              outputs={"r": f"all/{node_op}/r", "u": f"all/{node_op}/u", "a": f"all/{node_op}/a"},
+              outputs={"s": f"all/{node_op}/s", "u": f"all/{node_op}/u", "a": f"all/{node_op}/a"},
               solver="scipy", clear=False, sampling_step_size=dts, decorator=njit, float_precision="float64",
               method="RK23", atol=1e-5, min_step=dt)
 
@@ -92,9 +92,8 @@ time = res.index * 10.0
 fig = plt.figure(figsize=(16, 6))
 grid = fig.add_gridspec(nrows=3, ncols=3)
 ax1 = fig.add_subplot(grid[0, :2])
-ax1.plot(time, res["r"]*100.0)
-ax1.plot(time, np.mean(res["r"].values, axis=1)*100.0, color="black")
-ax1.set_ylim((0.0, 200.0))
+ax1.plot(time, res["s"])
+ax1.plot(time, np.mean(res["s"].values, axis=1), color="black")
 ax1.set_ylabel("r (Hz)")
 ax = fig.add_subplot(grid[1, :2])
 ax.sharex(ax1)
