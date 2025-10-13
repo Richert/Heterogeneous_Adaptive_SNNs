@@ -75,7 +75,7 @@ inp += noise
 
 # run simulation
 res = net.run(simulation_time=T, step_size=dt, inputs={f"p{i}/{node_op}/I_ext": inp[:, i] for i in range(M)},
-              outputs={"r": f"all/{node_op}/r", "u": f"all/{node_op}/u", "a": f"all/{node_op}/a"},
+              outputs={"s": f"all/{node_op}/s"},
               solver="heun", clear=False, sampling_step_size=dts, float_precision="float64"
               )
 
