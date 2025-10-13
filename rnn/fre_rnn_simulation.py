@@ -88,6 +88,6 @@ clear(net)
 # np.fill_diagonal(W, 0)
 
 pickle.dump(
-    {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise},
-    open(f"{path}/results/rnn_results/fre_simulation_{int(b*10)}_{int(noise)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
+    {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl},
+    open(f"{path}/results/rnn_results/fre_simulation_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
 )
