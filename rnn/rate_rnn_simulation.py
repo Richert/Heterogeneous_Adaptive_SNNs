@@ -10,6 +10,7 @@ import seaborn as sb
 import pandas as pd
 
 def get_prob(x, bins: int = 100):
+    bins = np.linspace(0.0, 1.0, num=bins)
     counts, _ = np.histogram(x, bins=bins)
     return counts / np.sum(counts)
 
@@ -56,19 +57,21 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 save_results = False
 condition = "hebbian"
 distribution = "lorentzian"
-Deltas = [1.2, 1.5, 1.8]
+Deltas = [0.1, 0.2, 0.4, 0.8, 1.6, 3.2]
 J = 30.0
 N = 50
 m = 5
 eta = -5.0 if J > 0 else 2.0
-a = 0.01
+a = 0.1
 bs = [0.0, 0.05, 0.2]
-res = {"b": [], "Delta": [], "source": [], "target": [], "w": [], "w0": []}
+weights = {"b": [], "Delta": [], "source": [], "target": [], "w": [], "w0": []}
+results = {"b": [], "Delta": [], "eta": [], "c_s": [], "c_t": [], "v_s": [], "v_t": [], "h_s": [], "h_t": [],
+           "c2_s": [], "c2_t": []}
 
 # simulation parameters
-T = 10000.0
+T = 1000.0
 dt = 1e-3
-noise = 0.0
+noise = 0.005
 inp_noise = 80.0
 inp_sigma = 1000.0
 inp = np.zeros((int(T/dt)+1,))
@@ -92,23 +95,41 @@ for b in bs:
         w0 = w0.reshape(N, N)
 
         for i in range(N):
+
+            # calculate weight statistics
+            results["c_s"].append(np.corrcoef(etas, w[i, :])[0, 1])
+            results["c_t"].append(np.corrcoef(etas, w[:, i])[0, 1])
+            results["c2_s"].append(np.corrcoef(etas, np.mean(w, axis=0))[0, 1])
+            results["c2_t"].append(np.corrcoef(etas, np.mean(w, axis=1))[0, 1])
+            results["v_s"].append(np.var(w[i, :]))
+            results["v_t"].append(np.var(w[:, i]))
+            results["h_s"].append(entropy(get_prob(w[i, :])))
+            results["h_t"].append(entropy(get_prob(w[:, i])))
+            results["eta"].append(etas[i])
+            results["Delta"].append(Delta)
+            results["b"].append(b)
+
+            # save weights
             for j in range(N):
-                res["b"].append(b)
-                res["Delta"].append(Delta)
-                res["source"].append(j)
-                res["target"].append(i)
-                res["w"].append(w[i, j])
-                res["w0"].append(w0[i, j])
+                weights["b"].append(b)
+                weights["Delta"].append(Delta)
+                weights["source"].append(j)
+                weights["target"].append(i)
+                weights["w"].append(w[i, j])
+                weights["w0"].append(w0[i, j])
         print(f"Finished simulations for b = {b} and Delta = {Delta}.")
 
 # save results
 conn = int(J)
 if save_results:
-    pickle.dump({"condition": condition, "J": J, "noise": noise, "results": res},
+    pickle.dump({"condition": condition, "J": J, "noise": noise, "results": results, "weights": weights},
                 open(f"../results/rate_rnn_simulation_{condition}_{conn}.pkl", "wb"))
 
+# create dataframes
+results = pd.DataFrame.from_dict(results)
+weights = pd.DataFrame.from_dict(weights)
+
 # plotting
-res = pd.DataFrame.from_dict(res)
 print(f"Plotting backend: {plt.rcParams['backend']}")
 plt.rcParams["font.family"] = "sans"
 plt.rc('text', usetex=True)
@@ -120,30 +141,53 @@ plt.rcParams['axes.labelsize'] = 12
 plt.rcParams['lines.linewidth'] = 1.0
 markersize = 2
 
-# initial weights
-fig, axes = plt.subplots(ncols=len(bs), nrows=len(Deltas), figsize=(3*len(bs), 2*len(Deltas)))
-for j, b in enumerate(bs):
-    res_tmp = res.loc[res.loc[:, "b"] == b, :]
-    for i, Delta in enumerate(Deltas):
-        res_tmp2 = res_tmp.loc[res_tmp.loc[:, "Delta"] == Delta, :]
-        w = res_tmp2.pivot(index="target", columns="source", values="w0")
-        ax = axes[i, j]
-        sb.heatmap(w, vmin=0.0, vmax=1.0, ax=ax)
-        ax.set_title(fr"$b = {b}$, $\Delta = {Delta}$")
-fig.suptitle("Initial Weights")
-fig.canvas.draw()
+# # initial weights
+# fig, axes = plt.subplots(ncols=len(bs), nrows=len(Deltas), figsize=(3*len(bs), 2*len(Deltas)))
+# for j, b in enumerate(bs):
+#     res_tmp = res.loc[res.loc[:, "b"] == b, :]
+#     for i, Delta in enumerate(Deltas):
+#         res_tmp2 = res_tmp.loc[res_tmp.loc[:, "Delta"] == Delta, :]
+#         w = res_tmp2.pivot(index="target", columns="source", values="w0")
+#         ax = axes[i, j]
+#         sb.heatmap(w, vmin=0.0, vmax=1.0, ax=ax)
+#         ax.set_title(fr"$b = {b}$, $\Delta = {Delta}$")
+# fig.suptitle("Initial Weights")
+# fig.canvas.draw()
 
 # final weights
 fig, axes = plt.subplots(ncols=len(bs), nrows=len(Deltas), figsize=(3*len(bs), 2*len(Deltas)))
 for j, b in enumerate(bs):
-    res_tmp = res.loc[res.loc[:, "b"] == b, :]
+    res_tmp = weights.loc[weights.loc[:, "b"] == b, :]
     for i, Delta in enumerate(Deltas):
         res_tmp2 = res_tmp.loc[res_tmp.loc[:, "Delta"] == Delta, :]
         w = res_tmp2.pivot(index="target", columns="source", values="w")
         ax = axes[i, j]
         sb.heatmap(w, vmin=0.0, vmax=1.0, ax=ax)
+        ax.set_xlabel("")
+        ax.set_ylabel("")
         ax.set_title(fr"$b = {b}$, $\Delta = {Delta}$")
 fig.suptitle("Final Weights")
 fig.canvas.draw()
-# plt.savefig(f"../results/figures/weight_update_rule.svg")
+
+# weight statistics
+fig, axes = plt.subplots(ncols=4, nrows=2, figsize=(12, 5))
+ax = axes[0, 0]
+sb.lineplot(results, x="Delta", y="c_s", hue="b", ax=ax, palette="Dark2")
+ax = axes[1, 0]
+sb.lineplot(results, x="Delta", y="c_t", hue="b", legend=False, ax=ax, palette="Dark2")
+ax = axes[0, 1]
+sb.lineplot(results, x="Delta", y="v_s", hue="b", legend=False, ax=ax, palette="Dark2")
+ax = axes[1, 1]
+sb.lineplot(results, x="Delta", y="v_t", hue="b", legend=False, ax=ax, palette="Dark2")
+ax = axes[0, 2]
+sb.lineplot(results, x="Delta", y="h_s", hue="b", legend=False, ax=ax, palette="Dark2")
+ax = axes[1, 2]
+sb.lineplot(results, x="Delta", y="h_t", hue="b", legend=False, ax=ax, palette="Dark2")
+ax = axes[0, 3]
+sb.lineplot(results, x="Delta", y="c2_s", hue="b", legend=False, ax=ax, palette="Dark2")
+ax = axes[1, 3]
+sb.lineplot(results, x="Delta", y="c2_t", hue="b", legend=False, ax=ax, palette="Dark2")
+fig.suptitle("Weight Statistics")
+fig.canvas.draw()
+
 plt.show()

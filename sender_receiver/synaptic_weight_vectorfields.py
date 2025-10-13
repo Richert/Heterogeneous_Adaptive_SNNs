@@ -3,18 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sb
 
-def get_xy(fr_source: float, fr_target: float, condition: str) -> tuple:
-    if condition == "hebbian":
-        x = fr_target*fr_source
-        y = fr_target**2
-    elif condition == "antihebbian":
-        x = fr_source**2
-        y = fr_target*fr_source
-    else:
-        raise ValueError(f"Invalid condition: {condition}.")
-    return x, y
-
-def delta_w(w: float, x: np.ndarray, y: np.ndarray, b: float, alpha: float, beta: float) -> np.ndarray:
+def delta_w(w: float, x: float, y: float, b: float, alpha: float, beta: float) -> np.ndarray:
     return b*(x*(1-w)**alpha - y*w**beta) + (1-b)*(x-y)*(1-w)*w
 
 def get_qif_fr(x: float) -> float:
@@ -23,29 +12,43 @@ def get_qif_fr(x: float) -> float:
 # parameter definition
 condition = "antihebbian"
 N = 1000
-m = 10
-eta_min, eta_max = -0.5, 1.5
-fr_target = get_qif_fr(0.5)
-fr_source = np.asarray([get_qif_fr(eta) for eta in np.linspace(eta_min, eta_max, m)])
-bs = np.asarray([0.1])
+m = 4
+bs = np.asarray([0.0, 0.01, 0.1, 1.0])
+xys = [(0.0, 0.1), (0.1, 0.0)]
 alpha = 1.0
 beta = 1.0
 
 # simulation parameters
 w0 = np.linspace(0.0, 1.0, num=N)
-res = {"b": [], "x-y": [], "dw/dt": [], "w": []}
+res = {"b": [], "ltp/ltd": [], "dw/dt": [], "w": []}
 for b in bs:
-    for fr_s in fr_source:
+    for x, y in xys:
         for w in w0:
-            x, y = get_xy(fr_s, fr_target, condition)
             res["b"].append(b)
             res["w"].append(w)
-            res["x-y"].append(x-y)
+            res["ltp/ltd"].append("LTP" if x > y else "LTD")
             res["dw/dt"].append(delta_w(w, x, y, b, alpha, beta))
 res = pd.DataFrame.from_dict(res)
 
+# figure settings
+print(f"Plotting backend: {plt.rcParams['backend']}")
+plt.rcParams["font.family"] = "sans"
+plt.rc('text', usetex=True)
+plt.rcParams['figure.constrained_layout.use'] = True
+plt.rcParams['figure.dpi'] = 200
+plt.rcParams['font.size'] = 12.0
+plt.rcParams['axes.titlesize'] = 12
+plt.rcParams['axes.labelsize'] = 12
+plt.rcParams['lines.linewidth'] = 1.0
+markersize = 2
+
 # plotting
-fig, ax = plt.subplots(figsize=(8, 4), layout="constrained")
-sb.lineplot(res, x="w", y="dw/dt", hue="x-y", palette="Dark2")
+fig, ax = plt.subplots(figsize=(2, 1.5), layout="constrained")
+for i, ltp in enumerate(["LTP", "LTD"]):
+    sb.lineplot(res.loc[res.loc[:, "ltp/ltd"] == ltp], x="w", y="dw/dt", hue="b", palette="Dark2", ax=ax, legend=False)
+    ax.set_xlabel(r"$w$")
+    ax.set_ylabel(r"$dw/dt$")
+ax.set_title("")
 fig.canvas.draw()
+plt.savefig(f"../results/figures/oja_weight_rule.svg")
 plt.show()

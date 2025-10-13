@@ -40,7 +40,7 @@
        do n=1,M
          F(n) = D*(TAN(0.5*PI*(2*n-M-0.5)/(M+1))-TAN(0.5*PI*(2*n-M-1.5)/(M+1)))/PI + 2.0*R(n)*V(n)
          F(n+M) = V(n)*V(n) + J*RM/M - PI*PI*R(n)*R(n) + I + D*TAN(0.5*PI*(2*n-M-1)/(M+1))
-         F(n+2*M) = (A(n)*R(n) - (S(n)) / tau_s
+         F(n+2*M) = (A(n)*R(n) - S(n)) / tau_s
          F(n+3*M) = (1-A(n))/tau_a + (A0-A(n))*kappa*R(n)
        end do
 
@@ -58,12 +58,12 @@
       DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,kappa,TPI
 
        I = -3.0
-       J = 8.0
-       D = 0.1
+       J = 15.0
+       D = 0.5
        tau_s = 1.0
        tau_a = 20.0
        A0 = 0.0
-       kappa = 0.0
+       kappa = 0.01
 
        PAR(1)=I
        PAR(2)=J

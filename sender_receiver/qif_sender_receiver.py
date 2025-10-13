@@ -29,7 +29,7 @@ def qif_rhs(y: np.ndarray, eta: np.ndarray, tau_u: np.ndarray, tau_s: np.ndarray
 def spiking(y: np.ndarray, spikes: np.ndarray, dt: float, v_cutoff: float):
     idx = np.argwhere((v_cutoff - y[:N]) < 0.0).squeeze()
     spikes[:] = 0.0
-    y[idx] = -v_cutoff
+    y[idx] = v_reset
     spikes[idx] = 1.0/dt
 
 def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: np.ndarray, tau_s: np.ndarray, J: np.ndarray,
@@ -53,13 +53,14 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_u: np.ndarray, tau_s: np
 N = 2
 T = 20.0
 dt = 1e-3
-noise = 3e3
+noise = 1e3
 etas = np.asarray([0.8, 1.0])
 tau_u = np.asarray([20.0, 20.0])
 tau_s = np.asarray([5.0, 5.0])
 J = np.zeros((N, N))
 J[1, 0] = 5.0
-v_cutoff = 100.0
+v_cutoff = 60.0
+v_reset = -20.0
 
 # solve equations
 ys, time = solve_ivp(T, dt, etas, tau_u, tau_s, J, v_cutoff, N)
@@ -77,7 +78,7 @@ plt.rcParams["font.family"] = "sans"
 plt.rc('text', usetex=True)
 plt.rcParams['figure.constrained_layout.use'] = True
 plt.rcParams['figure.dpi'] = 200
-plt.rcParams['figure.figsize'] = (6, 2)
+plt.rcParams['figure.figsize'] = (3, 1.6)
 plt.rcParams['font.size'] = 12.0
 plt.rcParams['axes.titlesize'] = 12
 plt.rcParams['axes.labelsize'] = 12
@@ -86,22 +87,24 @@ markersize = 2
 
 # plotting
 fig, axes = plt.subplots(nrows=2, layout="constrained")
+fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.01, hspace=0., wspace=0.)
 ax = axes[0]
 ax.plot(time, ys[:, 0], label="sender")
 ax.plot(time, ys[:, 1], label="receiver")
-ax.legend()
+ax.set_xticklabels(["" for tick in ax.get_xticks()])
+# ax.legend()
 ax.set_ylabel(r"$v$")
-ax.set_title("QIF dynamics")
+ax.set_title("Plasticity rule")
 ax = axes[1]
 ax.plot(time, x_ah_oja, label="LTP", color="black")
 ax.plot(time, y_ah_oja, label="LTD", color="darkorange")
 # ax.plot(time, x_ah_oja, label="LTP, anti-Hebbian", color="black", linestyle="dashed")
 # ax.plot(time, y_ah_oja, label="LTD, anti-Hebbian", color="darkorange", linestyle="dashed")
-ax.legend()
+# ax.legend()
 # ax1.legend()
-ax.set_ylabel(r"$x$/$y$")
-ax.set_xlabel("time")
-ax.set_title(r"$w$ dynamics")
+ax.set_ylabel(r"model")
+ax.set_xlabel("rate")
+# ax.set_title(r"$w$ dynamics")
 # ax = axes[2]
 # ax.plot(time, x_h_stdp, label="x (hebbian)")
 # ax.plot(time, y_h_stdp, label="y (hebbian)")

@@ -43,7 +43,7 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 # parameter definition
 save_results = True
 conditions = ["hebbian", "antihebbian"]
-noise_lvls = [0.0, 0.004, 0.008]
+noise_lvls = [0.0, 0.003, 0.006]
 bs = [0.0, 0.01, 0.1, 1.0]
 J = 5.0
 N = 1000
@@ -56,7 +56,7 @@ a = 0.01
 res = {"condition": [], "b": [], "noise": [], "eta": [], "w": [], "w0": []}
 
 # simulation
-T = 20000.0
+T = 18000.0
 solver_kwargs = {"method": "RK23", "t_eval": [0.0, T], "atol": 1e-5}
 
 for condition in conditions:
@@ -84,7 +84,7 @@ for condition in conditions:
 # save results
 conn = int(J)
 if save_results:
-    pickle.dump({"J": J, "results": res}, open(f"../results/rate_simulation_J{conn}.pkl", "wb"))
+    pickle.dump(res, open(f"../results/rate_simulation_J{conn}.pkl", "wb"))
 
 # plotting
 res = pd.DataFrame.from_dict(res)
@@ -112,6 +112,7 @@ for j, c in enumerate(conditions):
         c_title = "Hebbian Learning" if c == "hebbian" else "Anti-Hebbian Learning"
         ax.set_title(f"{c}, noise lvl = {noise}")
 
+fig.suptitle("Oja's rule, rate prediction")
 fig.canvas.draw()
 # plt.savefig(f"../results/figures/weight_update_rule.svg")
 plt.show()

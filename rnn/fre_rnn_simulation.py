@@ -1,9 +1,10 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
 from scipy.ndimage import gaussian_filter1d
 from copy import deepcopy
 from numba import njit
+import sys
+import pickle
 
 def normalize(x):
     x = x - np.mean(x)
@@ -16,23 +17,26 @@ def correlate(x, y):
     return c[0, 1]
 
 # parameters
+path = "/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs"
+rep = int(sys.argv[-1])
+b = float(sys.argv[-2])
+Delta = float(sys.argv[-3])
+noise_lvl = float(sys.argv[-4])
 M = 10
 p = 1.0
 edge_vars = {
-    "a": 0.01, "b": 0.1
+    "a": 0.1, "b": b
 }
-Delta = 0.25
-eta = -0.9
+eta = -1.15
 # etas = eta + Delta * np.linspace(-0.5, 0.5, num=M)
 indices = np.arange(1, M+1)
 etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
 deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*indices-M-1.5)/(M+1)))
-node_vars = {"tau": 1.0, "J": 24.0 / (p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": deltas,
+node_vars = {"tau": 1.0, "J": 30.0 / (p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": deltas,
              "tau_a": 20.0, "kappa": 0.2, "A0": 0.0}
-T = 2000.0
+T = 1000.0
 dt = 1e-3
 dts = 1.0
-noise_lvl = 10.0
 noise_sigma = 1000.0
 
 # node and edge template initiation
@@ -64,16 +68,16 @@ net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, e
 net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
 
 # define extrinsic input
-inp = np.zeros((int(T/dt),))
-noise = noise_lvl*np.random.randn(inp.shape[0])
-noise = gaussian_filter1d(noise, sigma=noise_sigma)
+inp = np.zeros((int(T/dt), M))
+noise = noise_lvl*np.random.randn(*inp.shape)
+noise = gaussian_filter1d(noise, sigma=noise_sigma, axis=0)
 inp += noise
 
 # run simulation
-res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp},
+res = net.run(simulation_time=T, step_size=dt, inputs={f"p{i}/{node_op}/I_ext": inp[:, i] for i in range(M)},
               outputs={"r": f"all/{node_op}/r", "u": f"all/{node_op}/u", "a": f"all/{node_op}/a"},
-              solver="scipy", clear=False, sampling_step_size=dts, decorator=njit, float_precision="float64",
-              method="RK23", atol=1e-5, min_step=dt)
+              solver="heun", clear=False, sampling_step_size=dts, float_precision="float64"
+              )
 
 # extract synaptic weights
 mapping, weights, etas = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
@@ -83,37 +87,7 @@ W = W[:, idx]
 clear(net)
 # np.fill_diagonal(W, 0)
 
-# calculate matrix quantities
-in_edges = np.sum(W, axis=1)
-corr = correlate(in_edges, etas[idx])
-
-# plotting
-time = res.index * 10.0
-fig = plt.figure(figsize=(16, 6))
-grid = fig.add_gridspec(nrows=3, ncols=3)
-ax1 = fig.add_subplot(grid[0, :2])
-ax1.plot(time, res["r"]*100.0)
-ax1.plot(time, np.mean(res["r"].values, axis=1)*100.0, color="black")
-ax1.set_ylim((0.0, 200.0))
-ax1.set_ylabel("r (Hz)")
-ax = fig.add_subplot(grid[1, :2])
-ax.sharex(ax1)
-ax.plot(time, res["u"])
-ax.set_ylabel("u")
-ax = fig.add_subplot(grid[2, :2])
-ax.sharex(ax1)
-ax.plot(time, res["a"])
-ax.set_ylabel("a")
-ax.set_xlabel("time")
-ax = fig.add_subplot(grid[:, 2])
-im = ax.imshow(W, aspect="auto", interpolation="none", cmap="cividis")
-plt.colorbar(im, ax=ax)
-step = 4
-labels = np.round(etas[idx][::step], decimals=2)
-ax.set_xticks(ticks=np.arange(0, M, step=step), labels=labels)
-ax.set_yticks(ticks=np.arange(0, M, step=step), labels=labels)
-ax.invert_yaxis()
-ax.invert_xaxis()
-ax.set_title(f"C(etas, sum(W, 1)) = {corr}")
-plt.tight_layout()
-plt.show()
+pickle.dump(
+    {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise},
+    open(f"{path}/results/rnn_results/fre_simulation_{int(b*10)}_{int(noise)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
+)

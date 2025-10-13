@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sb
+import pickle
 
 def first_derivative(w: float, x: np.ndarray, y: np.ndarray, b: float) -> np.ndarray:
     return b*(x*(1-w) - y*w) + (1-b)*(x-y)*(1-w)*w
@@ -57,6 +58,7 @@ def get_qif_fr(x: float) -> float:
     return np.sqrt(x) / np.pi if x > 0 else 0.0
 
 # parameter definition
+save_results = True
 conditions = ["hebbian", "antihebbian"]
 N = 100
 eta_min, eta_max = -2.0, 3.0
@@ -66,7 +68,7 @@ bs = np.asarray([0.0, 0.01, 0.1, 1.0])
 w0 = np.linspace(start=0.0, stop=1.0, num=N)
 
 # get weight solutions
-res = {"condition": [], "b": [], "eta": [], "x-y": [], "w": [], "dw/dt": [], "w0": []}
+res = {"condition": [], "b": [], "eta": [], "w": [], "w0": []}
 fr_t = get_qif_fr(eta_target)
 for condition in conditions:
     for b in bs:
@@ -78,10 +80,11 @@ for condition in conditions:
                 res["b"].append(b)
                 res["eta"].append(eta)
                 res["w"].append(full_solution(w, x, y, b))
-                res["x-y"].append(np.round(x - y, decimals=2))
-                res["dw/dt"].append(first_derivative(w, x, y, b))
                 res["w0"].append(w)
 res = pd.DataFrame.from_dict(res)
+
+if save_results:
+    pickle.dump(res, open(f"../results/weight_solutions.pkl", "wb"))
 
 # figure settings
 print(f"Plotting backend: {plt.rcParams['backend']}")
@@ -99,49 +102,21 @@ markersize = 2
 # plotting
 fig = plt.figure(constrained_layout=True)
 fig.set_constrained_layout_pads(w_pad=0.03, h_pad=0.01, hspace=0., wspace=0.)
-subfigs = fig.subfigures(nrows=2, ncols=1)
+grid = fig.add_gridspec(nrows=2, ncols=3)
 for i, condition in enumerate(conditions):
 
     # reduce data to condition
     res_tmp = res.loc[res.loc[:, "condition"] == condition, :]
-
-    # create subfigure
-    subfig = subfigs[i]
-    subfig.suptitle("Hebbian Learning" if condition == "hebbian" else "Anti-Hebbian Learning")
-    grid = subfig.add_gridspec(nrows=1, ncols=3)
-
-    # linear dw/dt component
-    res_tmp2 = res_tmp.loc[res_tmp.loc[:, "b"] == 1.0, :]
-    ax = subfig.add_subplot(grid[0, 0])
-    sb.lineplot(res_tmp2, x="w0", y="dw/dt", hue="x-y", palette="viridis", ax=ax, legend=False, err_kws={"alpha": 0.0})
-    ax.axhline(y=0.0, color="black", linestyle="dashed")
-    ax.set_xlabel(r"$w$")
-    ax.set_ylabel(r"$\frac{dw}{dt}$")
-    if i == 0:
-        ax.set_title(r"$\frac{dw}{dt}$ for $b = 1$")
-
-    # quadratic dw/dt component
-    res_tmp2 = res_tmp.loc[res_tmp.loc[:, "b"] == 0.0, :]
-    ax = subfig.add_subplot(grid[0, 1])
-    cax = ax.scatter(res_tmp2.loc[:, "w0"].values, res_tmp2.loc[:, "dw/dt"].values, c=res_tmp2.loc[:, "x-y"].values,
-                     cmap="viridis")
-    ax.cla()
-    sb.lineplot(res_tmp2, x="w0", y="dw/dt", hue="x-y", palette="viridis", ax=ax, legend=False, err_kws={"alpha": 0.0})
-    clb = plt.colorbar(cax, ax=ax, shrink=0.8)
-    clb.ax.set_title(r"$x-y$")
-    ax.axhline(y=0.0, color="black", linestyle="dashed")
-    ax.set_xlabel(r"$w$")
-    ax.set_ylabel("")
-    if i == 0:
-        ax.set_title(r"$\frac{dw}{dt}$ for $b = 0$")
+    # subfig.suptitle("Hebbian Learning" if condition == "hebbian" else "Anti-Hebbian Learning")
 
     # solutions
-    ax = subfig.add_subplot(grid[0, 2])
-    sb.lineplot(res_tmp, x="eta", y="w", hue="b", palette="Dark2", ax=ax, errorbar=("pi", 100))
+    ax = fig.add_subplot(grid[i, 0])
+    sb.lineplot(res_tmp, x="eta", y="w", hue="b", palette="Dark2", ax=ax, errorbar=("pi", 90),
+                legend=False if i > 0 else "auto")
     ax.set_xlabel(r"$\eta$")
     ax.set_ylabel(r"$w$")
-    ax.get_legend().set_title(r"$b$")
     if i == 0:
+        ax.get_legend().set_title(r"$b$")
         ax.set_title(r"Solutions for $w$")
 
 fig.canvas.draw()
