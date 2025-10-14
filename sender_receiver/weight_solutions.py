@@ -8,7 +8,7 @@ def first_derivative(w: float, x: np.ndarray, y: np.ndarray, b: float) -> np.nda
     return b*(x*(1-w) - y*w) + (1-b)*(x-y)*(1-w)*w
 
 def second_derivative(w: float, x: float, y: float, b: float) -> float:
-    return -b*(x+y)  + (1-b)*(x-y) - 2*w*(1-b)*(x-y)
+    return -b*(x+y) + (1-b)*(x-y)*(1-2*w)
 
 def get_xy(fr_source: float, fr_target: float, condition: str) -> tuple:
     if condition == "hebbian":

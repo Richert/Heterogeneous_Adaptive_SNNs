@@ -102,7 +102,7 @@ ax.plot(time, y_ah_oja, label="LTD", color="darkorange")
 # ax.plot(time, y_ah_oja, label="LTD, anti-Hebbian", color="darkorange", linestyle="dashed")
 # ax.legend()
 # ax1.legend()
-ax.set_ylabel(r"model")
+ax.set_ylabel(r"$\eta$")
 ax.set_xlabel("rate")
 # ax.set_title(r"$w$ dynamics")
 # ax = axes[2]

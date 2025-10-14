@@ -6,7 +6,7 @@ n=10
 range_end=$((n-1))
 bs=( 0.0 0.1 0.2 )
 noises=( 0.0 1.0 10.0 )
-deltas=( 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 )
+deltas=( 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6 1.8 2.0 )
 
 # limit amount of threads that each Python process can work with
 n_threads=8
@@ -25,7 +25,7 @@ for IDX in $(seq 0 $range_end); do
           # python calls
           (
           echo "Starting job for noise = ${noise}, delta = ${delta}, b = ${b}, and rep = ${IDX}."
-          python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/rnn/fre_rnn_simulation.py $noise $delta $b $IDX
+          python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/rnn/fre_mp_simulation.py $noise $delta $b $IDX
           sleep 1
           ) &
 

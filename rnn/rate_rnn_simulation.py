@@ -48,6 +48,9 @@ def gaussian(N, eta: float, Delta: float) -> np.ndarray:
     etas = eta + Delta * np.random.randn(N)
     return np.sort(etas)
 
+def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
+    return eta + Delta*np.linspace(-0.5, 0.5, N)
+
 def get_qif_fr(x: np.ndarray) -> np.ndarray:
     fr = np.zeros_like(x)
     fr[x > 0] = np.sqrt(x[x > 0])
@@ -56,14 +59,14 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 # parameter definition
 save_results = False
 condition = "hebbian"
-distribution = "lorentzian"
-Deltas = [0.1, 0.2, 0.4, 0.8, 1.6, 3.2]
-J = 30.0
+distribution = "uniform"
+Deltas = [0.5, 1.0, 1.5, 2.0]
+J = 5.0
 N = 50
 m = 5
-eta = -5.0 if J > 0 else 2.0
+eta = -0.5
 a = 0.1
-bs = [0.0, 0.05, 0.2]
+bs = [0.0, 0.1]
 weights = {"b": [], "Delta": [], "source": [], "target": [], "w": [], "w0": []}
 results = {"b": [], "Delta": [], "eta": [], "c_s": [], "c_t": [], "v_s": [], "v_t": [], "h_s": [], "h_t": [],
            "c2_s": [], "c2_t": []}
@@ -72,7 +75,7 @@ results = {"b": [], "Delta": [], "eta": [], "c_s": [], "c_t": [], "v_s": [], "v_
 T = 1000.0
 dt = 1e-3
 noise = 0.005
-inp_noise = 80.0
+inp_noise = 10.0
 inp_sigma = 1000.0
 inp = np.zeros((int(T/dt)+1,))
 inp += inp_noise * np.random.randn(*inp.shape)
