@@ -9,10 +9,10 @@ import pickle
 @njit
 def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, trace_source: np.ndarray, trace_target: np.ndarray) -> tuple:
     if condition == "hebbian":
-        x = np.outer(fr_target, trace_source).T
-        y = np.outer(fr_target, trace_target).T
+        x = np.outer(fr_target, trace_source)
+        y = np.repeat(fr_target*trace_target, N).reshape(N, N).T
     elif condition == "antihebbian":
-        x = np.outer(fr_source, trace_source)
+        x = np.repeat(fr_source*trace_source, N).reshape(N, N)
         y = np.outer(fr_target, trace_source)
     else:
         raise ValueError(f"Invalid condition: {condition}.")
@@ -77,12 +77,12 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
 
 # parameters
 path = "/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs"
-rep = 0 #int(sys.argv[-1])
-b = 0.1 #float(sys.argv[-2])
-Delta = 1.5 #float(sys.argv[-3])
-noise_lvl = 0.0 #float(sys.argv[-4])
+rep = int(sys.argv[-1])
+b = float(sys.argv[-2])
+Delta = float(sys.argv[-3])
+noise_lvl = float(sys.argv[-4])
 condition = "hebbian"
-N = 200
+N = 1000
 M = 20
 p = 1.0
 edge_vars = {
@@ -96,7 +96,7 @@ for eta_mp in etas_mp:
 etas = np.asarray(etas)
 node_vars = {"J": 5.0 / (0.5*p*N), "eta": etas, "tau_u": 30.0, "tau_s": 1.0}
 T = 1000.0
-dt = 5e-3
+dt = 1e-3
 global_noise = 10.0
 noise_sigma = 1/dt
 v_cutoff = 100.0
@@ -114,14 +114,14 @@ s, W = solve_ivp(dt, w0, node_vars["eta"], inp, node_vars["tau_s"], node_vars["t
 W[W < 0.0] = 0.0
 W[W > 1.0] = 1.0
 
-fig, ax = plt.subplots(figsize=(5, 5))
-ax.imshow(W)
-fig, ax = plt.subplots(figsize=(10, 4))
-ax.plot(s)
-ax.plot(np.mean(s, axis=1), color="black")
-plt.show()
+# fig, ax = plt.subplots(figsize=(5, 5))
+# ax.imshow(W)
+# fig, ax = plt.subplots(figsize=(10, 4))
+# ax.plot(s)
+# ax.plot(np.mean(s, axis=1), color="black")
+# plt.show()
 
-# pickle.dump(
-#     {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl},
-#     open(f"{path}/results/rnn_results/qif_simulation_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
-# )
+pickle.dump(
+    {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl},
+    open(f"{path}/results/rnn_results/qif_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
+)

@@ -26,7 +26,7 @@ path = "../results/rnn_results"
 results = {"b": [], "Delta": [], "noise": [], "c_s": [], "c_t": [], "v_s": [], "v_t": [], "h_s": [], "h_t": []}
 bs = [0.0, 0.1, 0.2]
 noises = [0.0, 1.0, 10.0]
-deltas = np.arange(0.0, 1.0, step=0.1) + 0.1
+deltas = np.arange(0.0, 2.1, step=0.2)
 n_reps = 10
 
 # calculate weight statistics
@@ -35,22 +35,27 @@ for b in bs:
         for delta in deltas:
             for rep in range(n_reps):
 
-                data = pickle.load(open(f"{path}/fre_simulation_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
-                                        "rb"))
-                w = data["W"]
-                etas = data["eta"]
-                w_s = np.mean(w, axis=1)
-                w_t = np.mean(w, axis=0)
+                try:
 
-                results["b"].append(b)
-                results["Delta"].append(delta)
-                results["noise"].append(noise)
-                results["c_s"].append(correlate(etas, w_s))
-                results["c_t"].append(correlate(etas, w_t))
-                results["v_s"].append(np.var(w_s))
-                results["v_t"].append(np.var(w_t))
-                results["h_s"].append(entropy(get_prob(w_s)))
-                results["h_t"].append(entropy(get_prob(w_t)))
+                    data = pickle.load(open(f"{path}/fre_mp_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
+                                            "rb"))
+                    w = data["W"]
+                    etas = data["eta"]
+                    w_s = np.mean(w, axis=1)
+                    w_t = np.mean(w, axis=0)
+
+                    results["b"].append(b)
+                    results["Delta"].append(delta)
+                    results["noise"].append(noise)
+                    results["c_s"].append(correlate(etas, w_s))
+                    results["c_t"].append(correlate(etas, w_t))
+                    results["v_s"].append(np.var(w_s))
+                    results["v_t"].append(np.var(w_t))
+                    results["h_s"].append(entropy(get_prob(w_s)))
+                    results["h_t"].append(entropy(get_prob(w_t)))
+
+                except FileNotFoundError:
+                    pass
 
 # plotting
 print(f"Plotting backend: {plt.rcParams['backend']}")
@@ -88,41 +93,41 @@ for i, b in enumerate(bs):
     else:
         ax.set_ylabel("")
 
-    # # source weight variance
-    # ax = fig.add_subplot(grid[2, i])
-    # sb.lineplot(results, x="Delta", y="v_s", hue="noise", legend=False, ax=ax, palette="Dark2")
-    # ax.set_xlabel("")
-    # if i == 0:
-    #     ax.set_ylabel(r"$var(w_j)$")
-    # else:
-    #     ax.set_ylabel("")
-    #
-    # # target weight variance
-    # ax = fig.add_subplot(grid[3, i])
-    # sb.lineplot(results, x="Delta", y="v_t", hue="noise", legend=False, ax=ax, palette="Dark2")
-    # ax.set_xlabel("")
-    # if i == 0:
-    #     ax.set_ylabel(r"$var(w_i)$")
-    # else:
-    #     ax.set_ylabel("")
-
-    # source weight entropy
+    # source weight variance
     ax = fig.add_subplot(grid[2, i])
-    sb.lineplot(results, x="Delta", y="h_s", hue="noise", legend=False, ax=ax, palette="Dark2")
+    sb.lineplot(results, x="Delta", y="v_s", hue="noise", legend=False, ax=ax, palette="Dark2")
     ax.set_xlabel("")
     if i == 0:
-        ax.set_ylabel(r"$H(w_j)$")
+        ax.set_ylabel(r"$var(w_j)$")
     else:
         ax.set_ylabel("")
 
     # target weight variance
     ax = fig.add_subplot(grid[3, i])
-    sb.lineplot(results, x="Delta", y="h_t", hue="noise", legend=False, ax=ax, palette="Dark2")
-    ax.set_xlabel(r"$\Delta$")
+    sb.lineplot(results, x="Delta", y="v_t", hue="noise", legend=False, ax=ax, palette="Dark2")
+    ax.set_xlabel("")
     if i == 0:
-        ax.set_ylabel(r"$H(w_i)$")
+        ax.set_ylabel(r"$var(w_i)$")
     else:
         ax.set_ylabel("")
+
+    # # source weight entropy
+    # ax = fig.add_subplot(grid[2, i])
+    # sb.lineplot(results, x="Delta", y="h_s", hue="noise", legend=False, ax=ax, palette="Dark2")
+    # ax.set_xlabel("")
+    # if i == 0:
+    #     ax.set_ylabel(r"$H(w_j)$")
+    # else:
+    #     ax.set_ylabel("")
+    #
+    # # target weight variance
+    # ax = fig.add_subplot(grid[3, i])
+    # sb.lineplot(results, x="Delta", y="h_t", hue="noise", legend=False, ax=ax, palette="Dark2")
+    # ax.set_xlabel(r"$\Delta$")
+    # if i == 0:
+    #     ax.set_ylabel(r"$H(w_i)$")
+    # else:
+    #     ax.set_ylabel("")
 
 fig.suptitle("Weight Statistics")
 fig.canvas.draw()
