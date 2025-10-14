@@ -25,7 +25,7 @@ for IDX in $(seq 0 $range_end); do
           # python calls
           (
           echo "Starting job for noise = ${noise}, delta = ${delta}, b = ${b}, and rep = ${IDX}."
-          python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/rnn/fre_mp_simulation.py $noise $delta $b $IDX
+          python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/rnn/qif_rnn_simulation.py $noise $delta $b $IDX
           sleep 1
           ) &
 
