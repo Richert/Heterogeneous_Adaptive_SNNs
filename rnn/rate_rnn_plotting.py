@@ -56,7 +56,7 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
 # meta parameters
 path = "../results/rnn_results"
 fre_res = {"b": [], "Delta": [], "noise": [], "c_s": [], "c_t": [], "v": [], "h": []}
-bs = [0.0, 0.1, 0.2]
+bs = [0.1]
 noises = [0.0]
 deltas = np.arange(0.0, 2.1, step=0.2)
 n_reps = 10
@@ -145,38 +145,27 @@ plt.rcParams['axes.labelsize'] = 12
 plt.rcParams['lines.linewidth'] = 1.0
 markersize = 2
 
-fig = plt.figure(figsize=(4*len(bs), 6))
+fig = plt.figure(figsize=(6, 2))
 fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.01, hspace=0., wspace=0.)
-grid = fig.add_gridspec(nrows=3, ncols=len(bs))
-for i, b in enumerate(bs):
+grid = fig.add_gridspec(nrows=1, ncols=3)
 
-    # source correlation
-    ax = fig.add_subplot(grid[0, i])
-    sb.lineplot(results, x="Delta", y="c_s", hue="model", ax=ax, palette="Dark2", legend=False if i > 0 else "auto")
-    ax.set_xlabel("")
-    if i == 0:
-        ax.set_ylabel(r"$R(\eta_j, w_j)$")
-    else:
-        ax.set_ylabel("")
-    ax.set_title(rf"$b = {b}$")
+# source correlation
+ax = fig.add_subplot(grid[0, 0])
+sb.lineplot(results, x="Delta", y="c_s", hue="model", ax=ax, palette="Dark2", legend="auto")
+ax.set_xlabel(r"$\Delta$")
+ax.set_ylabel(r"$R(\eta_j, w_j)$")
 
-    # target correlation
-    ax = fig.add_subplot(grid[1, i])
-    sb.lineplot(results, x="Delta", y="c_t", hue="model", legend=False, ax=ax, palette="Dark2")
-    ax.set_xlabel("")
-    if i == 0:
-        ax.set_ylabel(r"$R(\eta_i, w_i)$")
-    else:
-        ax.set_ylabel("")
+# target correlation
+ax = fig.add_subplot(grid[0, 1])
+sb.lineplot(results, x="Delta", y="c_t", hue="model", legend=False, ax=ax, palette="Dark2")
+ax.set_xlabel(r"$\Delta$")
+ax.set_ylabel(r"$R(\eta_i, w_i)$")
 
-    # weight variance
-    ax = fig.add_subplot(grid[2, i])
-    sb.lineplot(results, x="Delta", y="v", hue="model", legend=False, ax=ax, palette="Dark2")
-    ax.set_xlabel("")
-    if i == 0:
-        ax.set_ylabel(r"$var(w_j)$")
-    else:
-        ax.set_ylabel("")
+# weight variance
+ax = fig.add_subplot(grid[0, 2])
+sb.lineplot(results, x="Delta", y="v", hue="model", legend=False, ax=ax, palette="Dark2")
+ax.set_xlabel(r"$\Delta$")
+ax.set_ylabel(r"$var(w_j)$")
 
 fig.suptitle("Weight Statistics")
 fig.canvas.draw()

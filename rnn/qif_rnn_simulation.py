@@ -76,7 +76,7 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
     return eta + Delta*np.linspace(-0.5, 0.5, N)
 
 # parameters
-path = "/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs"
+path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
 rep = int(sys.argv[-1])
 b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
