@@ -12,7 +12,7 @@ def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, trace_source: np.ndarra
         x = np.outer(fr_target, trace_source)
         y = np.repeat(fr_target*trace_target, N).reshape(N, N)
     elif condition == "antihebbian":
-        x = np.repeat(fr_source*trace_source, N).reshape(N, N).T
+        x = np.repeat(fr_source*trace_source, N).reshape(N, N)
         y = np.outer(fr_target, trace_source)
     else:
         raise ValueError(f"Invalid condition: {condition}.")
@@ -82,7 +82,7 @@ b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
 noise_lvl = float(sys.argv[-4])
 condition = "hebbian"
-N = 1000
+N = 100
 M = 20
 p = 1.0
 edge_vars = {
@@ -99,7 +99,7 @@ T = 1000.0
 dt = 1e-3
 global_noise = 10.0
 noise_sigma = 1.0/dt
-v_cutoff = 200.0
+v_cutoff = 100.0
 
 # define extrinsic input
 inp = np.zeros((int(T/dt), N))
@@ -114,14 +114,14 @@ s, W = solve_ivp(dt, w0, node_vars["eta"], inp, node_vars["tau_s"], node_vars["t
 W[W < 0.0] = 0.0
 W[W > 1.0] = 1.0
 
-# fig, ax = plt.subplots(figsize=(5, 5))
-# ax.imshow(W)
-# fig, ax = plt.subplots(figsize=(10, 4))
-# ax.plot(s)
-# ax.plot(np.mean(s, axis=1), color="black")
-# plt.show()
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.imshow(W)
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(s)
+ax.plot(np.mean(s, axis=1), color="black")
+plt.show()
 
-pickle.dump(
-    {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl},
-    open(f"{path}/results/rnn_results/qif_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
-)
+# pickle.dump(
+#     {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl},
+#     open(f"{path}/results/rnn_results/qif2_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
+# )
