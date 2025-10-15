@@ -22,22 +22,22 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
 
 # parameters
 path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
-rep = int(sys.argv[-1])
-b = float(sys.argv[-2])
-Delta = float(sys.argv[-3])
-noise_lvl = float(sys.argv[-4])
+rep = 0 #int(sys.argv[-1])
+b = 0.1 #float(sys.argv[-2])
+Delta = 0.5 #float(sys.argv[-3])
+noise_lvl = 0.0 #float(sys.argv[-4])
 M = 20
 p = 1.0
 edge_vars = {
     "a": 0.1, "b": b
 }
-eta = -0.5
+eta = 2.0
 etas = uniform(M, eta, Delta)
-node_vars = {"tau": 1.0, "J": 5.0 / (0.5*p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": Delta/(2*M)}
+node_vars = {"tau": 1.0, "J": -5.0 / (0.5*p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": Delta/(2*M)}
 T = 1000.0
 dt = 1e-3
 dts = 1.0
-global_noise = 10.0
+global_noise = 0.0
 noise_sigma = 1.0/dt
 
 # node and edge template initiation

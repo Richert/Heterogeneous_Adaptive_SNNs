@@ -185,7 +185,7 @@ ax.set_ylabel(r"$R(\eta_i, w_i)$")
 
 # weight variance
 ax = fig.add_subplot(grid[0, 2])
-sb.lineplot(results, x="Delta", y="v", hue="model", legend=False, ax=ax, palette="Dark2")
+sb.lineplot(results, x="Delta", y="h", hue="model", legend=False, ax=ax, palette="Dark2")
 ax.set_xlabel(r"$\Delta$")
 ax.set_ylabel(r"$H(w_j)$")
 

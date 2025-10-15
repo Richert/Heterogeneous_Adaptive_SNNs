@@ -82,7 +82,7 @@ b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
 noise_lvl = float(sys.argv[-4])
 condition = "hebbian"
-N = 200
+N = 1000
 M = 20
 p = 1.0
 edge_vars = {
@@ -99,11 +99,13 @@ T = 1000.0
 dt = 1e-3
 global_noise = 10.0
 noise_sigma = 1.0/dt
-v_cutoff = 200.0
+v_cutoff = 100.0
 
 # define extrinsic input
-inp = np.zeros((int(T/dt), N))
-noise = noise_lvl*np.random.randn(*inp.shape) + global_noise*np.random.randn(inp.shape[0], 1)
+# inp = np.zeros((int(T/dt), N))
+# noise = noise_lvl*np.random.randn(*inp.shape) + global_noise*np.random.randn(inp.shape[0], 1)
+inp = np.zeros((int(T/dt), 1))
+noise = global_noise*np.random.randn(inp.shape[0], 1)
 noise = gaussian_filter1d(noise, sigma=noise_sigma, axis=0)
 inp += noise
 

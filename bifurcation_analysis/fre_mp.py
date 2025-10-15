@@ -43,7 +43,7 @@ t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NP
 # continuation in independent parameter
 p1 = "J"
 p1_idx = 2
-p1_vals = [5.0, 10.0, 15.0]
+p1_vals = [5.0]
 p1_min, p1_max = 0.0, 20.0
 ncol = 6
 c1_sols, c1_cont = ode.run(starting_point='UZ1', c='1d', ICP=p1_idx, NPAR=n_params, NDIM=n_dim, name=f'{p1}:0',
