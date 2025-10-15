@@ -5,7 +5,7 @@ batch_size=10
 n=10
 range_end=$((n-1))
 bs=( 0.1 )
-noises=( 0.0 1.0 10.0 )
+noises=( 0.0 )
 deltas=( 0.0 0.4 0.8 1.2 1.6 2.0 )
 
 # limit amount of threads that each Python process can work with

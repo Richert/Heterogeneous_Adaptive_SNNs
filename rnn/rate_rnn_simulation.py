@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import seaborn as sb
 import pandas as pd
 
+
 def get_prob(x, bins: int = 100):
     bins = np.linspace(0.0, 1.0, num=bins)
     counts, _ = np.histogram(x, bins=bins)
@@ -30,7 +31,7 @@ def delta_w(t: float, w: np.ndarray, r: np.ndarray, eta: np.ndarray, J: float, b
     dt = t - t_old[0]
     t_old[0] = t
     w = w.reshape(N, N)
-    r[:] = get_qif_fr(inp_f(t) + eta + noise * np.random.randn() * np.sqrt(dt) + J*np.dot(w, r) / N)
+    r[:] = get_qif_fr(inp_f(t) + eta + noise * np.random.randn() * np.sqrt(dt) + J*np.dot(w, r))
     x, y = get_xy(r, r, condition=condition)
     return (a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))).flatten()
 
@@ -61,9 +62,8 @@ save_results = False
 condition = "hebbian"
 distribution = "uniform"
 Deltas = [0.5, 1.0, 1.5, 2.0]
-J = 5.0
-N = 50
-m = 5
+N = 100
+J = 5.0 / (0.5*N)
 eta = -0.5
 a = 0.1
 bs = [0.0, 0.1]
@@ -74,9 +74,9 @@ results = {"b": [], "Delta": [], "eta": [], "c_s": [], "c_t": [], "v_s": [], "v_
 # simulation parameters
 T = 1000.0
 dt = 1e-3
-noise = 0.005
+noise = 0.0
 inp_noise = 10.0
-inp_sigma = 1000.0
+inp_sigma = 1.0/dt
 inp = np.zeros((int(T/dt)+1,))
 inp += inp_noise * np.random.randn(*inp.shape)
 inp = gaussian_filter1d(inp, sigma=inp_sigma)
@@ -84,7 +84,14 @@ time = np.arange(0.0, T+dt, dt)
 inp_f = interp1d(time, inp)
 solver_kwargs = {"t_eval": [0.0, T], "method": "RK23", "atol": 1e-5}
 
-f = lorentzian if distribution == "lorentzian" else gaussian
+# choose sampling distribution
+if distribution == "lorentzian":
+    f = lorentzian
+elif distribution == "gaussian":
+    f = gaussian
+else:
+    f = uniform
+
 for b in bs:
     for Delta in Deltas:
 

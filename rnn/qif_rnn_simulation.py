@@ -82,7 +82,7 @@ b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
 noise_lvl = float(sys.argv[-4])
 condition = "hebbian"
-N = 1000
+N = 400
 M = 20
 p = 1.0
 edge_vars = {
@@ -98,7 +98,7 @@ node_vars = {"J": 5.0 / (0.5*p*N), "eta": etas, "tau_u": 30.0, "tau_s": 1.0}
 T = 1000.0
 dt = 1e-3
 global_noise = 10.0
-noise_sigma = 1/dt
+noise_sigma = 1.0/dt
 v_cutoff = 100.0
 
 # define extrinsic input

@@ -37,7 +37,7 @@ node_vars = {"tau": 1.0, "J": 5.0 / (0.5*p*M), "eta": etas, "tau_u": 30.0, "tau_
 T = 1000.0
 dt = 1e-3
 dts = 1.0
-global_noise = 1.0
+global_noise = 10.0
 noise_sigma = 1.0/dt
 
 # node and edge template initiation
