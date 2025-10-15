@@ -23,7 +23,9 @@ def get_prob(x, bins: int = 100):
     bins = np.linspace(0.0, 1.0, num=bins)
     counts, _ = np.histogram(x, bins=bins)
     count_sum = np.sum(counts)
-    return counts / count_sum if count_sum > 0 else counts
+    if count_sum > 0:
+        return counts / count_sum
+    return counts
 
 def get_xy(fr_source: np.ndarray, fr_target: np.ndarray) -> tuple:
     x = np.outer(fr_target, fr_source)
@@ -60,7 +62,7 @@ bs = [0.1]
 noises = [0.0]
 deltas = np.arange(0.0, 2.1, step=0.2)
 n_reps = 10
-N = 100
+N = 200
 
 # rate model parameters
 J = 5.0 / (0.5 * N)
@@ -90,6 +92,7 @@ for b in bs:
 
                 try:
 
+                    # fre model
                     data = pickle.load(open(f"{path}/fre_mp_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
                                             "rb"))
                     w = data["W"]
@@ -102,16 +105,35 @@ for b in bs:
                     results["noise"].append(noise)
                     results["c_s"].append(correlate(etas, w_s))
                     results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w))
+                    results["v"].append(np.var(w.flatten()))
                     results["h"].append(entropy(get_prob(w.flatten())))
+                    if results["h"][-1] < 0.1:
+                        print("here")
                     results["model"].append("FRE")
 
-                    # define initial condition
+                    # qif model
+                    data = pickle.load(open(f"{path}/qif_{int(b * 10)}_{int(noise)}_{int(delta * 10.0)}_{rep}.pkl",
+                                            "rb"))
+                    w = data["W"]
+                    etas = data["eta"]
+                    w_s = np.mean(w, axis=1)
+                    w_t = np.mean(w, axis=0)
+
+                    results["b"].append(b)
+                    results["Delta"].append(delta)
+                    results["noise"].append(noise)
+                    results["c_s"].append(correlate(etas, w_s))
+                    results["c_t"].append(correlate(etas, w_t))
+                    results["v"].append(np.var(w.flatten()))
+                    results["h"].append(entropy(get_prob(w.flatten())))
+                    if results["h"][-1] < 0.1:
+                        print("here")
+                    results["model"].append("QIF")
+
+                    # rate model simulation
                     etas = uniform(N, eta, delta)
                     fr = get_qif_fr(etas)
                     w0 = np.random.uniform(0.01, 0.99, size=(int(N * N),))
-
-                    # get weight solutions
                     w = get_w_solution(inp_f, w0, fr, etas, J, b, a, T, **solver_kwargs)
                     w0 = w0.reshape(N, N)
                     w_s = np.mean(w, axis=1)
@@ -122,7 +144,7 @@ for b in bs:
                     results["noise"].append(noise)
                     results["c_s"].append(correlate(etas, w_s))
                     results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w))
+                    results["v"].append(np.var(w.flatten()))
                     results["h"].append(entropy(get_prob(w.flatten())))
                     results["model"].append("RM")
 
@@ -165,7 +187,7 @@ ax.set_ylabel(r"$R(\eta_i, w_i)$")
 ax = fig.add_subplot(grid[0, 2])
 sb.lineplot(results, x="Delta", y="v", hue="model", legend=False, ax=ax, palette="Dark2")
 ax.set_xlabel(r"$\Delta$")
-ax.set_ylabel(r"$var(w_j)$")
+ax.set_ylabel(r"$H(w_j)$")
 
 fig.suptitle("Weight Statistics")
 fig.canvas.draw()

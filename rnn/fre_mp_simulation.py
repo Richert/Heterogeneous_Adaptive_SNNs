@@ -80,7 +80,9 @@ res = net.run(simulation_time=T, step_size=dt, inputs={f"p{i}/{node_op}/I_ext": 
               float_precision="float64", decorator=njit)
 
 # extract synaptic weights
-mapping, weights, etas = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
+mapping, weights, etas_tmp = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
+if len(etas) == M:
+    etas = etas_tmp
 idx = np.argsort(etas)
 W = np.asarray([weights[mapping[i, :] > 0.0] for i in idx])
 W = W[:, idx]
