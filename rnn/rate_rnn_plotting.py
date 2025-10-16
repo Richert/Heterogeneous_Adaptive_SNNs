@@ -62,7 +62,7 @@ bs = [0.1]
 noises = [0.0]
 deltas = np.arange(0.0, 2.1, step=0.2)
 n_reps = 10
-N = 200
+N = 100
 
 # rate model parameters
 J = 5.0 / (0.5 * N)
@@ -107,7 +107,7 @@ for b in bs:
                     results["c_t"].append(correlate(etas, w_t))
                     results["v"].append(np.var(w_fre.flatten()))
                     results["h"].append(entropy(get_prob(w_fre.flatten())))
-                    results["model"].append("FRE")
+                    results["model"].append("MFE")
 
                     # qif model
                     data = pickle.load(open(f"{path}/qif_{int(b * 10)}_{int(noise)}_{int(delta * 10.0)}_{rep}.pkl",
@@ -129,26 +129,27 @@ for b in bs:
                     # rate model simulation
                     etas = uniform(N, eta, delta)
                     fr = get_qif_fr(etas)
-                    w0 = np.random.uniform(0.01, 0.99, size=(int(N * N),))
-                    w = get_w_solution(inp_f, w0, fr, etas, J, b, a, T, **solver_kwargs)
+                    w0 = np.random.uniform(0.0, 1.0, size=(int(N * N),))
+                    w_rate = get_w_solution(inp_f, w0, fr, etas, J, b, a, T, **solver_kwargs)
                     w0 = w0.reshape(N, N)
-                    w_s = np.mean(w, axis=1)
-                    w_t = np.mean(w, axis=0)
+                    w_s = np.mean(w_rate, axis=1)
+                    w_t = np.mean(w_rate, axis=0)
 
                     results["b"].append(b)
                     results["Delta"].append(delta)
                     results["noise"].append(noise)
                     results["c_s"].append(correlate(etas, w_s))
                     results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w.flatten()))
-                    results["h"].append(entropy(get_prob(w.flatten())))
-                    results["model"].append("RM")
+                    results["v"].append(np.var(w_rate.flatten()))
+                    results["h"].append(entropy(get_prob(w_rate.flatten())))
+                    results["model"].append("SSR")
 
                     # weights
-                    if rep == 0:
+                    if rep == 1:
                         weights["Delta"].append(delta)
-                        weights["noise"].append(noise)
-
+                        weights["w_fre"].append(w_fre)
+                        weights["w_qif"].append(w_qif)
+                        weights["w_rate"].append(w_rate)
                     print(f"Finished {rep+1} out of {n_reps} simulations for b = {b}, noise = {noise} and Delta = {delta}.")
 
                 except FileNotFoundError:
@@ -168,9 +169,9 @@ plt.rcParams['axes.labelsize'] = 12
 plt.rcParams['lines.linewidth'] = 1.0
 markersize = 2
 
-fig = plt.figure(figsize=(6, 2))
+fig = plt.figure(figsize=(6, 3.5))
 fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.01, hspace=0., wspace=0.)
-grid = fig.add_gridspec(nrows=1, ncols=3)
+grid = fig.add_gridspec(nrows=2, ncols=3)
 
 # source correlation
 ax = fig.add_subplot(grid[0, 0])
@@ -184,13 +185,18 @@ sb.lineplot(results, x="Delta", y="c_t", hue="model", legend=False, ax=ax, palet
 ax.set_xlabel(r"$\Delta$")
 ax.set_ylabel(r"$R(\eta_i, w_i)$")
 
-# weight variance
-ax = fig.add_subplot(grid[0, 2])
-sb.lineplot(results, x="Delta", y="h", hue="model", legend=False, ax=ax, palette="Dark2")
-ax.set_xlabel(r"$\Delta$")
-ax.set_ylabel(r"$H(w_j)$")
-
-fig.suptitle("Weight Statistics")
+# weight matrices
+delta = 1.0
+idx = np.argmin(np.abs(np.asarray(weights["Delta"]) - delta)).squeeze()
+w_qif, w_rate, w_fre = weights["w_qif"][idx], weights["w_rate"][idx], weights["w_fre"][idx]
+for i, (w, title) in enumerate(zip([w_qif, w_rate, w_fre], ["QIF", "SSR", "MFE"])):
+    ax = fig.add_subplot(grid[1, i])
+    im = ax.imshow(w, aspect="auto", vmin=0.0, vmax=1.0, cmap="viridis")
+    if i == 2:
+        plt.colorbar(im, ax=ax, shrink=0.8)
+    if i == 0:
+        ax.set_ylabel("neuron")
+    ax.set_title(title)
 fig.canvas.draw()
-plt.savefig(f"../results/figures/rnn_rate_fre.svg")
+plt.savefig(f"../results/figures/rnn_results.svg")
 plt.show()
