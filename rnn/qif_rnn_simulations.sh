@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # set condition
-batch_size=40
+batch_size=60
 n=10
 range_end=$((n-1))
 bs=( 0.1 )
