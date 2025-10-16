@@ -68,7 +68,7 @@ N = 200
 J = 5.0 / (0.5 * N)
 eta = -0.5
 a = 0.1
-weights = {"b": [], "Delta": [], "source": [], "target": [], "w0": [], "w": [], "model": []}
+weights = {"Delta": [], "w_qif": [], "w_fre": [], "w_rate": []}
 results = {"b": [], "Delta": [], "noise": [], "c_s": [], "c_t": [], "v": [], "h": [], "model": []}
 
 # simulation parameters
@@ -95,39 +95,35 @@ for b in bs:
                     # fre model
                     data = pickle.load(open(f"{path}/fre_mp_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
                                             "rb"))
-                    w = data["W"]
+                    w_fre = data["W"]
                     etas = data["eta"]
-                    w_s = np.mean(w, axis=1)
-                    w_t = np.mean(w, axis=0)
+                    w_s = np.mean(w_fre, axis=1)
+                    w_t = np.mean(w_fre, axis=0)
 
                     results["b"].append(b)
                     results["Delta"].append(delta)
                     results["noise"].append(noise)
                     results["c_s"].append(correlate(etas, w_s))
                     results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w.flatten()))
-                    results["h"].append(entropy(get_prob(w.flatten())))
-                    if results["h"][-1] < 0.1:
-                        print("here")
+                    results["v"].append(np.var(w_fre.flatten()))
+                    results["h"].append(entropy(get_prob(w_fre.flatten())))
                     results["model"].append("FRE")
 
                     # qif model
                     data = pickle.load(open(f"{path}/qif_{int(b * 10)}_{int(noise)}_{int(delta * 10.0)}_{rep}.pkl",
                                             "rb"))
-                    w = data["W"]
+                    w_qif = data["W"]
                     etas = data["eta"]
-                    w_s = np.mean(w, axis=1)
-                    w_t = np.mean(w, axis=0)
+                    w_s = np.mean(w_qif, axis=1)
+                    w_t = np.mean(w_qif, axis=0)
 
                     results["b"].append(b)
                     results["Delta"].append(delta)
                     results["noise"].append(noise)
                     results["c_s"].append(correlate(etas, w_s))
                     results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w.flatten()))
-                    results["h"].append(entropy(get_prob(w.flatten())))
-                    if results["h"][-1] < 0.1:
-                        print("here")
+                    results["v"].append(np.var(w_qif.flatten()))
+                    results["h"].append(entropy(get_prob(w_qif.flatten())))
                     results["model"].append("QIF")
 
                     # rate model simulation
@@ -148,10 +144,15 @@ for b in bs:
                     results["h"].append(entropy(get_prob(w.flatten())))
                     results["model"].append("RM")
 
+                    # weights
+                    if rep == 0:
+                        weights["Delta"].append(delta)
+                        weights["noise"].append(noise)
+
                     print(f"Finished {rep+1} out of {n_reps} simulations for b = {b}, noise = {noise} and Delta = {delta}.")
 
                 except FileNotFoundError:
-                    pass
+                    print(f"FAILED {rep+1} out of {n_reps} simulations for b = {b}, noise = {noise} and Delta = {delta}.")
 
 results = pd.DataFrame.from_dict(results)
 

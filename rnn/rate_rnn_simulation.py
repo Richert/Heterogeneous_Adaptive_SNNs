@@ -57,14 +57,24 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
     fr[x > 0] = np.sqrt(x[x > 0])
     return fr / np.pi
 
+def normalize(x):
+    x = x - np.mean(x)
+    return x / np.std(x)
+
+def correlate(x, y):
+    x = normalize(x)
+    y = normalize(y)
+    c = np.corrcoef(x, y)
+    return c[0, 1]
+
 # parameter definition
 save_results = False
 condition = "hebbian"
 distribution = "uniform"
-Deltas = [0.5, 1.0, 1.5, 2.0]
+Deltas = [0.5, 1.0, 2.0]
 N = 200
-J = -5.0 / (0.5*N)
-eta = 0.5
+J = 5.0 / (0.5*N)
+eta = -0.5
 a = 0.1
 bs = [0.0, 0.1]
 weights = {"b": [], "Delta": [], "source": [], "target": [], "w": [], "w0": []}
@@ -104,22 +114,17 @@ for b in bs:
         w = get_w_solution(inp_f, w0, fr, etas, J, b, a, T, **solver_kwargs)
         w0 = w0.reshape(N, N)
 
+        w_s = np.mean(w, axis=1)
+        w_t = np.mean(w, axis=0)
+
+        results["b"].append(b)
+        results["Delta"].append(Delta)
+        results["c_s"].append(correlate(etas, w_s))
+        results["c_t"].append(correlate(etas, w_t))
+        results["v"].append(np.var(w.flatten()))
+        results["h"].append(entropy(get_prob(w.flatten())))
+
         for i in range(N):
-
-            # calculate weight statistics
-            results["c_s"].append(np.corrcoef(etas, w[i, :])[0, 1])
-            results["c_t"].append(np.corrcoef(etas, w[:, i])[0, 1])
-            results["c2_s"].append(np.corrcoef(etas, np.mean(w, axis=0))[0, 1])
-            results["c2_t"].append(np.corrcoef(etas, np.mean(w, axis=1))[0, 1])
-            results["v_s"].append(np.var(w[i, :]))
-            results["v_t"].append(np.var(w[:, i]))
-            results["h_s"].append(entropy(get_prob(w[i, :])))
-            results["h_t"].append(entropy(get_prob(w[:, i])))
-            results["eta"].append(etas[i])
-            results["Delta"].append(Delta)
-            results["b"].append(b)
-
-            # save weights
             for j in range(N):
                 weights["b"].append(b)
                 weights["Delta"].append(Delta)

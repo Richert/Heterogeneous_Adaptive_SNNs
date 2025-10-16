@@ -74,7 +74,7 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
     return eta + Delta*np.linspace(-0.5, 0.5, N)
 
 # parameters
-path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
+path = "/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs"
 rep = int(sys.argv[-1])
 b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
@@ -93,7 +93,7 @@ for eta_mp in etas_mp:
     etas.extend(lorentzian(int(N/M), eta_mp, Delta/(2*M)).tolist())
 etas = np.asarray(etas)
 node_vars = {"J": 5.0 / (0.5*p*N), "eta": etas, "tau_u": 30.0, "tau_s": 1.0}
-T = 1000.0
+T = 2000.0
 dt = 1e-3
 global_noise = 10.0
 noise_sigma = 1.0/dt
@@ -114,14 +114,14 @@ s, W = solve_ivp(dt, w0, node_vars["eta"], inp, node_vars["tau_s"], node_vars["t
 W[W < 0.0] = 0.0
 W[W > 1.0] = 1.0
 
-# fig, ax = plt.subplots(figsize=(5, 5))
-# ax.imshow(W)
-# fig, ax = plt.subplots(figsize=(10, 4))
-# ax.plot(s)
-# ax.plot(np.mean(s, axis=1), color="black")
-# plt.show()
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.imshow(W)
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(s)
+ax.plot(np.mean(s, axis=1), color="black")
+plt.show()
 
 pickle.dump(
-    {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl},
-    open(f"{path}/results/rnn_results/qif_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
+    {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl, "s": s},
+    open(f"{path}/results/rnn_results/qif_mat_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}.pkl", "wb")
 )
