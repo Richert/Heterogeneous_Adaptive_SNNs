@@ -22,22 +22,22 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
 
 # parameters
 path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
-rep = 0 #int(sys.argv[-1])
-b = 0.1 #float(sys.argv[-2])
-Delta = 0.5 #float(sys.argv[-3])
-noise_lvl = 0.0 #float(sys.argv[-4])
+rep = int(sys.argv[-1])
+b = float(sys.argv[-2])
+Delta = float(sys.argv[-3])
+noise_lvl = float(sys.argv[-4])
 M = 20
 p = 1.0
 edge_vars = {
     "a": 0.1, "b": b
 }
-eta = 2.0
+eta = 1.0
 etas = uniform(M, eta, Delta)
 node_vars = {"tau": 1.0, "J": -5.0 / (0.5*p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": Delta/(2*M)}
-T = 1000.0
+T = 2000.0
 dt = 1e-3
 dts = 1.0
-global_noise = 0.0
+global_noise = 10.0
 noise_sigma = 1.0/dt
 
 # node and edge template initiation
@@ -69,13 +69,14 @@ net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, e
 net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
 
 # define extrinsic input
-inp = np.zeros((int(T/dt), M))
-noise = noise_lvl*np.random.randn(*inp.shape) + global_noise * np.random.randn(inp.shape[0], 1)
+inp = np.zeros((int(T/dt), 1))
+# noise = noise_lvl*np.random.randn(*inp.shape) + global_noise * np.random.randn(inp.shape[0], 1)
+noise = global_noise * np.random.randn(inp.shape[0], 1)
 noise = gaussian_filter1d(noise, sigma=noise_sigma, axis=0)
 inp += noise
 
 # run simulation
-res = net.run(simulation_time=T, step_size=dt, inputs={f"p{i}/{node_op}/I_ext": inp[:, i] for i in range(M)},
+res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp[:, 0]},
               outputs={"s": f"all/{node_op}/s"}, solver="heun", clear=False, sampling_step_size=dts,
               float_precision="float64", decorator=njit)
 
@@ -89,13 +90,13 @@ W = W[:, idx]
 clear(net)
 # np.fill_diagonal(W, 0)
 
-fig, ax = plt.subplots(figsize=(5, 5))
-ax.imshow(W)
-fig, ax = plt.subplots(figsize=(10, 4))
-ax.plot(res["s"])
-ax.plot(np.mean(res["s"], axis=1), color="black")
-plt.show()
-# pickle.dump(
-#     {"W": W, "eta": etas[idx], "b": b, "Delta": Delta, "noise": noise_lvl},
-#     open(f"{path}/results/rnn_results/fre_mp_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
-# )
+# fig, ax = plt.subplots(figsize=(5, 5))
+# ax.imshow(W)
+# fig, ax = plt.subplots(figsize=(10, 4))
+# ax.plot(res["s"])
+# ax.plot(np.mean(res["s"], axis=1), color="black")
+# plt.show()
+pickle.dump(
+    {"W": W, "eta": etas[idx], "b": b, "Delta": Delta, "noise": noise_lvl, "s": np.mean(res["s"].values, axis=1)},
+    open(f"{path}/results/rnn_results/fre_inh_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
+)

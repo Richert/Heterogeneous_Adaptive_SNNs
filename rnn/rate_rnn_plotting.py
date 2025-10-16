@@ -11,7 +11,8 @@ import pandas as pd
 
 def normalize(x):
     x = x - np.mean(x)
-    return x / np.std(x)
+    x_std = np.std(x)
+    return x / x_std if x_std > 0 else x
 
 def correlate(x, y):
     x = normalize(x)
@@ -57,12 +58,13 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
 
 # meta parameters
 path = "../results/rnn_results"
+models = ["rate", "fre"]
 fre_res = {"b": [], "Delta": [], "noise": [], "c_s": [], "c_t": [], "v": [], "h": []}
 bs = [0.1]
 noises = [0.0]
-deltas = np.arange(0.0, 2.1, step=0.2)
+deltas = np.arange(0.2, 2.1, step=0.2)
 n_reps = 10
-N = 100
+N = 500
 
 # rate model parameters
 J = 5.0 / (0.5 * N)
@@ -72,16 +74,13 @@ weights = {"Delta": [], "w_qif": [], "w_fre": [], "w_rate": []}
 results = {"b": [], "Delta": [], "noise": [], "c_s": [], "c_t": [], "v": [], "h": [], "model": []}
 
 # simulation parameters
-T = 1000.0
+T = 2000.0
 dt = 1e-3
 noise = 0.0
 inp_noise = 10.0
 inp_sigma = 1.0/dt
-inp = np.zeros((int(T/dt)+1,))
-inp += inp_noise * np.random.randn(*inp.shape)
-inp = gaussian_filter1d(inp, sigma=inp_sigma)
 time = np.arange(0.0, T+dt, dt)
-inp_f = interp1d(time, inp)
+inp = np.zeros((int(T/dt)+1,))
 solver_kwargs = {"t_eval": [0.0, T], "method": "RK23", "atol": 1e-5}
 
 # calculate weight statistics
@@ -93,63 +92,69 @@ for b in bs:
                 try:
 
                     # fre model
-                    data = pickle.load(open(f"{path}/fre_mp_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
-                                            "rb"))
-                    w_fre = data["W"]
-                    etas = data["eta"]
-                    w_s = np.mean(w_fre, axis=1)
-                    w_t = np.mean(w_fre, axis=0)
+                    if "fre" in models:
+                        data = pickle.load(open(f"{path}/fre_mp_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
+                                                "rb"))
+                        w_fre = data["W"]
+                        etas = data["eta"]
+                        w_s = np.mean(w_fre, axis=1)
+                        w_t = np.mean(w_fre, axis=0)
 
-                    results["b"].append(b)
-                    results["Delta"].append(delta)
-                    results["noise"].append(noise)
-                    results["c_s"].append(correlate(etas, w_s))
-                    results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w_fre.flatten()))
-                    results["h"].append(entropy(get_prob(w_fre.flatten())))
-                    results["model"].append("MFE")
+                        results["b"].append(b)
+                        results["Delta"].append(delta)
+                        results["noise"].append(noise)
+                        results["c_s"].append(correlate(etas, w_s))
+                        results["c_t"].append(correlate(etas, w_t))
+                        results["v"].append(np.var(w_fre.flatten()))
+                        results["h"].append(entropy(get_prob(w_fre.flatten())))
+                        results["model"].append("MFE")
+                        if rep == 0:
+                            weights["Delta"].append(delta)
+                            weights["w_fre"].append(w_fre)
 
                     # qif model
-                    data = pickle.load(open(f"{path}/qif_{int(b * 10)}_{int(noise)}_{int(delta * 10.0)}_{rep}.pkl",
-                                            "rb"))
-                    w_qif = data["W"]
-                    etas = data["eta"]
-                    w_s = np.mean(w_qif, axis=1)
-                    w_t = np.mean(w_qif, axis=0)
+                    if "qif" in models:
+                        data = pickle.load(open(f"{path}/qif_{int(b * 10)}_{int(noise)}_{int(delta * 10.0)}_{rep}.pkl",
+                                                "rb"))
+                        w_qif = data["W"]
+                        etas = data["eta"]
+                        w_s = np.mean(w_qif, axis=1)
+                        w_t = np.mean(w_qif, axis=0)
 
-                    results["b"].append(b)
-                    results["Delta"].append(delta)
-                    results["noise"].append(noise)
-                    results["c_s"].append(correlate(etas, w_s))
-                    results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w_qif.flatten()))
-                    results["h"].append(entropy(get_prob(w_qif.flatten())))
-                    results["model"].append("QIF")
+                        results["b"].append(b)
+                        results["Delta"].append(delta)
+                        results["noise"].append(noise)
+                        results["c_s"].append(correlate(etas, w_s))
+                        results["c_t"].append(correlate(etas, w_t))
+                        results["v"].append(np.var(w_qif.flatten()))
+                        results["h"].append(entropy(get_prob(w_qif.flatten())))
+                        results["model"].append("QIF")
+                        if rep == 0:
+                            weights["w_qif"].append(w_qif)
 
                     # rate model simulation
-                    etas = uniform(N, eta, delta)
-                    fr = get_qif_fr(etas)
-                    w0 = np.random.uniform(0.0, 1.0, size=(int(N * N),))
-                    w_rate = get_w_solution(inp_f, w0, fr, etas, J, b, a, T, **solver_kwargs)
-                    w0 = w0.reshape(N, N)
-                    w_s = np.mean(w_rate, axis=1)
-                    w_t = np.mean(w_rate, axis=0)
+                    if "rate" in models:
+                        etas = uniform(N, eta, delta)
+                        fr = get_qif_fr(etas)
+                        w0 = np.random.uniform(0.0, 1.0, size=(int(N * N),))
+                        inp = inp_noise * np.random.randn(*inp.shape)
+                        inp = gaussian_filter1d(inp, sigma=inp_sigma)
+                        w_rate = get_w_solution(interp1d(time, inp), w0, fr, etas, J, b, a, T, **solver_kwargs)
+                        w0 = w0.reshape(N, N)
+                        w_s = np.mean(w_rate, axis=1)
+                        w_t = np.mean(w_rate, axis=0)
 
-                    results["b"].append(b)
-                    results["Delta"].append(delta)
-                    results["noise"].append(noise)
-                    results["c_s"].append(correlate(etas, w_s))
-                    results["c_t"].append(correlate(etas, w_t))
-                    results["v"].append(np.var(w_rate.flatten()))
-                    results["h"].append(entropy(get_prob(w_rate.flatten())))
-                    results["model"].append("SSR")
+                        results["b"].append(b)
+                        results["Delta"].append(delta)
+                        results["noise"].append(noise)
+                        results["c_s"].append(correlate(etas, w_s))
+                        results["c_t"].append(correlate(etas, w_t))
+                        results["v"].append(np.var(w_rate.flatten()))
+                        results["h"].append(entropy(get_prob(w_rate.flatten())))
+                        results["model"].append("SSR")
+                        if rep == 0:
+                            weights["w_rate"].append(w_rate)
 
-                    # weights
-                    if rep == 1:
-                        weights["Delta"].append(delta)
-                        weights["w_fre"].append(w_fre)
-                        weights["w_qif"].append(w_qif)
-                        weights["w_rate"].append(w_rate)
                     print(f"Finished {rep+1} out of {n_reps} simulations for b = {b}, noise = {noise} and Delta = {delta}.")
 
                 except FileNotFoundError:
@@ -186,10 +191,10 @@ ax.set_xlabel(r"$\Delta$")
 ax.set_ylabel(r"$R(\eta_i, w_i)$")
 
 # weight matrices
-delta = 1.0
+delta = 0.9
 idx = np.argmin(np.abs(np.asarray(weights["Delta"]) - delta)).squeeze()
-w_qif, w_rate, w_fre = weights["w_qif"][idx], weights["w_rate"][idx], weights["w_fre"][idx]
-for i, (w, title) in enumerate(zip([w_qif, w_rate, w_fre], ["QIF", "SSR", "MFE"])):
+ws = [weights[f"w_{m}"][idx] for m in models]
+for i, (w, title) in enumerate(zip(ws, models)):
     ax = fig.add_subplot(grid[1, i])
     im = ax.imshow(w, aspect="auto", vmin=0.0, vmax=1.0, cmap="viridis")
     if i == 2:

@@ -71,18 +71,17 @@ def correlate(x, y):
 save_results = False
 condition = "hebbian"
 distribution = "uniform"
-Deltas = [0.5, 1.0, 2.0]
-N = 200
-J = 5.0 / (0.5*N)
-eta = -0.5
+Deltas = [0.2, 0.4, 0.8, 1.6]
+N = 500
+J = -5.0 / (0.5*N)
+eta = 1.0
 a = 0.1
 bs = [0.0, 0.1]
 weights = {"b": [], "Delta": [], "source": [], "target": [], "w": [], "w0": []}
-results = {"b": [], "Delta": [], "eta": [], "c_s": [], "c_t": [], "v_s": [], "v_t": [], "h_s": [], "h_t": [],
-           "c2_s": [], "c2_t": []}
+results = {"b": [], "Delta": [], "c_s": [], "c_t": [], "v": [], "h": []}
 
 # simulation parameters
-T = 1000.0
+T = 2000.0
 dt = 1e-3
 noise = 0.0
 inp_noise = 10.0
@@ -185,23 +184,15 @@ fig.suptitle("Final Weights")
 fig.canvas.draw()
 
 # weight statistics
-fig, axes = plt.subplots(ncols=4, nrows=2, figsize=(12, 5))
+fig, axes = plt.subplots(ncols=2, nrows=2, figsize=(12, 5))
 ax = axes[0, 0]
 sb.lineplot(results, x="Delta", y="c_s", hue="b", ax=ax, palette="Dark2")
 ax = axes[1, 0]
 sb.lineplot(results, x="Delta", y="c_t", hue="b", legend=False, ax=ax, palette="Dark2")
 ax = axes[0, 1]
-sb.lineplot(results, x="Delta", y="v_s", hue="b", legend=False, ax=ax, palette="Dark2")
+sb.lineplot(results, x="Delta", y="v", hue="b", legend=False, ax=ax, palette="Dark2")
 ax = axes[1, 1]
-sb.lineplot(results, x="Delta", y="v_t", hue="b", legend=False, ax=ax, palette="Dark2")
-ax = axes[0, 2]
-sb.lineplot(results, x="Delta", y="h_s", hue="b", legend=False, ax=ax, palette="Dark2")
-ax = axes[1, 2]
-sb.lineplot(results, x="Delta", y="h_t", hue="b", legend=False, ax=ax, palette="Dark2")
-ax = axes[0, 3]
-sb.lineplot(results, x="Delta", y="c2_s", hue="b", legend=False, ax=ax, palette="Dark2")
-ax = axes[1, 3]
-sb.lineplot(results, x="Delta", y="c2_t", hue="b", legend=False, ax=ax, palette="Dark2")
+sb.lineplot(results, x="Delta", y="h", hue="b", legend=False, ax=ax, palette="Dark2")
 fig.suptitle("Weight Statistics")
 fig.canvas.draw()
 
