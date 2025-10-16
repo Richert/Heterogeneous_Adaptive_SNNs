@@ -19,18 +19,16 @@ def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, trace_source: np.ndarra
     return x, y
 
 @njit
-def qif_rhs(y: np.ndarray, spikes: np.ndarray, eta: np.ndarray, inp: np.ndarray, tau_s: float, tau_u: float, J: float,
-            a: float, b: float):
-    v, s, u, w = y[:N], y[N:2*N], y[2*N:3*N], y[3*N:]
-    w = w.reshape(N, N)
+def qif_rhs(y: np.ndarray, w: np.ndarray, spikes: np.ndarray, eta: np.ndarray, inp: np.ndarray, tau_s: float,
+            tau_u: float, J: float, a: float, b: float) -> tuple:
+    v, s, u = y[:N], y[N:2*N], y[2*N:]
     dy = np.zeros_like(y)
     x, y = get_xy(s, s, u, u)
     dy[:N] = v**2 + eta + J*np.dot(w, s) + inp
     dy[N:2*N] = (spikes-s) / tau_s
-    dy[2*N:3*N] = (spikes-u) / tau_u
+    dy[2*N:] = (spikes-u) / tau_u
     dw = a*(b*((1-w)*x - w*y) + (1-b)*(x-y)*(w-w**2))
-    dy[3*N:] = dw.flatten()
-    return dy
+    return dy, dw
 
 @njit
 def spiking(y: np.ndarray, spikes: np.ndarray):
@@ -39,24 +37,24 @@ def spiking(y: np.ndarray, spikes: np.ndarray):
     y[idx] = -y[idx]
     spikes[idx] = 1.0/dt
 
-def solve_ivp(dt: float, w0: np.ndarray, eta: np.ndarray, inp: np.ndarray, tau_s: float, tau_u: float, J: float,
+def solve_ivp(dt: float, w: np.ndarray, eta: np.ndarray, inp: np.ndarray, tau_s: float, tau_u: float, J: float,
               a: float, b: float, sr: int = 100) -> tuple:
 
-    y = np.zeros((3*N + w0.shape[0],))
-    y[3*N:] = w0
+    y = np.zeros((3*N,))
     spikes = np.zeros((N,))
 
     s_col = np.zeros((int(inp.shape[0]/sr), N))
     ss = 0
     for step in range(inp.shape[0]):
         spiking(y, spikes)
-        dy = qif_rhs(y, spikes, eta, inp[step], tau_s, tau_u, J, a, b)
+        dy, dw = qif_rhs(y, w, spikes, eta, inp[step], tau_s, tau_u, J, a, b)
         y = y + dt * dy
+        w = w + dt * dw
         if step % sr == 0:
             s_col[ss, :] = y[N:2*N]
             ss += 1
 
-    return s_col, y[3*N:].reshape(N, N)
+    return s_col, w
 
 def normalize(x):
     x = x - np.mean(x)
@@ -82,7 +80,7 @@ b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
 noise_lvl = float(sys.argv[-4])
 condition = "hebbian"
-N = 1000
+N = 500
 M = 20
 p = 1.0
 edge_vars = {
@@ -110,7 +108,7 @@ noise = gaussian_filter1d(noise, sigma=noise_sigma, axis=0)
 inp += noise
 
 # run simulation
-w0 = np.random.uniform(0.0, 1.0, size=(N*N,))
+w0 = np.random.uniform(0.0, 1.0, size=(N, N,))
 s, W = solve_ivp(dt, w0, node_vars["eta"], inp, node_vars["tau_s"], node_vars["tau_u"], node_vars["J"],
                  edge_vars["a"], edge_vars["b"])
 W[W < 0.0] = 0.0
