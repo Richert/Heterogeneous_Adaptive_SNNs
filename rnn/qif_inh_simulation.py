@@ -74,13 +74,13 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
     return eta + Delta*np.linspace(-0.5, 0.5, N)
 
 # parameters
-path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
+path = "/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs"
 rep = int(sys.argv[-1])
 b = float(sys.argv[-2])
 Delta = float(sys.argv[-3])
 noise_lvl = float(sys.argv[-4])
 condition = "hebbian"
-N = 500
+N = 200
 M = 20
 p = 1.0
 edge_vars = {
@@ -114,12 +114,12 @@ s, W = solve_ivp(dt, w0, node_vars["eta"], inp, node_vars["tau_s"], node_vars["t
 W[W < 0.0] = 0.0
 W[W > 1.0] = 1.0
 
-# fig, ax = plt.subplots(figsize=(5, 5))
-# ax.imshow(W)
-# fig, ax = plt.subplots(figsize=(10, 4))
-# ax.plot(s)
-# ax.plot(np.mean(s, axis=1), color="black")
-# plt.show()
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.imshow(W)
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(s)
+ax.plot(np.mean(s, axis=1), color="black")
+plt.show()
 
 pickle.dump(
     {"W": W, "eta": etas, "b": b, "Delta": Delta, "noise": noise_lvl, "s": np.mean(s, axis=1)},

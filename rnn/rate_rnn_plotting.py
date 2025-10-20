@@ -56,21 +56,26 @@ def get_qif_fr(x: np.ndarray) -> np.ndarray:
 def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
     return eta + Delta*np.linspace(-0.5, 0.5, N)
 
+def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
+    x = np.arange(1, N+1)
+    return eta + Delta*np.tan(0.5*np.pi*(2*x-N-1)/(N+1))
+
 # meta parameters
 path = "../results/rnn_results"
-models = ["rate", "fre"]
-fre_res = {"b": [], "Delta": [], "noise": [], "c_s": [], "c_t": [], "v": [], "h": []}
+models = ["qif", "rate", "fre"]
 bs = [0.1]
 noises = [0.0]
-deltas = np.arange(0.2, 2.1, step=0.2)
-n_reps = 10
-N = 500
+deltas = np.arange(0.1, 2.0, step=0.2)
+n_reps = 1
+N = 200
+M = 20
 
 # rate model parameters
-J = 5.0 / (0.5 * N)
-eta = -0.5
+J = -5.0 / (0.5 * N)
+eta = 1.0
 a = 0.1
 weights = {"Delta": [], "w_qif": [], "w_fre": [], "w_rate": []}
+dynamics = {"Delta": [], "s_qif": [], "s_fre": [], "s_rate": []}
 results = {"b": [], "Delta": [], "noise": [], "c_s": [], "c_t": [], "v": [], "h": [], "model": []}
 
 # simulation parameters
@@ -93,7 +98,7 @@ for b in bs:
 
                     # fre model
                     if "fre" in models:
-                        data = pickle.load(open(f"{path}/fre_mp_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
+                        data = pickle.load(open(f"{path}/fre_inh_{int(b*10)}_{int(noise)}_{int(delta*10.0)}_{rep+2}.pkl",
                                                 "rb"))
                         w_fre = data["W"]
                         etas = data["eta"]
@@ -111,10 +116,12 @@ for b in bs:
                         if rep == 0:
                             weights["Delta"].append(delta)
                             weights["w_fre"].append(w_fre)
+                            dynamics["Delta"].append(delta)
+                            dynamics["s_fre"].append(data["s"])
 
                     # qif model
                     if "qif" in models:
-                        data = pickle.load(open(f"{path}/qif_{int(b * 10)}_{int(noise)}_{int(delta * 10.0)}_{rep}.pkl",
+                        data = pickle.load(open(f"{path}/qif_inh_{int(b * 10)}_{int(noise)}_{int(delta*10.0)}_{rep}.pkl",
                                                 "rb"))
                         w_qif = data["W"]
                         etas = data["eta"]
@@ -131,10 +138,15 @@ for b in bs:
                         results["model"].append("QIF")
                         if rep == 0:
                             weights["w_qif"].append(w_qif)
+                            dynamics["s_qif"].append(data["s"])
 
                     # rate model simulation
                     if "rate" in models:
-                        etas = uniform(N, eta, delta)
+                        etas_mp = uniform(M, eta, delta)
+                        etas = []
+                        for eta_mp in etas_mp:
+                            etas.extend(lorentzian(int(N / M), eta_mp, delta / (2*M)).tolist())
+                        etas = np.asarray(etas)
                         fr = get_qif_fr(etas)
                         w0 = np.random.uniform(0.0, 1.0, size=(int(N * N),))
                         inp = inp_noise * np.random.randn(*inp.shape)
@@ -191,7 +203,7 @@ ax.set_xlabel(r"$\Delta$")
 ax.set_ylabel(r"$R(\eta_i, w_i)$")
 
 # weight matrices
-delta = 0.9
+delta = 0.5
 idx = np.argmin(np.abs(np.asarray(weights["Delta"]) - delta)).squeeze()
 ws = [weights[f"w_{m}"][idx] for m in models]
 for i, (w, title) in enumerate(zip(ws, models)):

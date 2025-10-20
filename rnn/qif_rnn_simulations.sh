@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # set condition
-batch_size=60
+batch_size=10
 n=10
 range_end=$((n-1))
 bs=( 0.1 )
@@ -25,7 +25,7 @@ for IDX in $(seq 0 $range_end); do
           # python calls
           (
           echo "Starting job for noise = ${noise}, delta = ${delta}, b = ${b}, and rep = ${IDX}."
-          python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/rnn/qif_inh_simulation.py $noise $delta $b $IDX
+          python /home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs/rnn/qif_inh_simulation.py $noise $delta $b $IDX
           sleep 1
           ) &
 

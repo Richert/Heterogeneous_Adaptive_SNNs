@@ -1,44 +1,21 @@
 import numpy as np
-from scipy.stats import entropy
 import sys
 import pickle
 from numba import njit
-
-def get_prob(x, bins: int = 100):
-    counts, _ = np.histogram(x, bins=bins)
-    return counts / np.sum(counts)
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sb
 
 @njit
 def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, trace_source: np.ndarray, trace_target: np.ndarray) -> tuple:
-    if plasticity == "oja_rate":
-        if condition == "hebbian":
-            x = trace_source*fr_target
-            y = trace_target*fr_target
-        elif condition == "antihebbian":
-            x = trace_source*fr_source
-            y = trace_source*fr_target
-        else:
-            raise ValueError(f"Invalid condition: {condition}.")
-    elif plasticity == "oja_trace":
-        if condition == "hebbian":
-            x = trace_source*trace_target
-            y = trace_target*trace_target
-        elif condition == "antihebbian":
-            x = trace_source*trace_source
-            y = trace_source*trace_target
-        else:
-            raise ValueError(f"Invalid condition: {condition}.")
-    elif plasticity == "stdp":
-        if condition == "hebbian":
-            x = trace_source*fr_target
-            y = trace_target*fr_source
-        elif condition == "antihebbian":
-            x = trace_target*fr_source
-            y = trace_source*fr_target
-        else:
-            raise ValueError(f"Invalid condition: {condition}.")
+    if condition == "hebbian":
+        x = trace_source*fr_target
+        y = trace_target*fr_source
+    elif condition == "antihebbian":
+        x = trace_target*fr_source
+        y = trace_source*fr_target
     else:
-        raise ValueError(f"Invalid plasticity rule: {condition}.")
+        raise ValueError(f"Invalid condition: {condition}.")
     return x, y
 
 @njit
@@ -61,10 +38,11 @@ def spiking(y: np.ndarray, spikes: np.ndarray, N: int):
     y[idx] = -y[idx]
     spikes[idx] = 1.0/dt
 
-def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_s: float, tau_u: float, J: float, a: float, b: float, N: int):
+def solve_ivp(T: float, dt: float, w0: np.ndarray, eta: np.ndarray, tau_s: float, tau_u: float, J: float, a: float,
+              b: float, N: int):
 
     y = np.zeros((4*N,))
-    y[3*N:] = np.random.uniform(0.01, 0.99, size=(N,))
+    y[3*N:] = w0
     spikes = np.zeros((N,))
     t = 0.0
 
@@ -74,72 +52,71 @@ def solve_ivp(T: float, dt: float, eta: np.ndarray, tau_s: float, tau_u: float, 
         y = y + dt * dy
         t += dt
 
-    return y[3*N:-1]
-
-def lorentzian(N: int, eta: float, Delta: float) -> np.ndarray:
-    x = np.arange(1, N+1)
-    return eta + Delta*np.tan(0.5*np.pi*(2*x-N-1)/(N+1))
-
-def gaussian(N, eta: float, Delta: float) -> np.ndarray:
-    etas = eta + Delta * np.random.randn(N)
-    return np.sort(etas)
+    return y[3 * N:-1]
 
 # parameter definition
-path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/results"
-rep = int(sys.argv[-1])
-J = float(sys.argv[-2])
-plasticity = str(sys.argv[-3])
-condition = str(sys.argv[-4])
-noise_lvls = np.asarray([0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0]) * 1e3
-distribution = "gaussian"
-N = 1000
+path = "/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs"
+save_results = False
+condition = "hebbian" #str(sys.argv[-3])
+noise = 0.0 #float(sys.argv[-2]) * 1e3
+b = 0.1 #float(sys.argv[-1])
+J = 5.0
+N = 200
 m = 10
-eta = 1.0
-deltas = np.linspace(0.1, 1.5, num=m)
-target_eta = 0.0 if J > 0 else 2.0
-a = 0.01
+eta_t = 0.0 if J > 0 else 2.0
+eta_min, eta_max = -2.0, 3.0
+eta_s = np.linspace(eta_min, eta_max, N)
+w0s = np.linspace(start=0.0, stop=1.0, num=m)
+a = 0.1
 tau_s = 1.0
 tau_u = 30.0
-bs = [0.0, 0.05, 0.2]
 v_cutoff = 100.0
-res = {"b": [], "w": [], "C": [], "H":[], "V": [], "delta": [], "noise": []}
+res = {"eta": [], "w": [], "w0": []}
 
-# simulation parameters
-T = 10000.0
+# simulation
+T = 1000.0
 dt = 1e-3
-solver_kwargs = {}
+for w0 in w0s:
 
-f = lorentzian if distribution == "lorentzian" else gaussian
-for b in bs:
-    for noise in noise_lvls:
-        for Delta in deltas:
+    # get weight solutions
+    etas = np.asarray(eta_s.tolist() + [eta_t])
+    ws = solve_ivp(T, dt, np.zeros_like(etas) + w0, etas, tau_s, tau_u, J, a, b, N+1)
+    ws[ws < 0.0] = 0.0
+    ws[ws > 1.0] = 1.0
 
-            # define source firing rate distribution
-            etas = np.asarray(f(N, eta, Delta).tolist() + [target_eta])
-
-            # solve equations
-            w = solve_ivp(T, dt, etas, tau_s, tau_u, J, a, b, len(etas))
-
-            # calculate entropy of weight distribution
-            h_w = entropy(get_prob(w))
-
-            # calculate variance of weight distribution
-            v = np.var(w)
-
-            # calculate correlation between source etas and weights
-            c = np.corrcoef(etas[:-1], w)[0, 1]
-
-            # save results
-            print(f"Finished simulations for b = {b}, noise = {int(noise)}, and Delta = {np.round(Delta, decimals=1)}")
-            res["b"].append(b)
-            res["delta"].append(Delta)
-            res["noise"].append(noise)
-            res["w"].append(w)
-            res["C"].append(c)
-            res["H"].append(h_w)
-            res["V"].append(v)
+    # save results
+    for eta, w in zip(eta_s, ws):
+        res["w0"].append(w0)
+        res["w"].append(w)
+        res["eta"].append(eta)
 
 # save results
 conn = int(J)
-f = open(f"{path}/qif_{plasticity}_{condition}_{int(tau_u)}_{conn}_{rep}.pkl", "wb")
-pickle.dump({"trial": rep, "J": J, "tau_u": tau_u, "condition": condition, "results": res}, f)
+if save_results:
+    pickle.dump(
+        res,
+        open(f"{path}/results/qif_stdp_J{conn}_{plasticity}_{condition}_{int(noise)}_{int(b*100)}.pkl", "wb")
+    )
+
+# plotting
+res = pd.DataFrame.from_dict(res)
+print(f"Plotting backend: {plt.rcParams['backend']}")
+plt.rcParams["font.family"] = "sans"
+plt.rc('text', usetex=True)
+plt.rcParams['figure.constrained_layout.use'] = True
+plt.rcParams['figure.dpi'] = 200
+plt.rcParams['font.size'] = 12.0
+plt.rcParams['axes.titlesize'] = 12
+plt.rcParams['axes.labelsize'] = 12
+plt.rcParams['lines.linewidth'] = 1.0
+markersize = 2
+
+fig, ax = plt.subplots(figsize=(4, 2))
+res = pd.DataFrame.from_dict(res)
+sb.lineplot(res, x="eta", y="w", palette="Dark2", ax=ax, errorbar=("pi", 90), legend=False)
+ax.set_xlabel(r"$\eta$")
+ax.set_ylabel(r"$w$")
+ax.set_title(r"Solutions for $w$")
+fig.canvas.draw()
+# plt.savefig(f"../results/figures/weight_update_rule.svg")
+plt.show()
