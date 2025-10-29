@@ -23,7 +23,7 @@ def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, trace_source: np.ndarra
             y = trace_source*trace_target
         else:
             raise ValueError(f"Invalid condition: {condition}.")
-    elif plasticity == "stdp":
+    elif plasticity == "striatal_plasticity":
         if condition == "hebbian":
             x = trace_source*fr_target
             y = trace_target*fr_source

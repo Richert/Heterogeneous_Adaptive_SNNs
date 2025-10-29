@@ -28,21 +28,20 @@ def lorenz(x: np.ndarray, s: float = 10.0, r: float = 28.0, b: float = 2.667) ->
 
 # general parameters
 float_precision = "float64"
-device = "cpu"
+device = "cuda:0"
 
 # lorenz parameters
 lorenz_vars = {"s": 10.0, "r": 28.0, "b": 2.667}
 
 # model parameters
-node, node_op = "qif_sd", "qif_sd_op"
-M = 50
-Delta = 0.5
-eta = -0.5
+node, node_op = "fre", "fre_op"
+M = 100
+Delta = 1.0
+eta = -1.0
 indices = np.arange(1, M+1)
 etas = eta + Delta*np.tan(0.5*np.pi*(2*indices-M-1)/(M+1))
 deltas = Delta*(np.tan(0.5*np.pi*(2*indices-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*indices-M-1.5)/(M+1)))
-node_vars = {"tau": 1.0, "J": 10.0 / M, "eta": etas, "tau_s": 0.5, "Delta": deltas, "tau_a": 20.0,
-             "kappa": 0.1, "A0": 0.5}
+node_vars = {"tau": 1.0, "J": 10.0 / M, "eta": etas, "Delta": deltas}
 
 # training parameters
 dt = 1e-3
@@ -54,20 +53,23 @@ n_cutoff = 1000
 
 # initialize node template and weights
 w0 = np.zeros((M, M))
-for i in range(M):
-    for j in range(M):
+for j in range(M):
+    sign = 1.0 if np.random.randn() > 0.0 else -1.0
+    for i in range(M):
         w = float(np.random.uniform(0.0, 1.0))
-        w0[i, j] = w
+        w0[i, j] = sign*w
 
 # generate rectipy network
 net = Network(dt=dt, device=device)
 net.add_diffeq_node(label="qif", node=f"../config/fre_equations/{node}_pop", input_var="I_ext", output_var="r",
-                    source_var="s", target_var="s_in", weights=w0,
+                    source_var="r", target_var="r_syn", weights=w0,
                     node_vars={key: val for key, val in node_vars.items()},
-                    op=node_op, clear=True, float_precision=float_precision, train_params=["tau", "eta", "J"])
+                    op=node_op, clear=False, float_precision=float_precision, train_params=["tau", "eta", "J"])
 
 # wash out initial condition
-net.run(np.zeros((init_steps, 1)), verbose=False, sampling_steps=init_steps+1)
+obs = net.run(np.zeros((init_steps, 1)), verbose=False, sampling_steps=10)
+# plt.plot(obs.to_dataframe("out"))
+# plt.show()
 y0 = {key: val.clone() for key, val in net.state.items()}
 
 # generate lorenz input
@@ -82,7 +84,7 @@ inp = np.asarray(lorenz_states)
 
 # add input layer
 m = inp.shape[-1]
-W_in = torch.as_tensor(np.random.randn(M, m), dtype=torch.float64, device=device)
+W_in = torch.as_tensor(np.random.randn(M, m) / m, dtype=torch.float64, device=device)
 net.add_func_node("inp", m, activation_function="identity")
 net.add_edge("inp", "qif", weights=W_in, train="gd")
 
@@ -104,12 +106,12 @@ inp = torch.as_tensor(inp, dtype=torch.float64, device=device)
 loss = torch.nn.MSELoss()
 
 # optimizer definition
-opt = torch.optim.Rprop(net.parameters(), lr=0.01, etas=(0.5, 1.1), step_sizes=(1e-5, 0.5))
+opt = torch.optim.Adam(net.parameters(), lr=0.01, betas=(0.9, 0.999))
 
 # optimization loop
 print("Starting optimization...")
 losses = []
-error_tmp = torch.zeros(1)
+error_tmp = torch.zeros(1, device=device)
 error = 1.0
 epoch = 0
 while error > tol and epoch < n_epochs:
@@ -129,7 +131,7 @@ while error > tol and epoch < n_epochs:
     opt.zero_grad()
     error_tmp.backward()
     opt.step()
-    error_tmp = torch.zeros(1)
+    error_tmp = torch.zeros(1, device=device)
 
     # save results and display progress
     error = np.mean(losses_tmp)

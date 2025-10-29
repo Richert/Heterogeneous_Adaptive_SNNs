@@ -1,6 +1,25 @@
 # operator templates for nodes
 ##############################
 
+# fre operator
+fre_op:
+  base: OperatorTemplate
+  equations:
+    - "I_in = J*tau*r_syn + eta + I_ext"
+    - "r_in = (I_in + sqrt(I_in^2 + Delta^2))/2*pi"
+    - "r' = (sqrt(r_in) - r) / tau"
+  variables:
+    r: output(0.0)
+    I_in: variable(0.0)
+    r_in: variable(0.0)
+    r_syn: input(0.0)
+    I_ext: input(0.0)
+    tau: 1.0
+    J: 10.0
+    Delta: 1.0
+    eta: 0.0
+    zero: 0.0
+
 # qif operator
 qif_stdp_op:
   base: OperatorTemplate
@@ -126,6 +145,19 @@ oja_op:
     x_s: input(0.0)
     x_t: input(0.0)
 
+# hebbian Oja's rule
+oja_simple_op:
+  base: OperatorTemplate
+  equations:
+    - "w' = a*(r_s*r_t - r_t*r_t)"
+    - "r_out = r_s*w"
+  variables:
+    r_out: output(0.0)
+    w: variable(0.0)
+    a: 0.1
+    r_s: input(0.0)
+    r_t: input(0.0)
+
 # anti-hebbian Oja's rule
 oja_ah_op:
   base: OperatorTemplate
@@ -144,6 +176,11 @@ oja_ah_op:
 
 # node templates
 ################
+
+fre_pop:
+  base: NodeTemplate
+  operators:
+    - fre_op
 
 qif_stdp_pop:
   base: NodeTemplate
@@ -183,8 +220,18 @@ oja_ah_edge:
   operators:
     - oja_ah_op
 
+oja_simple_edge:
+  base: EdgeTemplate
+  operators:
+    - oja_simple_op
+
 # circuit templates
 ###################
+
+fre:
+  base: CircuitTemplate
+  nodes:
+    p: fre_pop
 
 qif_stdp:
   base: CircuitTemplate
