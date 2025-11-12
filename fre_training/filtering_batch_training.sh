@@ -25,7 +25,7 @@ for IDX in $(seq 0 $range_end); do
         # python calls
         (
         echo "Starting jobs for model = ${node}, noise = ${noise}, f = ${f}, and rep = ${IDX}."
-        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/fre_training/filtering_mf_training.py $IDX $noise $f $node
+        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/fre_training/filtering_mf_training.py $node $IDX $noise $f
         sleep 1
         ) &
 
