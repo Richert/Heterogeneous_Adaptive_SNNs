@@ -34,7 +34,7 @@ node_vars = {"tau": 1.0, "J": 10.0, "eta": 0.0, "Delta": 0.1}
 # task parameters
 f = 0.02
 init_noise = 0.0001
-inp_noise = 4.0
+inp_noise = 64.0
 
 # training parameters
 dt = 1e-2

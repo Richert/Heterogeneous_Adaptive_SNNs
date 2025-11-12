@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # set condition
-batch_size=10
+batch_size=40
 n=10
 range_end=$((n-1))
 noises=( 1.0 2.0 4.0 8.0 16.0 32.0 64.0 )
