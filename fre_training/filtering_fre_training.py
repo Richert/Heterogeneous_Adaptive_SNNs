@@ -188,4 +188,3 @@ for param_key, param_tensor in zip(train_params, net["qif"].train_params):
     results[param_key] = param_tensor.detach().cpu().numpy()
 pickle.dump(results,
             open(f"{path}/filtering_fre_n{int(inp_noise)}_f{int(f*100.0)}_r{int(rep)}.pkl", "wb"))
-
