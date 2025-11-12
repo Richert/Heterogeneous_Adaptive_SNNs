@@ -184,8 +184,7 @@ for trial in range(test_trials):
 ##############
 
 results = {"test_loss": test_error, "trial": rep, "noise": inp_noise, "frequency": f}
-for param_key, param_tensor in zip(train_params, net["qif"].train_params):
+for param_key, param_tensor in zip(train_params, net["qif"]["node"].train_params):
     results[param_key] = param_tensor.detach().cpu().numpy()
 pickle.dump(results,
             open(f"{path}/filtering_mf_n{int(inp_noise)}_f{int(f*100.0)}_r{int(rep)}.pkl", "wb"))
-
