@@ -24,8 +24,15 @@ torch_precision = torch.float32
 device = "cpu"
 path = "/home/richard/results/filter_training"
 
+# task parameters
+f = float(sys.argv[-1])
+init_noise = 0.0001
+inp_noise = float(sys.argv[-2])
+rep = float(sys.argv[-3])
+
 # model parameters
-node, node_op = "qif", "qif_op"
+node = str(sys.argv[-4])
+node_op = f"{node}_op"
 M = 50
 p = 0.2
 p_in = 0.2
@@ -33,12 +40,6 @@ conn_pow = 1.5
 indices = np.arange(1, M+1)
 node_vars = {"tau": 1.0, "J": 10.0, "eta": 0.0, "Delta": 0.1}
 train_params = ["J", "eta", "Delta"]
-
-# task parameters
-f = float(sys.argv[-1])
-init_noise = 0.0001
-inp_noise = float(sys.argv[-2])
-rep = float(sys.argv[-3])
 
 # training parameters
 dt = 1e-2
@@ -187,4 +188,4 @@ results = {"test_loss": test_error, "trial": rep, "noise": inp_noise, "frequency
 for param_key, param_tensor in zip(train_params, net["qif"]["node"].train_params):
     results[param_key] = param_tensor.detach().cpu().numpy()
 pickle.dump(results,
-            open(f"{path}/filtering_mf_n{int(inp_noise)}_f{int(f*100.0)}_r{int(rep)}.pkl", "wb"))
+            open(f"{path}/filtering_{node}_n{int(inp_noise)}_f{int(f*100.0)}_r{int(rep)}.pkl", "wb"))

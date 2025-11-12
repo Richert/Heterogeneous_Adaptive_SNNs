@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # set condition
-batch_size=40
+batch_size=60
 n=10
 range_end=$((n-1))
 noises=( 1.0 2.0 4.0 8.0 16.0 32.0 64.0 )
 frequencies=( 0.01 0.02 0.04 0.08 0.16 0.32 0.64 1.28 )
+models=( "fre" "qif" )
 
 # limit amount of threads that each Python process can work with
 n_threads=2
@@ -19,12 +20,12 @@ export VECLIB_MAXIMUM_THREADS=$n_threads
 for IDX in $(seq 0 $range_end); do
   for noise in "${noises[@]}"; do
     for f in "${frequencies[@]}"; do
+      for node in "${models[@]}"; do
 
         # python calls
         (
-        echo "Starting jobs for noise = ${noise}, f = ${f}, and rep = ${IDX}."
-        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/fre_training/filtering_mf_training.py $IDX $noise $f
-        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/fre_training/filtering_fre_training.py $IDX $noise $f
+        echo "Starting jobs for model = ${node}, noise = ${noise}, f = ${f}, and rep = ${IDX}."
+        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/fre_training/filtering_mf_training.py $IDX $noise $f $node
         sleep 1
         ) &
 
@@ -33,6 +34,7 @@ for IDX in $(seq 0 $range_end); do
               wait -n
         fi
 
+      done
     done
   done
 done
