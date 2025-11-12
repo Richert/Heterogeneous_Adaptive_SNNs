@@ -76,7 +76,7 @@ template.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_
 net = Network(dt=dt, device=device, dtype=torch_precision)
 net.add_diffeq_node(label="qif", node=template, input_var="I_ext", output_var="r",
                     node_vars={key: val for key, val in node_vars.items()},
-                    op=node_op, clear=False, dtype=torch_precision,
+                    op=node_op, clear=True, dtype=torch_precision,
                     weights=W, source_var="r", target_var="r_in", train_params=train_params)
 
 # add input layer

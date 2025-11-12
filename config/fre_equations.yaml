@@ -18,7 +18,6 @@ fre_op:
     J: 10.0
     Delta: 1.0
     eta: 0.0
-    zero: 0.0
 
 # fre operator with SD
 fre_sd_op:
