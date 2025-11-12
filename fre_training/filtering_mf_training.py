@@ -76,7 +76,7 @@ template.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_
 net = Network(dt=dt, device=device, dtype=torch_precision)
 net.add_diffeq_node(label="qif", node=template, input_var="I_ext", output_var="r",
                     node_vars={key: val for key, val in node_vars.items()},
-                    op=node_op, clear=False, dtype=torch_precision, in_place=False, to_file=False,
+                    op=node_op, clear=False, dtype=torch_precision, in_place=True, to_file=False,
                     weights=W, source_var="r", target_var="r_in", train_params=train_params)
 
 # add input layer
@@ -114,7 +114,8 @@ for epoch in range(train_epochs):
     for trial in range(batch_size):
 
         # get random initial condition
-        net.run(init_noise*np.sqrt(dt)*np.random.randn(init_steps, 1), verbose=False, sampling_steps=init_steps, enable_grad=False)
+        net.run(init_noise*np.sqrt(dt)*np.random.randn(init_steps, 1), verbose=False, sampling_steps=init_steps,
+                enable_grad=False)
         net.detach()
 
         # create input and target
@@ -157,7 +158,8 @@ test_error = 0
 for trial in range(test_trials):
 
     # get random initial condition
-    net.run(init_noise*np.sqrt(dt)*np.random.randn(init_steps, 1), verbose=False, sampling_steps=init_steps, enable_grad=False)
+    net.run(init_noise*np.sqrt(dt)*np.random.randn(init_steps, 1), verbose=False, sampling_steps=init_steps,
+            enable_grad=False)
     net.detach()
 
     # create input and target
