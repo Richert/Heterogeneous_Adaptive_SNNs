@@ -59,7 +59,7 @@ path = "/home/richard-gast/PycharmProjects/Heterogeneous_Adaptive_SNNs"
 save_results = False
 condition = "hebbian" #str(sys.argv[-3])
 noise = 0.0 #float(sys.argv[-2]) * 1e3
-b = 0.1 #float(sys.argv[-1])
+b = 0.2 #float(sys.argv[-1])
 J = 5.0
 N = 200
 m = 10
@@ -67,7 +67,7 @@ eta_t = 0.0 if J > 0 else 2.0
 eta_min, eta_max = -2.0, 3.0
 eta_s = np.linspace(eta_min, eta_max, N)
 w0s = np.linspace(start=0.0, stop=1.0, num=m)
-a = 0.1
+a = 0.01
 tau_s = 1.0
 tau_u = 30.0
 v_cutoff = 100.0
@@ -95,7 +95,7 @@ conn = int(J)
 if save_results:
     pickle.dump(
         res,
-        open(f"{path}/results/qif_stdp_J{conn}_{plasticity}_{condition}_{int(noise)}_{int(b*100)}.pkl", "wb")
+        open(f"{path}/results/qif_stdp_J{conn}_{condition}_{int(noise)}_{int(b*100)}.pkl", "wb")
     )
 
 # plotting

@@ -22,14 +22,14 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
 
 # parameters
 path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
-rep = int(sys.argv[-1])
-b = float(sys.argv[-2])
-Delta = float(sys.argv[-3])
-noise_lvl = float(sys.argv[-4])
+rep = 0 #int(sys.argv[-1])
+b = 0.2 #float(sys.argv[-2])
+Delta = 0.1 #float(sys.argv[-3])
+noise_lvl = 0.0 #float(sys.argv[-4])
 M = 20
 p = 1.0
 edge_vars = {
-    "a": 0.1, "b": b
+    "a": 0.01, "b": b
 }
 eta = -0.5
 etas = uniform(M, eta, Delta)
@@ -89,13 +89,13 @@ W = W[:, idx]
 clear(net)
 # np.fill_diagonal(W, 0)
 
-# fig, ax = plt.subplots(figsize=(5, 5))
-# ax.imshow(W)
-# fig, ax = plt.subplots(figsize=(10, 4))
-# ax.plot(res["s"])
-# ax.plot(np.mean(res["s"], axis=1), color="black")
-# plt.show()
-pickle.dump(
-    {"W": W, "eta": etas[idx], "b": b, "Delta": Delta, "noise": noise_lvl, "s": res["s"]},
-    open(f"{path}/results/rnn_results/fre_mp_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
-)
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.imshow(W)
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(res["s"])
+ax.plot(np.mean(res["s"], axis=1), color="black")
+plt.show()
+# pickle.dump(
+#     {"W": W, "eta": etas[idx], "b": b, "Delta": Delta, "noise": noise_lvl, "s": res["s"]},
+#     open(f"{path}/results/rnn_results/fre_mp_{int(b*10)}_{int(noise_lvl)}_{int(Delta*10.0)}_{rep}.pkl", "wb")
+# )

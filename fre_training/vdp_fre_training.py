@@ -39,6 +39,7 @@ alpha = 1e-3
 dt = 1e-3
 sampling_steps = 1
 init_noise = vdp_vars["tau"] / 100.0
+inp_noise = 1.0
 init_steps = int(20.0/dt)
 epoch_steps = int(100.0/dt)
 train_epochs = 20
@@ -85,7 +86,7 @@ for epoch in range(train_epochs):
     # plt.show()
 
     # get random initial condition
-    net.run(init_noise*np.random.randn(init_steps, m), verbose=False, sampling_steps=init_steps, enable_grad=False)
+    net.run(inp_noise*np.random.randn(init_steps, m), verbose=False, sampling_steps=init_steps, enable_grad=False)
     # plt.plot(obs.to_dataframe("out"))
     # plt.show()
 
@@ -130,7 +131,7 @@ for epoch in range(test_epochs):
     targets_test.append(lorenz_states[1::sampling_steps])
 
     # get random initial condition
-    net.run(init_noise*np.random.randn(init_steps, m), verbose=False, sampling_steps=init_steps, enable_grad=False)
+    net.run(inp_noise*np.random.randn(init_steps, m), verbose=False, sampling_steps=init_steps, enable_grad=False)
 
     # collect network states
     t0 = perf_counter()

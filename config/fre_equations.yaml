@@ -5,20 +5,63 @@
 fre_op:
   base: OperatorTemplate
   equations:
-    - "I_in = J*tau*r_syn + eta + I_ext"
-    - "r_in = (I_in + sqrt(I_in^2 + Delta^2))/2*pi"
-    - "r' = (sqrt(r_in) - r) / tau"
+    - "inp = J*tau*r_in + eta + I_ext"
+    - "inp_sq = absv(inp + sqrt(inp^2 + Delta^2))/2*pi"
+    - "r' = (sqrt(inp_sq) - r) / tau"
   variables:
     r: output(0.0)
-    I_in: variable(0.0)
-    r_in: variable(0.0)
-    r_syn: input(0.0)
+    inp: variable(0.0)
+    inp_sq: variable(0.0)
+    r_in: input(0.0)
     I_ext: input(0.0)
     tau: 1.0
     J: 10.0
     Delta: 1.0
     eta: 0.0
     zero: 0.0
+
+# fre operator with SD
+fre_sd_op:
+  base: OperatorTemplate
+  equations:
+    - "inp = J*tau*r_in + eta + I_ext"
+    - "inp_sq = absv(inp + sqrt(inp^2 + Delta^2))/2*pi"
+    - "r' = (sqrt(inp_sq) - r) / tau"
+    - "s' = (a*r-s)/tau_s"
+    - "a' = (1-a)/tau_a + (A0-a)*kappa*r"
+  variables:
+    s: output(0.0)
+    r: variable(0.0)
+    a: variable(0.0)
+    inp: variable(0.0)
+    inp_sq: variable(0.0)
+    s_in: input(0.0)
+    I_ext: input(0.0)
+    tau: 1.0
+    tau_s: 0.5
+    tau_a: 20.0
+    J: 10.0
+    Delta: 1.0
+    eta: 0.0
+    A0: 0.2
+    kappa: 1.0
+    zero: 0.0
+
+# qif operator
+qif_op:
+  base: OperatorTemplate
+  equations:
+    - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
+    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*r_in + eta + I_ext) / tau"
+  variables:
+    r: output(0.01)
+    v: variable(-60.0)
+    Delta: 0.1
+    tau: 10.0
+    J: 20.0
+    eta: 0.0
+    I_ext: input(0.0)
+    r_in: input(0.0)
 
 # qif operator
 qif_stdp_op:
@@ -182,6 +225,16 @@ fre_pop:
   operators:
     - fre_op
 
+fre_sd_pop:
+  base: NodeTemplate
+  operators:
+    - fre_sd_op
+
+qif_pop:
+  base: NodeTemplate
+  operators:
+    - qif_op
+
 qif_stdp_pop:
   base: NodeTemplate
   operators:
@@ -232,6 +285,16 @@ fre:
   base: CircuitTemplate
   nodes:
     p: fre_pop
+
+fre_sd:
+  base: CircuitTemplate
+  nodes:
+    p: fre_sd_pop
+
+qif:
+  base: CircuitTemplate
+  nodes:
+    p: qif_pop
 
 qif_stdp:
   base: CircuitTemplate
