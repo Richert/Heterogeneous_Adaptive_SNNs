@@ -53,8 +53,8 @@ qif_op:
     - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
     - "v' = (v^2 - (pi*tau*r)^2 + tau*J*r_in + eta + I_ext) / tau"
   variables:
-    r: output(0.01)
-    v: variable(-60.0)
+    r: output(0.0)
+    v: variable(0.0)
     Delta: 0.1
     tau: 10.0
     J: 20.0
@@ -138,6 +138,29 @@ qif_sd_op:
 
 # operator templates for edges
 ##############################
+
+# hebbian STDP rule
+brunel_op:
+  base: OperatorTemplate
+  equations:
+    - "c = u_pre + u_post"
+    - "w' = (a_ltp*(1-w)*sigmoid(gamma_ltp*(c-theta_ltp)) - a_ltd*w*sigmoid(gamma_ltd*(c-theta_ltd)) - w*(1-w)*(W0-w)) / tau_w"
+    - "s_out = s_pre*w"
+  variables:
+    s_out: output(0.0)
+    w: variable(0.0)
+    c: variable(0.0)
+    u_pre: input(0.0)
+    u_post: input(0.0)
+    s_pre: input(0.0)
+    tau_w: 100.0
+    W0: 0.5
+    a_ltp: 0.1
+    a_ltd: 0.1
+    theta_ltp: 1.0
+    theta_ltd: 1.0
+    gamma_ltp: 10.0
+    gamma_ltd: 10.0
 
 # hebbian STDP rule
 stdp_op:
@@ -251,6 +274,11 @@ qif_sd_pop:
 
 # edge templates
 ################
+
+brunel_edge:
+  base: EdgeTemplate
+  operators:
+    - brunel_op
 
 stdp_edge:
   base: EdgeTemplate

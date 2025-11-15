@@ -29,21 +29,22 @@ p = 0.2
 p_in = 0.2
 conn_pow = 1.5
 indices = np.arange(1, M+1)
-node_vars = {"tau": 1.0, "J": 10.0, "eta": 0.0, "Delta": 0.1}
+node_vars = {"tau": 1.0, "J": 5.0, "eta": 0.0, "Delta": 0.2}
+train_params = ["J", "eta", "Delta"]
 
 # task parameters
-f = 0.01
+f = 0.64
 init_noise = 0.0001
 inp_noise = 4.0
 
 # training parameters
-dt = 1e-2
+dt = 2e-3
 lr = 1e-2
 betas = (0.9, 0.99)
-sampling_steps = 1
+sampling_steps = 5
 init_steps = int(10.0/dt)
 trial_steps = int(50.0/dt)
-batch_size = 10
+batch_size = 5
 train_epochs = 100
 test_trials = 10
 gradient_cutoff = 1e5
@@ -63,15 +64,12 @@ W = circular_connectivity(M, p, spatial_distribution=rv_discrete(values=(indices
 # ax.imshow(W, aspect="auto", interpolation="none")
 # plt.show()
 
-template = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)})
-template.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
-
 # generate rectipy network
 net = Network(dt=dt, device=device, dtype=torch_precision)
-net.add_diffeq_node(label="qif", node=template, input_var="I_ext", output_var="r",
+net.add_diffeq_node(label="qif", node=node_temp, input_var="I_ext", output_var="r",
                     node_vars={key: val for key, val in node_vars.items()},
                     op=node_op, clear=True, dtype=torch_precision,
-                    weights=W, source_var="r", target_var="r_in", train_params=["J", "eta", "Delta"])
+                    weights=W, source_var="r", target_var="r_in", train_params=train_params)
 
 # add input layer
 W_in = np.zeros((M, 1))
@@ -114,8 +112,8 @@ for epoch in range(train_epochs):
         # create input and target
         inp = inp_noise * np.sqrt(dt) * np.random.randn(trial_steps, 1)
         inp[:, 0] += target_signal
-        target = np.zeros((trial_steps, 1))
-        target[:, 0] += target_signal
+        target = np.zeros((int(trial_steps / sampling_steps), 1))
+        target[:, 0] += target_signal[::sampling_steps]
         target = torch.tensor(target, device=device, dtype=torch_precision)
         # fig, ax = plt.subplots(figsize=(12, 4))
         # ax.plot(inp, label="inputs")
@@ -157,8 +155,8 @@ for trial in range(test_trials):
     # create input and target
     inp = inp_noise * np.sqrt(dt) * np.random.randn(trial_steps, 1)
     inp[:, 0] += target_signal
-    target = np.zeros((trial_steps, 1))
-    target[:, 0] += target_signal
+    target = np.zeros((int(trial_steps / sampling_steps), 1))
+    target[:, 0] += target_signal[::sampling_steps]
     target = torch.tensor(target, device=device, dtype=torch_precision)
 
     # collect network states
@@ -174,6 +172,10 @@ for trial in range(test_trials):
     inputs.append(inp[::sampling_steps])
     target_signals.append(target.detach().cpu().numpy())
     predictions.append(prediction.detach().cpu().numpy())
+
+# print parameter fits
+for param_key, param_tensor in zip(train_params, net["qif"]["node"].train_params):
+    print(f"Fitted value of {param_key}: {param_tensor.detach().cpu().numpy()[0]}")
 
 # plotting
 ##########

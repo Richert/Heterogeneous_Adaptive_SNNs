@@ -68,12 +68,9 @@ W[np.eye(M) > 0.1] = 1.0
 # ax.imshow(W, aspect="auto", interpolation="none")
 # plt.show()
 
-template = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)})
-template.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
-
 # generate rectipy network
 net = Network(dt=dt, device=device, dtype=torch_precision)
-net.add_diffeq_node(label="qif", node=template, input_var="I_ext", output_var="r",
+net.add_diffeq_node(label="qif", node=node_temp, input_var="I_ext", output_var="r",
                     node_vars={key: val for key, val in node_vars.items()},
                     op=node_op, clear=True, dtype=torch_precision, to_file=False,
                     weights=W, source_var="r", target_var="r_in", train_params=train_params)
