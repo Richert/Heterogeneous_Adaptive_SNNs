@@ -75,7 +75,7 @@ inp += noise
 # run simulation
 res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp},
               outputs={"s": f"all/{node_op}/s"}, solver="heun", clear=False, sampling_step_size=dts,
-              float_precision="float64")
+              float_precision="float32", vectorize=True)
 
 # extract synaptic weights
 mapping, weights, etas_tmp = net._ir["weight"].value, net.state["w"], net._ir["eta"].value

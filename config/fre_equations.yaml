@@ -144,7 +144,7 @@ brunel_op:
   base: OperatorTemplate
   equations:
     - "c = u_pre + u_post"
-    - "w' = (a_ltp*(1-w)*sigmoid(gamma_ltp*(c-theta_ltp)) - a_ltd*w*sigmoid(gamma_ltd*(c-theta_ltd)) - w*(1-w)*(W0-w)) / tau_w"
+    - "w' = (a_ltp*(1-w)*sigmoid(gamma_ltp*(c-theta_ltp)) - a_ltd*w*sigmoid(gamma_ltd*(c-theta_ltd)) - w*(1-w)*(0.5-w)) / tau_w"
     - "s_out = s_pre*w"
   variables:
     s_out: output(0.0)
