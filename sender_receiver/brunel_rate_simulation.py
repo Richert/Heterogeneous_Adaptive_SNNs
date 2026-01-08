@@ -20,7 +20,7 @@ def delta_w(t: float, w: np.ndarray, eta_s: np.ndarray, eta_t: float, J: float, 
     r_s = get_qif_fr(eta_s + noise * np.random.randn(len(eta_s)) * np.sqrt(dt))
     r_t = get_qif_fr(eta_t + noise * np.random.randn() * np.sqrt(dt) + J*np.dot(w, r_s) / N)
     c = r_s + r_t
-    return (a_ltp*(1-w)*sigmoid(gamma_ltp*(c-theta_ltp)) - a_ltd*w*sigmoid(gamma_ltd*(c-theta_ltd)) - w*(1-w)*(w0-w)) / tau_w
+    return (a_ltp*(1-w)*sigmoid(gamma_ltp*(c-theta_ltp)) - a_ltd*w*sigmoid(gamma_ltd*(c-theta_ltd)) - w*(1-w)*(0.5-w)) / tau_w
 
 def get_w_solution(w0: np.ndarray, eta_source: np.ndarray, eta: float, J: float, a_ltp: float, a_ltd: float,
                    gamma_ltp: float, gamma_ltd: float, theta_ltp: float, theta_ltd: float, tau_w: float, T: float,

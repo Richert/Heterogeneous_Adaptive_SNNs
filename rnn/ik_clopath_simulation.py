@@ -22,26 +22,41 @@ def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
 
 # parameters
 path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
-Delta = 0.1 #float(sys.argv[-3])
-noise_lvl = 0.0 #float(sys.argv[-4])
-M = 20
+C = 100.0
+k = 0.7
+eta = 70.0
+Delta = 5.0
+v_r = -60.0
+v_t = -40.0
+tau_s = 5.0
+tau_u = 50.0
+tau_ltd = 20.0
+tau_ltp = 15.0
+g = 10.0
+E_r = 0.0
+kappa = 60.0
+a_ltd = 6e-3
+a_ltp = 8e-3
+gamma_ltp = 50.0
+gamma_ltd = 50.0
+noise_lvl = 0.1
+M = 10
 p = 1.0
-edge_vars = {
-    "a_ltp": 10.0, "a_ltd": 10.0, "gamma_ltp": 10.0, "gamma_ltd": 10.0, "theta_ltp": 1.0, "theta_ltd": 10.0,
-    "tau_w": 100.0, "W0": 0.5
-}
-eta = -0.5
 etas = uniform(M, eta, Delta)
-node_vars = {"tau": 1.0, "J": 5.0 / (0.5*p*M), "eta": etas, "tau_u": 30.0, "tau_s": 1.0, "Delta": Delta/(2*M)}
-T = 2000.0
+edge_vars = {
+    "a_ltp": a_ltp, "a_ltd": a_ltd, "gamma_ltp": gamma_ltp, "gamma_ltd": gamma_ltd, "theta_ltp": v_t, "theta_ltd": v_r
+}
+node_vars = {"C": C, "k": k, "eta": etas, "Delta": Delta/(2*M), "v_r": v_r, "v_t": v_t, "tau_s": tau_s, "tau_u": tau_u,
+             "tau_ltp": tau_ltp, "tau_ltd": tau_ltd, "g": g / (0.5*p*M), "E_r": E_r, "kappa": kappa}
+T = 3000.0
 dt = 1e-3
 dts = 1.0
-global_noise = 10.0
+global_noise = 100.0
 noise_sigma = 1.0/dt
 
 # node and edge template initiation
-edge, edge_op = "brunel_edge", "brunel_op"
-node, node_op = "qif_stdp", "qif_stdp_op"
+edge, edge_op = "clopath_edge", "clopath_op"
+node, node_op = "ik_clopath", "ik_clopath_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
 for key, val in edge_vars.items():
@@ -49,6 +64,7 @@ for key, val in edge_vars.items():
 
 # create network
 edges = []
+w0 = np.zeros((M, M))
 for i in range(M):
     for j in range(M):
         edge_tmp = deepcopy(edge_temp)
@@ -56,12 +72,15 @@ for i in range(M):
             w = float(np.random.uniform(0.0, 1.0))
         else:
             w = 0.0
+        w0[i, j] = w
         edge_tmp.update_var(edge_op, "w", w)
         edges.append((f"p{j}/{node_op}/s", f"p{i}/{node_op}/s_in", edge_tmp,
                       {"weight": 1.0,
                        f"{edge}/{edge_op}/s_pre": f"p{j}/{node_op}/s",
                        f"{edge}/{edge_op}/u_pre": f"p{j}/{node_op}/u",
-                       f"{edge}/{edge_op}/u_post": f"p{i}/{node_op}/u",
+                       f"{edge}/{edge_op}/v_post": f"p{i}/{node_op}/v",
+                       f"{edge}/{edge_op}/v_post_ltd": f"p{i}/{node_op}/v_ltd",
+                       f"{edge}/{edge_op}/v_post_ltp": f"p{i}/{node_op}/v_ltp",
                        }))
 net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)
 net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
@@ -84,14 +103,21 @@ if len(etas) == M:
 idx = np.argsort(etas)
 W = np.asarray([weights[mapping[i, :] > 0.0] for i in idx])
 W = W[:, idx]
-clear(net)
+w0 = w0[idx, :]
+w0 = w0[:, idx]
+# clear(net)
 # np.fill_diagonal(W, 0)
 
 fig, ax = plt.subplots(figsize=(5, 5))
-ax.imshow(W)
+ax.imshow(w0, vmin=0.0, vmax=1.0, aspect="auto", interpolation="none")
+ax.set_title("initial weights")
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.imshow(W, vmin=0.0, vmax=1.0, aspect="auto", interpolation="none")
+ax.set_title("final weights")
 fig, ax = plt.subplots(figsize=(10, 4))
 ax.plot(res["s"])
 ax.plot(np.mean(res["s"], axis=1), color="black")
+ax.set_title("network dynamics")
 plt.show()
 # pickle.dump(
 #     {"W": W, "eta": etas[idx], "b": b, "Delta": Delta, "noise": noise_lvl, "s": res["s"]},

@@ -85,6 +85,45 @@ qif_stdp_op:
     s_in: input(0.0)
 
 # qif operator
+ik_clopath_op:
+  base: OperatorTemplate
+  equations:
+    - "r' = (Delta*k/(pi*C) + r*(k*(2.0*v-v_r-v_t) - g_e*s_e - g_i*s_i)) / C"
+    - "v' = (k*(v-v_r)*(v-v_t) - (pi*C*r)^2/k + g_e*s_e*(E_e-v) + g_i*s_i*(E_i-v) + eta + I_ext - u) / C"
+    - "u' = (b*(v-v_r) - u + tau_u*kappa*ca)/tau_u"
+    - "s' = r-s/tau_s"
+    - "ca' = r-ca/tau_ca"
+    - "v_ltd' = (v-v_ltd) / tau_ltd"
+    - "v_ltp' = (v-v_ltp) / tau_ltp"
+  variables:
+    r: output(0.01)
+    v: variable(-60.0)
+    s: variable(0.0)
+    u: variable(0.0)
+    ca: variable(0.0)
+    v_ltd: variable(0.0)
+    v_ltp: variable(0.0)
+    C: 100.0
+    k: 0.7
+    v_r: -60.0
+    v_t: -40.0
+    Delta: 1.0
+    g_e: 1.0
+    g_i: 1.0
+    E_e: 0.0
+    E_i: -65.0
+    tau_u: 50.0
+    tau_s: 5.0
+    tau_ca: 150.0
+    tau_ltd: 50.0
+    tau_ltp: 50.0
+    eta: 0.0
+    kappa: 1.0
+    I_ext: input(0.0)
+    s_e: input(0.0)
+    s_i: input(0.0)
+
+# qif operator
 qif_sp_op:
   base: OperatorTemplate
   equations:
@@ -139,12 +178,35 @@ qif_sd_op:
 # operator templates for edges
 ##############################
 
-# hebbian STDP rule
+# Clopath's STDP rule
+clopath_op:
+  base: OperatorTemplate
+  equations:
+    - "w' = a_ltp*u_pre*sigmoid(gamma_ltp*(v_post_ltp-theta_ltd))*sigmoid(gamma_ltp*(v_post-theta_ltp)) - a_ltd*s_pre*sigmoid(gamma_ltd*(v_post_ltd-theta_ltd))"
+    - "w_out = sqrt((w + sqrt(w^2))/(2*pi))"
+    - "s_out = s_pre*w_out"
+  variables:
+    s_out: output(0.0)
+    w: variable(0.0)
+    w_out: variable(0.0)
+    s_pre: input(0.0)
+    u_pre: input(0.0)
+    v_post: input(0.0)
+    v_post_ltp: input(0.0)
+    v_post_ltd: input(0.0)
+    a_ltp: 0.1
+    a_ltd: 0.1
+    theta_ltp: 1.0
+    theta_ltd: 1.0
+    gamma_ltp: 10.0
+    gamma_ltd: 10.0
+
+# cubic Brunel rule
 brunel_op:
   base: OperatorTemplate
   equations:
     - "c = u_pre + u_post"
-    - "w' = (a_ltp*(1-w)*sigmoid(gamma_ltp*(c-theta_ltp)) - a_ltd*w*sigmoid(gamma_ltd*(c-theta_ltd)) - w*(1-w)*(0.5-w)) / tau_w"
+    - "w' = (a_ltp*sigmoid(gamma_ltp*(c-theta_ltp))*(1-w) - a_ltd*sigmoid(gamma_ltd*(c-theta_ltd))*w^(1/4) - w*(1-w)*(0.5-w)) / tau_w"
     - "s_out = s_pre*w"
   variables:
     s_out: output(0.0)
@@ -252,6 +314,11 @@ fre_sd_pop:
   operators:
     - fre_sd_op
 
+ik_clopath_pop:
+  base: NodeTemplate
+  operators:
+    - ik_clopath_op
+
 qif_pop:
   base: NodeTemplate
   operators:
@@ -274,6 +341,11 @@ qif_sd_pop:
 
 # edge templates
 ################
+
+clopath_edge:
+  base: EdgeTemplate
+  operators:
+    - clopath_op
 
 brunel_edge:
   base: EdgeTemplate
