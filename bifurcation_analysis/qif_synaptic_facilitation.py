@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use('tkagg')
 
 """
-Bifurcation analysis of a QIF mean-field model with depressing synapses.
+Bifurcation analysis of a QIF mean-field model with facilitating synapses.
 
 To run this code, you need Python >= 3.6 with PyRates (https://github.com/pyrates-neuroscience/PyRates) and 
 auto-07p (https://github.com/auto-07p/auto-07p) installed.
@@ -31,12 +31,12 @@ config_dir = "../config"
 
 # model parameters
 node_vars = {"tau": 1.0, "J": 15.0, "eta": -10.0, "Delta": 0.5}
-syn_vars = { "tau_s": 0.5, "tau_a": 20.0, "kappa": 0.0}
+syn_vars = { "tau_s": 0.5, "tau_a": 20.0, "A0": 1.0}
 ca_vars = {"tau_u": 30.0}
 
 # initialize model
-node_op, syn_op = "qif_op", "syn_sd_op"
-ik = CircuitTemplate.from_yaml(f"{config_dir}/fre_equations/qif_sd")
+node_op, syn_op = "qif_op", "syn_sf_op"
+ik = CircuitTemplate.from_yaml(f"{config_dir}/fre_equations/qif_sf")
 
 # update parameters
 ik.update_var(node_vars={f"p/{node_op}/{var}": val for var, val in node_vars.items()})
@@ -57,12 +57,12 @@ t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NP
 ########################
 
 # continuation in independent parameter
-p1 = "kappa"
+p1 = "A0"
 p1_idx = 8
-p1_vals = [0.1, 0.2, 0.3]
+p1_vals = [0.2, 0.4, 0.8]
 c1_sols, c1_cont = ode.run(starting_point='UZ1', c='1d', ICP=p1_idx, NPAR=n_params, NDIM=n_dim, name=f'{p1}:0',
                            origin="t", NMX=8000, DSMAX=0.05, UZR={p1_idx: p1_vals}, STOP=[],
-                           NPR=20, RL1=2.0, RL0=0.0, EPSL=1e-7, EPSU=1e-7, EPSS=1e-4, bidirectional=False)
+                           NPR=20, RL1=2.0, RL0=0.0, EPSL=1e-7, EPSU=1e-7, EPSS=1e-4, bidirectional=False, DS="-")
 
 # continuations in eta
 eta_idx = 5

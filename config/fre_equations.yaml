@@ -5,86 +5,85 @@
 fre_op:
   base: OperatorTemplate
   equations:
-    - "inp = J*tau*r_in + eta + I_ext"
+    - "inp = J*tau*s_in + eta + I_ext"
     - "inp_sq = absv(inp + sqrt(inp^2 + Delta^2))/2*pi"
     - "r' = (sqrt(inp_sq) - r) / tau"
   variables:
     r: output(0.0)
     inp: variable(0.0)
     inp_sq: variable(0.0)
-    r_in: input(0.0)
-    I_ext: input(0.0)
-    tau: 1.0
-    J: 10.0
-    Delta: 1.0
-    eta: 0.0
-
-# fre operator with SD
-fre_sd_op:
-  base: OperatorTemplate
-  equations:
-    - "inp = J*tau*r_in + eta + I_ext"
-    - "inp_sq = absv(inp + sqrt(inp^2 + Delta^2))/2*pi"
-    - "r' = (sqrt(inp_sq) - r) / tau"
-    - "s' = (a*r-s)/tau_s"
-    - "a' = (1-a)/tau_a + (A0-a)*kappa*r"
-  variables:
-    s: output(0.0)
-    r: variable(0.0)
-    a: variable(0.0)
-    inp: variable(0.0)
-    inp_sq: variable(0.0)
     s_in: input(0.0)
     I_ext: input(0.0)
     tau: 1.0
-    tau_s: 0.5
-    tau_a: 20.0
     J: 10.0
     Delta: 1.0
     eta: 0.0
-    A0: 0.2
-    kappa: 1.0
-    zero: 0.0
 
 # qif operator
 qif_op:
   base: OperatorTemplate
   equations:
     - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
-    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*r_in + eta + I_ext) / tau"
+    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
   variables:
     r: output(0.0)
     v: variable(0.0)
     Delta: 0.1
-    tau: 10.0
+    tau: 1.0
     J: 20.0
-    eta: 0.0
-    I_ext: input(0.0)
-    r_in: input(0.0)
-
-# qif operator
-qif_stdp_op:
-  base: OperatorTemplate
-  equations:
-    - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
-    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
-    - "s' = (r-s)/tau_s"
-    - "u' = (r-u)/tau_u"
-  variables:
-    r: output(0.01)
-    v: variable(-60.0)
-    s: variable(0.0)
-    u: variable(0.0)
-    Delta: 0.1
-    tau: 10.0
-    J: 20.0
-    tau_u: 100.0
-    tau_s: 5.0
     eta: 0.0
     I_ext: input(0.0)
     s_in: input(0.0)
 
-# qif operator
+# synaptic operator
+syn_op:
+  base: OperatorTemplate
+  equations:
+    - "s' = (r-s)/tau_s"
+  variables:
+    s: output(0.0)
+    r: input(0.0)
+    tau_s: 0.5
+
+# depressive synaptic operator
+syn_sd_op:
+  base: OperatorTemplate
+  equations:
+    - "s' = (a*r-s)/tau_s"
+    - "a' = (1-a)/tau_a - kappa*a*r"
+  variables:
+    s: output(0.0)
+    a: variable(1.0)
+    r: input(0.0)
+    tau_s: 0.5
+    tau_a: 20.0
+    kappa: 0.5
+
+# facilitative synaptic operator
+syn_sf_op:
+  base: OperatorTemplate
+  equations:
+    - "s' = (a*r-s)/tau_s"
+    - "a' = (A0-a)/tau_a + A0*(1-a)*r"
+  variables:
+    s: output(0.0)
+    a: variable(0.0)
+    r: input(0.0)
+    tau_s: 0.5
+    tau_a: 20.0
+    A0: 0.5
+
+# calcium trace operator
+ca_op:
+  base: OperatorTemplate
+  equations:
+    - "u' = (r-u)/tau_u"
+  variables:
+    u: output(0.0)
+    r: input(0.0)
+    tau_u: 100.0
+
+# clopath operator
 ik_clopath_op:
   base: OperatorTemplate
   equations:
@@ -122,58 +121,6 @@ ik_clopath_op:
     I_ext: input(0.0)
     s_e: input(0.0)
     s_i: input(0.0)
-
-# qif operator
-qif_sp_op:
-  base: OperatorTemplate
-  equations:
-    - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
-    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
-    - "s' = (a*r-s)/tau_s"
-    - "a' = (1-a)/tau_a + (A0-a)*kappa*r"
-    - "u' = (r-u)/tau_u"
-  variables:
-    r: output(0.01)
-    v: variable(-60.0)
-    s: variable(0.0)
-    a: variable(1.0)
-    u: variable(0.0)
-    Delta: 0.1
-    kappa: 0.0
-    A0: 0.0
-    tau_a: 50.0
-    tau: 10.0
-    J: 20.0
-    tau_u: 100.0
-    tau_s: 5.0
-    eta: 0.0
-    I_ext: input(0.0)
-    s_in: input(0.0)
-
-# qif operator
-qif_sd_op:
-  base: OperatorTemplate
-  equations:
-    - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
-    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
-    - "s' = (a*r-s)/tau_s"
-    - "a' = (1-a)/tau_a + (A0-a)*kappa*r"
-  variables:
-    r: output(0.01)
-    v: variable(-60.0)
-    s: variable(0.0)
-    a: variable(1.0)
-    Delta: 0.1
-    theta: 0.5
-    kappa: 0.0
-    A0: 0.0
-    tau_a: 50.0
-    tau: 10.0
-    J: 20.0
-    tau_s: 5.0
-    eta: 0.0
-    I_ext: input(0.0)
-    s_in: input(0.0)
 
 # operator templates for edges
 ##############################
@@ -224,56 +171,29 @@ brunel_op:
     gamma_ltp: 10.0
     gamma_ltd: 10.0
 
-# hebbian STDP rule
+# STDP rule
 stdp_op:
   base: OperatorTemplate
   equations:
-    - "w' = a*(b*((1-w)*x_s*r_t - w*x_t*r_s) + (1-b)*(x_s*r_t - x_t*r_s)*(w-w^2))"
-    - "r_out = r_s*w"
+    - "ltp = p1*p2"
+    - "ltd = d1*d2"
+    - "w' = a*(b*((1-w)*ltp - w*ltd) + (1-b)*(ltp - ltd)*(w-w^2))"
+    - "s_out = s_in*w"
   variables:
-    r_out: output(0.0)
+    s_out: output(0.0)
     w: variable(1.0)
+    ltp: variable
+    ltd: variable
     a: 0.1
     b: 0.5
-    r_s: input(0.0)
-    r_t: input(0.0)
-    x_s: input(0.0)
-    x_t: input(0.0)
-
-# anti-hebbian STDP rule
-stdp_ah_op:
-  base: OperatorTemplate
-  equations:
-    - "w' = a*(b*((1-w)*x_t*r_s - w*x_s*r_t) + (1-b)*(x_t*r_s - x_s*r_t)*(w-w^2))"
-    - "r_out = r_s*w"
-  variables:
-    r_out: output(0.0)
-    w: variable(1.0)
-    a: 0.1
-    b: 0.5
-    r_s: input(0.0)
-    r_t: input(0.0)
-    x_s: input(0.0)
-    x_t: input(0.0)
+    s_in: input(0.0)
+    p1: input(0.0)
+    p2: input(0.0)
+    d1: input(0.0)
+    d2: input(0.0)
 
 # hebbian Oja's rule
 oja_op:
-  base: OperatorTemplate
-  equations:
-    - "w' = a*(b*((1-w)*x_s*r_t - w*x_t*r_t) + (1-b)*(x_s*r_t - x_t*r_t)*(w-w^2))"
-    - "r_out = r_s*w"
-  variables:
-    r_out: output(0.0)
-    w: variable(1.0)
-    a: 0.1
-    b: 0.5
-    r_s: input(0.0)
-    r_t: input(0.0)
-    x_s: input(0.0)
-    x_t: input(0.0)
-
-# hebbian Oja's rule
-oja_simple_op:
   base: OperatorTemplate
   equations:
     - "w' = a*(r_s*r_t - r_t*r_t)"
@@ -285,22 +205,6 @@ oja_simple_op:
     r_s: input(0.0)
     r_t: input(0.0)
 
-# anti-hebbian Oja's rule
-oja_ah_op:
-  base: OperatorTemplate
-  equations:
-    - "w' = a*(b*((1-w)*r_s*x_s - w*x_s*r_t) + (1-b)*(r_s*x_s - x_s*r_t)*(w-w^2))"
-    - "r_out = r_s*w"
-  variables:
-    r_out: output(0.0)
-    w: variable(1.0)
-    a: 0.1
-    b: 0.5
-    r_s: input(0.0)
-    r_t: input(0.0)
-    x_s: input(0.0)
-    x_t: input(0.0)
-
 # node templates
 ################
 
@@ -308,36 +212,48 @@ fre_pop:
   base: NodeTemplate
   operators:
     - fre_op
+    - syn_op
+    - ca_op
 
 fre_sd_pop:
   base: NodeTemplate
   operators:
-    - fre_sd_op
+    - fre_op
+    - syn_sd_op
+    - ca_op
 
-ik_clopath_pop:
+fre_sf_pop:
   base: NodeTemplate
   operators:
-    - ik_clopath_op
+    - fre_op
+    - syn_sf_op
+    - ca_op
 
 qif_pop:
   base: NodeTemplate
   operators:
     - qif_op
-
-qif_stdp_pop:
-  base: NodeTemplate
-  operators:
-    - qif_stdp_op
-
-qif_sp_pop:
-  base: NodeTemplate
-  operators:
-    - qif_sp_op
+    - syn_op
+    - ca_op
 
 qif_sd_pop:
   base: NodeTemplate
   operators:
-    - qif_sd_op
+    - qif_op
+    - syn_sd_op
+    - ca_op
+
+qif_sf_pop:
+  base: NodeTemplate
+  operators:
+    - qif_op
+    - syn_sf_op
+    - ca_op
+
+ik_clopath_pop:
+  base: NodeTemplate
+  operators:
+    - ik_clopath_op
 
 # edge templates
 ################
@@ -357,25 +273,10 @@ stdp_edge:
   operators:
     - stdp_op
 
-stdp_ah_edge:
-  base: EdgeTemplate
-  operators:
-    - stdp_ah_op
-
 oja_edge:
   base: EdgeTemplate
   operators:
     - oja_op
-
-oja_ah_edge:
-  base: EdgeTemplate
-  operators:
-    - oja_ah_op
-
-oja_simple_edge:
-  base: EdgeTemplate
-  operators:
-    - oja_simple_op
 
 # circuit templates
 ###################
@@ -395,17 +296,19 @@ qif:
   nodes:
     p: qif_pop
 
-qif_stdp:
-  base: CircuitTemplate
-  nodes:
-    p: qif_stdp_pop
-
 qif_sd:
   base: CircuitTemplate
   nodes:
     p: qif_sd_pop
   edges:
-    - [p/qif_sd_op/s, p/qif_sd_op/s_in, null, weight: 1.0]
+    - [p/syn_sd_op/s, p/qif_op/s_in, null, weight: 1.0]
+
+qif_sf:
+  base: CircuitTemplate
+  nodes:
+    p: qif_sf_pop
+  edges:
+    - [p/syn_sf_op/s, p/qif_op/s_in, null, weight: 1.0]
 
 qif_sp:
   base: CircuitTemplate

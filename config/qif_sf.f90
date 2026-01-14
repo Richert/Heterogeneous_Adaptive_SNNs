@@ -14,14 +14,14 @@
       DOUBLE PRECISION, INTENT(IN) :: U(NDIM), PAR(*)
       DOUBLE PRECISION, INTENT(OUT) :: F(NDIM)
       DOUBLE PRECISION, INTENT(INOUT) :: DFDU(NDIM,NDIM), DFDP(NDIM,*)
-      DOUBLE PRECISION I,J,D,tau_s,tau_a,kappa,PI,RM,DS
+      DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,PI,RM,DS
 
        I = PAR(1)
        J = PAR(2)
        D = PAR(3)
        tau_s = PAR(4)
        tau_a = PAR(5)
-       kappa = PAR(6)
+       A0 = PAR(6)
        PI = 4*ATAN(1.0D0)
        M = (NDIM)/4
 
@@ -44,7 +44,7 @@
          F(n) = DS + 2.0*R(n)*V(n)
          F(n+M) = V(n)*V(n) + RM + I + D*((n-1.0)/(M-1.0) - 0.5) - PI*PI*R(n)*R(n)
          F(n+2*M) = (A(n)*R(n) - S(n)) / tau_s
-         F(n+3*M) = (1.0-A(n))/tau_a - kappa*A(n)*R(n)
+         F(n+3*M) = (A0-A(n))/tau_a + A0*(1-A(n))*R(n)
        end do
 
       END SUBROUTINE FUNC
@@ -57,21 +57,21 @@
       INTEGER :: n,M
       DOUBLE PRECISION, INTENT(INOUT) :: U(NDIM),PAR(*)
       DOUBLE PRECISION, INTENT(IN) :: T
-      DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,kappa,TPI
+      DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,TPI
 
        I = -10.0
        J = 15.0
        D = 2.0
        tau_s = 0.5
        tau_a = 20.0
-       kappa = 0.0
+       A0 = 1.0
 
        PAR(1)=I
        PAR(2)=J
        PAR(3)=D
        PAR(4)=tau_s
        PAR(5)=tau_a
-       PAR(6)=kappa
+       PAR(6)=A0
        TPI=8.0*ATAN(1.0D0)
        M =(NDIM)/4
 
@@ -79,7 +79,7 @@
          U(n) = 0.0
          U(n+M) = -SQRT(-(I-D+(n-0.5)*(2.0*D/M)))
          U(n+2*M) = 0.0
-         U(n+3*M) = 1.0
+         U(n+3*M) = A0
        end do
 
       END SUBROUTINE STPNT

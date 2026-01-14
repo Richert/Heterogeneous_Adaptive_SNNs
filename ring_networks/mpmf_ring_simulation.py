@@ -6,6 +6,8 @@ import torch
 from time import perf_counter
 from scipy.stats import rv_discrete
 from copy import deepcopy
+import matplotlib
+matplotlib.use('tkagg')
 
 def dist(x: int, method: str = "inverse", zero_val: float = 1.0, inverse_pow: float = 1.0) -> float:
     if method == "inverse":
@@ -25,7 +27,7 @@ device = "cpu"
 
 # model parameters
 node = "qif_stdp"
-edge = "stdp"
+edge = "oja"
 delay_coupling = False
 M = 50
 p = 0.2

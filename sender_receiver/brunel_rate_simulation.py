@@ -89,7 +89,8 @@ plt.rcParams['lines.linewidth'] = 1.0
 markersize = 2
 
 fig, ax = plt.subplots(figsize=(6, 3))
-sb.lineplot(res, x="eta", y="w", hue="noise", palette="Dark2", ax=ax, errorbar=("pi", 90), legend=False)
+# sb.lineplot(res, x="eta", y="w", hue="noise", palette="Dark2", ax=ax, errorbar=("pi", 90), legend=False)
+sb.scatterplot(res, x="eta", y="w", hue="noise", style="w0", legend=False, ax=ax)
 ax.set_xlabel(r"$\eta$")
 ax.set_ylabel(r"$w$")
 
