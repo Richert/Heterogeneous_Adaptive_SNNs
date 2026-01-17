@@ -31,7 +31,8 @@ continue_lcs = True
 N = 10
 n_dim = int(4*N)
 n_params = 6
-ode = ODESystem(eq_file="qif_sd", working_dir=config_dir, auto_dir=auto_dir, init_cont=False)
+ncol = 4
+ode = ODESystem(eq_file="qif_sf", working_dir=config_dir, auto_dir=auto_dir, init_cont=False)
 
 # initial continuation in time to converge to fixed point
 t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NPR=1000, NPAR=n_params, NDIM=n_dim,
@@ -41,14 +42,20 @@ t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NP
 # bifurcation analysis #
 ########################
 
+# set synaptic coupling strength
+p0 = "J"
+p0_idx = 2
+p0_val = 15.0
+c0_sols, c0_cont = ode.run(starting_point='UZ1', c='1d', ICP=p0_idx, NPAR=n_params, NDIM=n_dim, name=f'{p0}:0',
+                           origin="t", UZR={p0_idx: p0_val}, STOP=["UZ1"], NPR=20, RL1=20.0, RL0=-20.0,
+                           EPSL=1e-7, EPSU=1e-7, EPSS=1e-5, NMX=8000, DSMAX=0.2, bidirectional=True)
+
 # continuation in independent parameter
-p1 = "kappa"
+p1 = "A0"
 p1_idx = 6
-p1_vals = [0.05, 0.1, 0.2]
-ncol = 4
-c1_sols, c1_cont = ode.run(starting_point='UZ1', c='1d', ICP=p1_idx, NPAR=n_params, NDIM=n_dim, name=f'{p1}:0',
-                           origin="t", NMX=8000, DSMAX=0.05, UZR={p1_idx: p1_vals}, STOP=[],
-                           NPR=20, RL1=10.0, RL0=-0.01, EPSL=1e-7, EPSU=1e-7, EPSS=1e-5, bidirectional=True)
+p1_vals = [0.2, 0.4, 0.8]
+c1_sols, c1_cont = ode.run(starting_point='UZ1', ICP=p1_idx, name=f'{p1}:0', origin=c0_cont, UZR={p1_idx: p1_vals},
+                           STOP=[], RL1=1.0, RL0=0.0, DSMAX=0.02, bidirectional=True)
 
 # continuations in eta
 eta_idx = 1
@@ -95,7 +102,7 @@ for i, p1_val in enumerate(p1_vals):
     plt.tight_layout()
 
 # 2D continuation I
-p1_val_idx = 1
+p1_val_idx = 0
 p1_min, p1_max = 0.0, 10.0
 dsmax = 0.02
 NMX = 2000
@@ -141,7 +148,7 @@ except KeyError:
 # 2D continuation II
 params_2d = ["Delta", "J"]
 params_idx = [3, 2]
-for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, 0.0], [5.0, 60.0]):
+for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, -60.0], [10.0, 0.0]):
     if fold_bifurcations:
         ode.run(starting_point='LP1', ICP=[p2_idx, eta_idx], name=f'{p2}/eta:lp1', origin=f"eta:{p1_val_idx+1}",
                 NMX=NMX, DSMAX=dsmax, NPR=10, RL1=p2_max, RL0=p2_min, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,

@@ -62,11 +62,11 @@ def generate_colored_noise(num_samples, tau, scale=1.0):
 path = "/home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs"
 M = 10
 p = 1.0
-eta = -1.1
+eta = 2.5
 Delta = 2.0
 etas = uniform(M, eta, Delta)
 tau = 1.0
-J = 15.0
+J = -15.0
 Delta2 = Delta / (2*M)
 tau_s = 0.5
 tau_a = 20.0
@@ -74,8 +74,6 @@ kappa = 0.2
 T = 1000.0
 dt = 1e-4
 dts = 1.0
-noise_tau = 100.0
-noise_scale = 0.0
 
 # run simulation
 y0 = np.zeros((4*M,))

@@ -64,24 +64,33 @@ syn_sf_op:
   base: OperatorTemplate
   equations:
     - "s' = (a*r-s)/tau_s"
-    - "a' = (A0-a)/tau_a + A0*(1-a)*r"
+    - "a' = (kappa-a)/tau_a + kappa*(1-a)*r"
   variables:
     s: output(0.0)
     a: variable(0.0)
     r: input(0.0)
     tau_s: 0.5
     tau_a: 20.0
-    A0: 0.5
+    kappa: 0.5
 
 # calcium trace operator
-ca_op:
+ltp_op:
   base: OperatorTemplate
   equations:
-    - "u' = (r-u)/tau_u"
+    - "u_p' = (r-u_p)/tau_p"
   variables:
-    u: output(0.0)
+    u_p: output(0.0)
     r: input(0.0)
-    tau_u: 100.0
+    tau_p: 100.0
+
+ltd_op:
+  base: OperatorTemplate
+  equations:
+    - "u_d' = (r-u_d)/tau_d"
+  variables:
+    u_d: output(0.0)
+    r: input(0.0)
+    tau_d: 100.0
 
 # clopath operator
 ik_clopath_op:
@@ -175,16 +184,17 @@ brunel_op:
 stdp_op:
   base: OperatorTemplate
   equations:
-    - "ltp = p1*p2"
-    - "ltd = d1*d2"
-    - "w' = a*(b*((1-w)*ltp - w*ltd) + (1-b)*(ltp - ltd)*(w-w^2))"
+    - "ltp = a_p*p1*p2"
+    - "ltd = a_d*d1*d2"
+    - "w' = b*((1-w)*ltp - w*ltd) + (1-b)*(ltp - ltd)*(w-w^2)"
     - "s_out = s_in*w"
   variables:
     s_out: output(0.0)
     w: variable(1.0)
     ltp: variable
     ltd: variable
-    a: 0.1
+    a_p: 0.1
+    a_d: 0.1
     b: 0.5
     s_in: input(0.0)
     p1: input(0.0)
@@ -213,42 +223,48 @@ fre_pop:
   operators:
     - fre_op
     - syn_op
-    - ca_op
+    - ltp_op
+    - ltd_op
 
 fre_sd_pop:
   base: NodeTemplate
   operators:
     - fre_op
     - syn_sd_op
-    - ca_op
+    - ltp_op
+    - ltd_op
 
 fre_sf_pop:
   base: NodeTemplate
   operators:
     - fre_op
     - syn_sf_op
-    - ca_op
+    - ltp_op
+    - ltd_op
 
 qif_pop:
   base: NodeTemplate
   operators:
     - qif_op
     - syn_op
-    - ca_op
+    - ltp_op
+    - ltd_op
 
 qif_sd_pop:
   base: NodeTemplate
   operators:
     - qif_op
     - syn_sd_op
-    - ca_op
+    - ltp_op
+    - ltd_op
 
 qif_sf_pop:
   base: NodeTemplate
   operators:
     - qif_op
     - syn_sf_op
-    - ca_op
+    - ltp_op
+    - ltd_op
 
 ik_clopath_pop:
   base: NodeTemplate

@@ -60,7 +60,7 @@
       DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,TPI
 
        I = -10.0
-       J = 15.0
+       J = 0.0
        D = 2.0
        tau_s = 0.5
        tau_a = 20.0

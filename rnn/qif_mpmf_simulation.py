@@ -50,17 +50,18 @@ b = 0.2 #float(sys.argv[-2])
 Delta = 2.0 #float(sys.argv[-3])
 M = 10
 p = 1.0
-eta = -1.1
+eta = 2.5
 etas = uniform(M, eta, Delta)
-node_vars = {"tau": 1.0, "J": 15.0 / (0.5*p*M), "eta": etas, "Delta": Delta/(2*M)}
+node_vars = {"tau": 1.0, "J": -15.0 / (0.5*p*M), "eta": etas, "Delta": Delta/(2*M)}
 syn_vars = {"tau_s": 0.5, "tau_a": 20.0, "A0": 0.2}
-ca_vars = {"tau_u": 100.0}
-edge_vars = {"a": 0.0, "b": b}
-T = 2000.0
+edge_vars = {"a_p": 0.1, "a_d": 0.03, "b": b}
+tau_p = 50.0
+tau_d = 200.0
+T = 3000.0
 dt = 1e-3
 dts = 1.0
-noise_tau = 100.0
-noise_scale = 0.2
+noise_tau = 200.0
+noise_scale = 0.001
 
 # node and edge template initiation
 edge, edge_op = "stdp_edge", "stdp_op"
@@ -77,7 +78,7 @@ for i in range(M):
     for j in range(M):
         edge_tmp = deepcopy(edge_temp)
         if np.random.uniform() <= p:
-            w = 1.0 #float(np.random.uniform(0.0, 1.0))
+            w = float(np.random.uniform(0.0, 1.0))
         else:
             w = 0.0
         W0[i, j] = w
@@ -86,15 +87,15 @@ for i in range(M):
                       {"weight": 1.0,
                        f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                        f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
-                       f"{edge}/{edge_op}/p2": f"p{i}/ca_op/u",
-                       f"{edge}/{edge_op}/d1": f"p{j}/ca_op/u",
+                       f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
+                       f"{edge}/{edge_op}/d1": f"p{j}/ltd_op/u_d",
                        f"{edge}/{edge_op}/d2": f"p{i}/{node_op}/r",
                        }))
         # edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", None, {"weight": 1.0}))
 net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)
 net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
 net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.items()})
-net.update_var(node_vars={f"all/ca_op/{key}": val for key, val in ca_vars.items()})
+net.update_var(node_vars={f"all/ltp_op/tau_p": tau_p, f"all/ltd_op/tau_d": tau_d})
 
 # define extrinsic input
 inp = np.zeros((int(T/dt), 1))
@@ -104,7 +105,7 @@ inp[:, 0] += generate_colored_noise(int(T/dt), noise_tau, noise_scale)
 # run simulation
 res = net.run(simulation_time=T, step_size=dt, inputs={f"all/{node_op}/I_ext": inp},
               outputs={"r": f"all/{node_op}/r", "a": f"all/{syn_op}/a"}, solver="heun", clear=False,
-              sampling_step_size=dts, float_precision="float64")
+              sampling_step_size=dts, float_precision="float64", decorator=njit)
 
 # extract synaptic weights
 mapping, weights, etas_tmp = net._ir["weight"].value, net.state["w"], net._ir["eta"].value
@@ -114,7 +115,6 @@ idx = np.argsort(etas)
 W = np.asarray([weights[mapping[i, :] > 0.0] for i in idx])
 W = W[:, idx]
 clear(net)
-np.fill_diagonal(W, 0)
 
 fig, axes = plt.subplots(ncols=2, figsize=(10, 5))
 ax = axes[1]
@@ -126,11 +126,11 @@ ax.set_title("Initial Weights")
 fig, axes = plt.subplots(nrows=2, figsize=(10, 6))
 ax = axes[0]
 ax.plot(res["r"])
-ax.plot(res["r"].iloc[:, int(M/2)-1], color="black")
+ax.plot(np.mean(res["r"], axis=1), color="black")
 ax.set_title("firing rate")
 ax = axes[1]
 ax.plot(res["a"])
-ax.plot(res["a"].iloc[:, int(M/2)-1], color="black")
+ax.plot(np.mean(res["a"], axis=1), color="black")
 ax.set_title("synaptic adaptation")
 plt.show()
 # pickle.dump(
