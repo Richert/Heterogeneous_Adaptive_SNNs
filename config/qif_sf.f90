@@ -43,7 +43,7 @@
        do n=1,M
          F(n) = DS + 2.0*R(n)*V(n)
          F(n+M) = V(n)*V(n) + RM + I + D*((n-1.0)/(M-1.0) - 0.5) - PI*PI*R(n)*R(n)
-         F(n+2*M) = (A(n)*R(n) - S(n)) / tau_s
+         F(n+2*M) = A(n)*R(n) - S(n)/tau_s
          F(n+3*M) = (A0-A(n))/tau_a + A0*(1-A(n))*R(n)
        end do
 
@@ -61,7 +61,7 @@
 
        I = -10.0
        J = 0.0
-       D = 2.0
+       D = 1.0
        tau_s = 0.5
        tau_a = 20.0
        A0 = 1.0
