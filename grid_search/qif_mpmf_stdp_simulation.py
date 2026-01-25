@@ -6,6 +6,7 @@ from numba import njit
 # import matplotlib
 # matplotlib.use('tkagg')
 import sys
+from mpi4py import MPI
 import h5py
 
 def normalize(x):
@@ -90,7 +91,7 @@ syn = str(sys.argv[-2])
 stp = str(sys.argv[-3])
 
 # load data file
-f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "a")
+f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "r+", driver='mpio', comm=MPI.COMM_WORLD)
 gr = f["stdp"]
 
 # load sweep parameters

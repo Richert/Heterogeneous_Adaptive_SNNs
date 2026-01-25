@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+from mpi4py import MPI
 
 # directory
 path = "/home/richard/data/mpmf_simulations"
@@ -46,7 +47,7 @@ conditions = {"exc_sd": {"eta": -0.9, "J": 20.0, "kappa": 0.1},
               "inh_sf": {"eta": 2.5, "J": -15.0, "kappa": 0.6}}
 
 # create storage file
-f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "a")
+f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "a", driver='mpio', comm=MPI.COMM_WORLD)
 try:
     gr = f["stdp"]
 except KeyError:
