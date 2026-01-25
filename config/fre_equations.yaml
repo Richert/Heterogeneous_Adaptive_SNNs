@@ -242,7 +242,7 @@ fre_sf_pop:
     - ltp_op
     - ltd_op
 
-qif_pop:
+qif_stdp_pop:
   base: NodeTemplate
   operators:
     - qif_op
@@ -250,7 +250,7 @@ qif_pop:
     - ltp_op
     - ltd_op
 
-qif_sd_pop:
+qif_stdp_sd_pop:
   base: NodeTemplate
   operators:
     - qif_op
@@ -258,13 +258,31 @@ qif_sd_pop:
     - ltp_op
     - ltd_op
 
-qif_sf_pop:
+qif_stdp_sf_pop:
   base: NodeTemplate
   operators:
     - qif_op
     - syn_sf_op
     - ltp_op
     - ltd_op
+
+qif_pop:
+  base: NodeTemplate
+  operators:
+    - qif_op
+    - syn_op
+
+qif_sd_pop:
+  base: NodeTemplate
+  operators:
+    - qif_op
+    - syn_sd_op
+
+qif_sf_pop:
+  base: NodeTemplate
+  operators:
+    - qif_op
+    - syn_sf_op
 
 ik_clopath_pop:
   base: NodeTemplate

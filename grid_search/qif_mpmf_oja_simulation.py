@@ -2,11 +2,12 @@ import numpy as np
 from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
 from copy import deepcopy
 from numba import njit
-# import matplotlib.pyplot as plt
-# import matplotlib
-# matplotlib.use('tkagg')
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('tkagg')
 import sys
 import h5py
+from time import perf_counter
 
 def normalize(x):
     x = x - np.mean(x)
@@ -82,26 +83,19 @@ def get_ff(rates: np.ndarray) -> np.ndarray:
     return ff
 
 # define data directory
-path = "/home/richard/data/mpmf_simulations"
+path = "/home/rgast/data/mpmf_simulations"
 
-# read sweep condition
-trial = int(sys.argv[-1])
-syn = str(sys.argv[-2])
-stp = str(sys.argv[-3])
+# read sweep parameters
+syn = "exc" #str(sys.argv[-1])
+stp = "sd" #str(sys.argv[-2])
+a_p = 0.08 #float(sys.argv[-3])
+a_d = 0.05 #float(sys.argv[-4])
 
-# load data file
-f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "a")
-gr = f["stdp"]
-
-# load sweep parameters
-sweep_params = gr["param_sweep"]
-sweep_keys = sweep_params.attrs["parameters"]
-
-# load condition-specific model parameters
+# load condition parameters
+f = h5py.File(f"{path}/1pop_data.hdf5", "a")
+gr = f["oja"]
 ds = gr[f"{syn}_{stp}"]
 M = ds.attrs["M"]
-
-# set model parameters
 node_params = ["eta", "Delta", "J"]
 syn_params = ["tau_s", "tau_a", "kappa"]
 plasticity_params = ["b"]
@@ -123,10 +117,13 @@ dt = 1e-3
 dts = 1.0
 noise_tau = 200.0
 noise_scale = 0.02
+inp_amp = 0.1
+inp_dur = 5.0
+inp_times = [0.0, 500.0, 1000.0, 1500.0]
 
 # node and edge template initiation
 edge, edge_op = "stdp_edge", "stdp_op"
-node, node_op, syn_op = f"qif_stdp_{stp}", "qif_op", f"syn_{stp}_op"
+node, node_op, syn_op = f"qif_{stp}", "qif_op", f"syn_{stp}_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
 for key, val in edge_vars.items():
@@ -140,8 +137,8 @@ for i in range(M):
                       {"weight": 1.0,
                        f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                        f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
-                       f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
-                       f"{edge}/{edge_op}/d1": f"p{j}/ltd_op/u_d",
+                       f"{edge}/{edge_op}/p2": f"p{i}/{syn_op}/s",
+                       f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
                        f"{edge}/{edge_op}/d2": f"p{i}/{syn_op}/s",
                        }))
 net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)
@@ -155,22 +152,32 @@ func, args, arg_keys, _ = net.get_run_func(f"{syn}_{stp}_vectorfield", step_size
                                            inputs={f"all/{node_op}/I_ext": inp})
 func_njit = njit(func)
 func_njit(*args)
+# func_njit_fm = njit(func, fastmath=True)
+# func_njit_fm(*args)
 rhs = func_njit
+
+# time functions
+# n_calls = 100
+# funcs = [func, func_njit, func_njit_fm]
+# performances = []
+# for f, key in zip(funcs, ["raw", "njit", "fastmath"]):
+#     t0 = perf_counter()
+#     for _ in range(n_calls):
+#         f(*args)
+#     t1 = perf_counter()
+#     performances.append(t1-t0)
+#     print(f"Run-time for {n_calls} calls of {key} function: {t1 - t0}")
+# idx = np.argmin(performances)
+# rhs = funcs[idx]
 
 # find argument positions of free parameters
 inp_idx = arg_keys.index(f"I_ext_input_node/I_ext_input_op/I_ext_input")
 a_p_idx = arg_keys.index(f"{edge}/{edge_op}/a_p")
 a_d_idx = arg_keys.index(f"{edge}/{edge_op}/a_d")
-tau_p_idx = arg_keys.index(f"p0/ltp_op/tau_p")
-tau_d_idx = arg_keys.index(f"p0/ltd_op/tau_d")
 eta_idx = arg_keys.index(f"p0/{node_op}/eta")
 
 args = list(args)
-for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
-
-    # set LTP/LTD time constants
-    args[tau_p_idx] = tau_p
-    args[tau_d_idx] = tau_d
+for rep in range(n_reps):
 
     # set random initial connectivity
     W0 = np.random.uniform(low=0.0, high=1.0, size=(M, M))
@@ -178,20 +185,27 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
 
     # define extrinsic input
     noise = np.asarray(generate_colored_noise(int(T/dt), noise_tau, noise_scale), dtype=np.float32)
-    args[inp_idx] = noise
+    inp = np.zeros_like(noise)
+    dur = int(inp_dur/dt)
+    for t_in in inp_times:
+        start = int(t_in/dt)
+        inp[start:start+dur] = inp_amp
 
     # run initial simulation
+    args[inp_idx] = noise
     y0_hist, y0 = integrate(args[1], rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
 
     # turn on synaptric plasticity and run simulation again
     args[a_p_idx] = a_p
     args[a_d_idx] = a_d
+    args[inp_idx] = inp
     y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
     W1 = y1[-int(M * M):].reshape(M, M)
 
     # turn off synaptic plasticity and run simulation a final time
     args[a_p_idx] = 0.0
     args[a_d_idx] = 0.0
+    args[inp_idx] = noise
     y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
 
     # calculate in- and out-degrees
@@ -220,70 +234,64 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
                "in-degrees_post": in_degree_post, "out-degrees_post": out_degree_post,
                "eigvals_pre": eigvals_pre, "eigvals_post": eigvals_post,
                "fano-factors_pre": ff_pre, "fano-factors_post": ff_post}
-    for j, key in enumerate(gr.attrs["result_vars"]):
-        ds[trial, i, j, :] = results[key]
+    for i, key in enumerate(ds.attrs["column_vars"]):
+        ds[rep, i] = results[key]
 
     # plotting weights
-    # fig, axes = plt.subplots(ncols=2, figsize=(10, 4))
-    # ax = axes[0]
-    # im = ax.imshow(W0, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
-    # ax.set_title("Initial Weights")
-    # ax = axes[1]
-    # ax.imshow(W1, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
-    # ax.set_title("Final Weights")
-    #
-    # # plotting dynamics
-    # fig, axes = plt.subplots(nrows=3, figsize=(12, 6))
-    # ax = axes[0]
-    # ax.plot(np.mean(r0, axis=1), label="r0")
-    # ax.plot(np.mean(r1, axis=1), label="r1")
-    # ax.plot(np.mean(r2, axis=1), label="r2")
-    # ax.legend()
-    # ax.set_xlabel("time")
-    # ax.set_ylabel("r")
-    # ax.set_title("firing rate")
-    # ax = axes[1]
-    # u = y1_hist[:, 4*M:5*M]
-    # ax.plot(u)
-    # ax.set_xlabel("time")
-    # ax.set_ylabel("u")
-    # ax.set_title("LTP trace variables")
-    # ax = axes[2]
-    # u = y1_hist[:, 5 * M:6 * M]
-    # ax.plot(u)
-    # ax.set_xlabel("time")
-    # ax.set_ylabel("u")
-    # ax.set_title("LTD trace variables")
-    # plt.tight_layout()
-    #
-    # # plotting DV relationships
-    # fig, axes = plt.subplots(ncols=3, figsize=(12, 4))
-    # ax = axes[0]
-    # ax.plot(etas, in_degree_pre, color="royalblue", linestyle="dashed", label="in-degree (pre)")
-    # ax.plot(etas, out_degree_pre, color="darkorange", linestyle="dashed", label="out-degree (pre)")
-    # ax.plot(etas, in_degree_post, color="royalblue", linestyle="solid", label="in-degree (post)")
-    # ax.plot(etas, out_degree_post, color="darkorange", linestyle="solid", label="out-degree (post)")
-    # ax.legend()
-    # ax.set_xlabel("eta")
-    # ax.set_ylabel("degree")
-    # ax.set_title("Nodal Connectivity")
-    # ax = axes[1]
-    # ax.plot(etas, ff_pre, label="pre")
-    # ax.plot(etas, ff_post, label="post")
-    # ax.legend()
-    # ax.set_xlabel("eta")
-    # ax.set_ylabel("fano factor")
-    # ax.set_title("Nodal Dynamics")
-    # ax = axes[2]
-    # ax.scatter(etas_pre, np.log(eigvals_pre + 1e-12), label="pre")
-    # ax.scatter(etas_post, np.log(eigvals_post + 1e-12), label="post")
-    # ax.legend()
-    # ax.set_xlabel("sum(eta*v)")
-    # ax.set_ylabel("log(lambda)")
-    # ax.set_title("Nodal Covariance")
-    # plt.tight_layout()
-    #
-    # plt.show()
+    fig, axes = plt.subplots(ncols=2, figsize=(10, 4))
+    ax = axes[0]
+    im = ax.imshow(W0, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
+    ax.set_title("Initial Weights")
+    ax = axes[1]
+    ax.imshow(W1, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
+    ax.set_title("Final Weights")
+
+    # plotting dynamics
+    fig, axes = plt.subplots(nrows=2, figsize=(12, 6))
+    ax = axes[0]
+    ax.plot(np.mean(r0, axis=1), label="r0")
+    ax.plot(np.mean(r1, axis=1), label="r1")
+    ax.plot(np.mean(r2, axis=1), label="r2")
+    ax.legend()
+    ax.set_xlabel("time")
+    ax.set_ylabel("r")
+    ax.set_title("firing rate")
+    ax = axes[1]
+    a = y1_hist[:, 3*M:4*M]
+    ax.plot(a)
+    ax.set_xlabel("time")
+    ax.set_ylabel("a")
+    ax.set_title("adaptation variables")
+    plt.tight_layout()
+
+    # plotting DV relationships
+    fig, axes = plt.subplots(ncols=3, figsize=(12, 4))
+    ax = axes[0]
+    ax.plot(etas, in_degree_pre, color="royalblue", linestyle="dashed", label="in-degree (pre)")
+    ax.plot(etas, out_degree_pre, color="darkorange", linestyle="dashed", label="out-degree (pre)")
+    ax.plot(etas, in_degree_post, color="royalblue", linestyle="solid", label="in-degree (post)")
+    ax.plot(etas, out_degree_post, color="darkorange", linestyle="solid", label="out-degree (post)")
+    ax.legend()
+    ax.set_xlabel("eta")
+    ax.set_ylabel("degree")
+    ax.set_title("Nodal Connectivity")
+    ax = axes[1]
+    ax.plot(etas, ff_pre, label="pre")
+    ax.plot(etas, ff_post, label="post")
+    ax.legend()
+    ax.set_xlabel("eta")
+    ax.set_ylabel("fano factor")
+    ax.set_title("Nodal Dynamics")
+    ax = axes[2]
+    ax.scatter(etas_pre, np.log(eigvals_pre + 1e-12), label="pre")
+    ax.scatter(etas_post, np.log(eigvals_post + 1e-12), label="post")
+    ax.legend()
+    ax.set_xlabel("sum(eta*v)")
+    ax.set_ylabel("log(lambda)")
+    ax.set_title("Nodal Covariance")
+    plt.tight_layout()
+
+    plt.show()
 
 # clear files up
 clear(net)

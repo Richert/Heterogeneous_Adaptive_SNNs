@@ -45,15 +45,16 @@ t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NP
 # set synaptic coupling strength
 p0 = "J"
 p0_idx = 2
-p0_val = -7.0
+p0_max = 50.0
+p0_val = -20.0
 c0_sols, c0_cont = ode.run(starting_point='UZ1', c='1d', ICP=p0_idx, NPAR=n_params, NDIM=n_dim, name=f'{p0}:0',
-                           origin="t", UZR={p0_idx: p0_val}, STOP=["UZ1"], NPR=20, RL1=20.0, RL0=-20.0,
+                           origin="t", UZR={p0_idx: p0_val}, STOP=["UZ1"], NPR=20, RL1=p0_max, RL0=-p0_max,
                            EPSL=1e-7, EPSU=1e-7, EPSS=1e-5, NMX=8000, DSMAX=0.2, bidirectional=True)
 
 # continuation in independent parameter
 p1 = "kappa"
 p1_idx = 6
-p1_vals = [0.02, 0.04, 0.08]
+p1_vals = [0.05, 0.1, 0.2]
 c1_sols, c1_cont = ode.run(starting_point='UZ1', ICP=p1_idx, name=f'{p1}:0', origin=c0_cont, UZR={p1_idx: p1_vals},
                            STOP=[], RL1=1.0, RL0=0.0, DSMAX=0.02, DS=1e-4)
 
@@ -150,7 +151,7 @@ if tr_bifurcation:
 # 2D continuation II
 params_2d = ["Delta", "J"]
 params_idx = [3, 2]
-for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, 0.0 if p0_val > 0 else -20.0], [10.0, 20.0 if p0_val > 0 else 0.0]):
+for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, 0.0 if p0_val > 0 else -p0_max], [10.0, p0_max if p0_val > 0 else 0.0]):
     if fold_bifurcations:
         ode.run(starting_point='LP1', ICP=[p2_idx, eta_idx], name=f'{p2}/eta:lp1', origin=f"eta:{p1_val_idx+1}",
                 NMX=NMX, DSMAX=dsmax, NPR=10, RL1=p2_max, RL0=p2_min, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,
