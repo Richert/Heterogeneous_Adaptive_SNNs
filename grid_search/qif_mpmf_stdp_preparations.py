@@ -77,3 +77,5 @@ for syn in syn_types:
         cond_params.update(conditions[f"{syn}_{stp}"])
         for key, val in cond_params.items():
             ds.attrs[key] = val
+
+f.close()

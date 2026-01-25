@@ -287,4 +287,5 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
     # plt.show()
 
 # clear files up
+f.close()
 clear(net)
