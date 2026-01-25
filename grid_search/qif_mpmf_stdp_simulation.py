@@ -151,9 +151,9 @@ net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.it
 
 # generate run function
 inp = np.zeros((int(T/dt), 1), dtype=np.float32)
-func, args, arg_keys, _ = net.get_run_func(f"{syn}_{stp}_vectorfield", step_size=dt, backend="numpy",
-                                           solver="heun", float_precision="float32", vectorize=True,
-                                           inputs={f"all/{node_op}/I_ext": inp}, clear=False, in_place=False)
+func, args, arg_keys, _ = net.get_run_func(f"{syn}_{stp}_vectorfield", file_name=f"{syn}_{stp}_run",
+                                           step_size=dt, backend="numpy", solver="heun", float_precision="float32",
+                                           vectorize=True, inputs={f"all/{node_op}/I_ext": inp}, clear=False)
 func_njit = njit(func)
 func_njit(*args)
 rhs = func_njit
