@@ -22,7 +22,7 @@ for IDX in $(seq 0 $range_end); do
 
         # python calls
         (
-        echo "Starting job #$((IDX+1)) of ${n} jobs for for p = ${p} and J = ${c}."
+        echo "Starting job #$((IDX+1)) of ${n} jobs for for syn = ${syn} and stp = ${stp}."
         python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/grid_search/qif_mpmf_stdp_simulation.py $stp $syn $c $IDX
         sleep 1
         ) &
