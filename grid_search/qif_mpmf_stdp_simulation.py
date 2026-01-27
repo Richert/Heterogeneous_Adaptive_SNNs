@@ -89,10 +89,11 @@ path = "/home/richard/data/mpmf_simulations"
 trial = int(sys.argv[-1])
 syn = str(sys.argv[-2])
 stp = str(sys.argv[-3])
+group = str(sys.argv[-4])
 
 # load data file
 f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "r+", driver='mpio', comm=MPI.COMM_WORLD)
-gr = f["stdp"]
+gr = f[group]
 
 # load sweep parameters
 sweep_params = gr["param_sweep"]
@@ -137,14 +138,26 @@ for key, val in edge_vars.items():
 edges = []
 for i in range(M):
     for j in range(M):
-        edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                      {"weight": 1.0,
-                       f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
-                       f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
-                       f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
-                       f"{edge}/{edge_op}/d1": f"p{j}/ltd_op/u_d",
-                       f"{edge}/{edge_op}/d2": f"p{i}/{syn_op}/s",
-                       }))
+        if group == "stdp":
+            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
+                          {"weight": 1.0,
+                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p1": f"p{i}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p2": f"p{j}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/d1": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d2": f"p{i}/ltd_op/u_d",
+                           }))
+        elif group == "antihebbian":
+            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
+                          {"weight": 1.0,
+                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p2": f"p{j}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d2": f"p{j}/ltd_op/u_d",
+                           }))
+        else:
+            raise ValueError(f"Unknown group {group}")
 net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)
 net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
 net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.items()})

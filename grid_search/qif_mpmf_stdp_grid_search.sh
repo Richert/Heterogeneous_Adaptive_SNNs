@@ -6,6 +6,7 @@ batch_size=40
 range_end=$((n-1))
 synapses=( "exc" "inh" )
 stps=( "sd" "sf" )
+group="antihebbian"
 
 # limit amount of threads that each Python process can work with
 n_threads=2
@@ -23,7 +24,7 @@ for IDX in $(seq 0 $range_end); do
         # python calls
         (
         echo "Starting job #$((IDX+1)) of ${n} jobs for for syn = ${syn} and stp = ${stp}."
-        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/grid_search/qif_mpmf_stdp_simulation.py $stp $syn $c $IDX
+        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/grid_search/qif_mpmf_stdp_simulation.py $group $stp $syn $c $IDX
         sleep 1
         ) &
 

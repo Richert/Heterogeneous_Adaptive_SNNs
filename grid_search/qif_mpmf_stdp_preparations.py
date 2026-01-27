@@ -6,6 +6,7 @@ from mpi4py import MPI
 path = "/home/richard/data/mpmf_simulations"
 
 # sweep conditions
+group = "antihebbian"
 syn_types = ["exc", "inh"]
 stp_types = ["sd", "sf"]
 
@@ -49,9 +50,9 @@ conditions = {"exc_sd": {"eta": -0.9, "J": 20.0, "kappa": 0.1},
 # create storage file
 f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "a", driver='mpio', comm=MPI.COMM_WORLD)
 try:
-    gr = f["stdp"]
+    gr = f[group]
 except KeyError:
-    gr = f.create_group("stdp")
+    gr = f.create_group(group)
 
 # store parameter sweep
 if "param_sweep" in gr.keys():
