@@ -6,7 +6,7 @@ batch_size=40
 range_end=$((n-1))
 synapses=( "exc" "inh" )
 stps=( "sd" "sf" )
-group="stdp"
+group="antihebbian"
 
 # limit amount of threads that each Python process can work with
 n_threads=2
