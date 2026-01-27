@@ -2,12 +2,9 @@ import numpy as np
 from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
 from copy import deepcopy
 from numba import njit
-# import matplotlib.pyplot as plt
-# import matplotlib
-# matplotlib.use('tkagg')
-import sys
-from mpi4py import MPI
-import h5py
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('tkagg')
 
 def normalize(x):
     x = x - np.mean(x)
@@ -85,37 +82,31 @@ def get_ff(rates: np.ndarray) -> np.ndarray:
 # define data directory
 path = "/home/richard/data/mpmf_simulations"
 
-# read sweep condition
-trial = int(sys.argv[-1])
-syn = str(sys.argv[-2])
-stp = str(sys.argv[-3])
-group = str(sys.argv[-4])
+# read condition
+trial = 0
+syn = "exc"
+stp = "sd"
+group = "antioja"
 
-# load data file
-f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "r+", driver='mpio', comm=MPI.COMM_WORLD)
-gr = f[group]
-
-# load sweep parameters
-sweep_params = gr["param_sweep"]
-sweep_keys = sweep_params.attrs["parameters"]
-
-# load condition-specific model parameters
-ds = gr[f"{syn}_{stp}"]
-M = ds.attrs["M"]
+# define stdp parameters
+a_p = 0.005
+a_d = 0.005
+tau_p = 10.0
+tau_d = 80.0
 
 # set model parameters
-node_params = ["eta", "Delta", "J"]
-syn_params = ["tau_s", "tau_a", "kappa"]
-plasticity_params = ["b"]
-node_vars, syn_vars, edge_vars = {}, {}, {}
-for d, keys in zip([node_vars, syn_vars, edge_vars], [node_params, syn_params, plasticity_params]):
-    for key in keys:
-        d[key] = ds.attrs[key]
-node_vars["eta"] = uniform(M, node_vars["eta"], node_vars["Delta"])
-node_vars["Delta"] = node_vars["Delta"]/(2*M)
-node_vars["J"] = node_vars["J"]/(0.5*M)
-edge_vars["a_p"] = 0.0
-edge_vars["a_d"] = 0.0
+M = 10
+J = 20.0
+Delta = 2.0
+p = 1.0
+eta = -0.9
+b = 0.5
+tau_s = 0.5
+tau_a = 20.0
+kappa = 0.1
+node_vars = {"eta": uniform(M, eta, Delta), "Delta": Delta/(2*M), "J": J/(0.5*M)}
+edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
+syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
 # simulation parameters
 cutoff = 0.0
@@ -205,126 +196,114 @@ tau_p_idx = arg_keys.index(f"p0/ltp_op/tau_p")
 tau_d_idx = arg_keys.index(f"p0/ltd_op/tau_d")
 eta_idx = arg_keys.index(f"p0/{node_op}/eta")
 
+# set LTP/LTD time constants
 args = list(args)
-for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
+args[tau_p_idx] = tau_p
+args[tau_d_idx] = tau_d
 
-    # set LTP/LTD time constants
-    args[tau_p_idx] = tau_p
-    args[tau_d_idx] = tau_d
+# set random initial connectivity
+W0 = np.random.uniform(low=0.0, high=1.0, size=(M, M))
+args[1][-int(M*M):] = W0.reshape((int(M*M),))
 
-    # set random initial connectivity
-    W0 = np.random.uniform(low=0.0, high=1.0, size=(M, M))
-    args[1][-int(M*M):] = W0.reshape((int(M*M),))
+# define extrinsic input
+noise = np.asarray(generate_colored_noise(int(T/dt), noise_tau, noise_scale), dtype=np.float32)
+args[inp_idx] = noise
 
-    # define extrinsic input
-    noise = np.asarray(generate_colored_noise(int(T/dt), noise_tau, noise_scale), dtype=np.float32)
-    args[inp_idx] = noise
+# run initial simulation
+y0_hist, y0 = integrate(args[1], rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
 
-    # run initial simulation
-    y0_hist, y0 = integrate(args[1], rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
+# turn on synaptric plasticity and run simulation again
+args[a_p_idx] = a_p
+args[a_d_idx] = a_d
+y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
+W1 = y1[-int(M * M):].reshape(M, M)
 
-    # turn on synaptric plasticity and run simulation again
-    args[a_p_idx] = a_p
-    args[a_d_idx] = a_d
-    y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
-    W1 = y1[-int(M * M):].reshape(M, M)
+# turn off synaptic plasticity and run simulation a final time
+args[a_p_idx] = 0.0
+args[a_d_idx] = 0.0
+y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
 
-    # turn off synaptic plasticity and run simulation a final time
-    args[a_p_idx] = 0.0
-    args[a_d_idx] = 0.0
-    y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
+# calculate in- and out-degrees
+in_degree_pre = np.sum(W0, axis=1)
+out_degree_pre = np.sum(W0, axis=0)
+in_degree_post = np.sum(W1, axis=1)
+out_degree_post = np.sum(W1, axis=0)
 
-    # calculate in- and out-degrees
-    in_degree_pre = np.sum(W0, axis=1)
-    out_degree_pre = np.sum(W0, axis=0)
-    in_degree_post = np.sum(W1, axis=1)
-    out_degree_post = np.sum(W1, axis=0)
+# calculate network covariance eigenvalues
+r0, r1, r2 = y0_hist[:, :M], y1_hist[:, :M], y2_hist[:, :M]
+eigvals_pre, eigvecs_pre = get_eigs(r0)
+eigvals_post, eigvecs_post = get_eigs(r2)
 
-    # calculate network covariance eigenvalues
-    r0, r1, r2 = y0_hist[:, :M], y1_hist[:, :M], y2_hist[:, :M]
-    eigvals_pre, eigvecs_pre = get_eigs(r0)
-    eigvals_post, eigvecs_post = get_eigs(r2)
+# transform etas into covariance eigenvector space
+etas = args[eta_idx]
+etas_pre = np.dot(eigvecs_pre.T, etas)
+etas_post = np.dot(eigvecs_post.T, etas)
 
-    # transform etas into covariance eigenvector space
-    etas = args[eta_idx]
-    etas_pre = np.dot(eigvecs_pre.T, etas)
-    etas_post = np.dot(eigvecs_post.T, etas)
+# calculate fano factors
+ff_pre = get_ff(r0)
+ff_post = get_ff(r2)
 
-    # calculate fano factors
-    ff_pre = get_ff(r0)
-    ff_post = get_ff(r2)
+# plotting weights
+fig, axes = plt.subplots(ncols=2, figsize=(10, 4))
+ax = axes[0]
+im = ax.imshow(W0, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
+ax.set_title("Initial Weights")
+ax = axes[1]
+ax.imshow(W1, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
+ax.set_title("Final Weights")
 
-    # save results
-    results = {"etas": etas, "etas_pre": etas_pre, "etas_post": etas_post,
-               "in-degrees_pre": in_degree_pre, "out-degrees_pre": out_degree_pre,
-               "in-degrees_post": in_degree_post, "out-degrees_post": out_degree_post,
-               "eigvals_pre": eigvals_pre, "eigvals_post": eigvals_post,
-               "fano-factors_pre": ff_pre, "fano-factors_post": ff_post}
-    for j, key in enumerate(gr.attrs["result_vars"]):
-        ds[trial, i, j, :] = results[key]
+# plotting dynamics
+fig, axes = plt.subplots(nrows=3, figsize=(12, 6))
+ax = axes[0]
+ax.plot(np.mean(r0, axis=1), label="r0")
+ax.plot(np.mean(r1, axis=1), label="r1")
+ax.plot(np.mean(r2, axis=1), label="r2")
+ax.legend()
+ax.set_xlabel("time")
+ax.set_ylabel("r")
+ax.set_title("firing rate")
+ax = axes[1]
+u = y1_hist[:, 4*M:5*M]
+ax.plot(u)
+ax.set_xlabel("time")
+ax.set_ylabel("u")
+ax.set_title("LTP trace variables")
+ax = axes[2]
+u = y1_hist[:, 5 * M:6 * M]
+ax.plot(u)
+ax.set_xlabel("time")
+ax.set_ylabel("u")
+ax.set_title("LTD trace variables")
+plt.tight_layout()
 
-    # plotting weights
-    # fig, axes = plt.subplots(ncols=2, figsize=(10, 4))
-    # ax = axes[0]
-    # im = ax.imshow(W0, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
-    # ax.set_title("Initial Weights")
-    # ax = axes[1]
-    # ax.imshow(W1, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
-    # ax.set_title("Final Weights")
-    #
-    # # plotting dynamics
-    # fig, axes = plt.subplots(nrows=3, figsize=(12, 6))
-    # ax = axes[0]
-    # ax.plot(np.mean(r0, axis=1), label="r0")
-    # ax.plot(np.mean(r1, axis=1), label="r1")
-    # ax.plot(np.mean(r2, axis=1), label="r2")
-    # ax.legend()
-    # ax.set_xlabel("time")
-    # ax.set_ylabel("r")
-    # ax.set_title("firing rate")
-    # ax = axes[1]
-    # u = y1_hist[:, 4*M:5*M]
-    # ax.plot(u)
-    # ax.set_xlabel("time")
-    # ax.set_ylabel("u")
-    # ax.set_title("LTP trace variables")
-    # ax = axes[2]
-    # u = y1_hist[:, 5 * M:6 * M]
-    # ax.plot(u)
-    # ax.set_xlabel("time")
-    # ax.set_ylabel("u")
-    # ax.set_title("LTD trace variables")
-    # plt.tight_layout()
-    #
-    # # plotting DV relationships
-    # fig, axes = plt.subplots(ncols=3, figsize=(12, 4))
-    # ax = axes[0]
-    # ax.plot(etas, in_degree_pre, color="royalblue", linestyle="dashed", label="in-degree (pre)")
-    # ax.plot(etas, out_degree_pre, color="darkorange", linestyle="dashed", label="out-degree (pre)")
-    # ax.plot(etas, in_degree_post, color="royalblue", linestyle="solid", label="in-degree (post)")
-    # ax.plot(etas, out_degree_post, color="darkorange", linestyle="solid", label="out-degree (post)")
-    # ax.legend()
-    # ax.set_xlabel("eta")
-    # ax.set_ylabel("degree")
-    # ax.set_title("Nodal Connectivity")
-    # ax = axes[1]
-    # ax.plot(etas, ff_pre, label="pre")
-    # ax.plot(etas, ff_post, label="post")
-    # ax.legend()
-    # ax.set_xlabel("eta")
-    # ax.set_ylabel("fano factor")
-    # ax.set_title("Nodal Dynamics")
-    # ax = axes[2]
-    # ax.scatter(etas_pre, np.log(eigvals_pre + 1e-12), label="pre")
-    # ax.scatter(etas_post, np.log(eigvals_post + 1e-12), label="post")
-    # ax.legend()
-    # ax.set_xlabel("sum(eta*v)")
-    # ax.set_ylabel("log(lambda)")
-    # ax.set_title("Nodal Covariance")
-    # plt.tight_layout()
-    #
-    # plt.show()
+# plotting DV relationships
+fig, axes = plt.subplots(ncols=3, figsize=(12, 4))
+ax = axes[0]
+ax.plot(etas, in_degree_pre, color="royalblue", linestyle="dashed", label="in-degree (pre)")
+ax.plot(etas, out_degree_pre, color="darkorange", linestyle="dashed", label="out-degree (pre)")
+ax.plot(etas, in_degree_post, color="royalblue", linestyle="solid", label="in-degree (post)")
+ax.plot(etas, out_degree_post, color="darkorange", linestyle="solid", label="out-degree (post)")
+ax.legend()
+ax.set_xlabel("eta")
+ax.set_ylabel("degree")
+ax.set_title("Nodal Connectivity")
+ax = axes[1]
+ax.plot(etas, ff_pre, label="pre")
+ax.plot(etas, ff_post, label="post")
+ax.legend()
+ax.set_xlabel("eta")
+ax.set_ylabel("fano factor")
+ax.set_title("Nodal Dynamics")
+ax = axes[2]
+ax.scatter(etas_pre, np.log(eigvals_pre + 1e-12), label="pre")
+ax.scatter(etas_post, np.log(eigvals_post + 1e-12), label="post")
+ax.legend()
+ax.set_xlabel("sum(eta*v)")
+ax.set_ylabel("log(lambda)")
+ax.set_title("Nodal Covariance")
+plt.tight_layout()
+
+plt.show()
 
 # clear files up
-f.close()
 clear(net)

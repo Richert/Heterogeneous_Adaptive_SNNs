@@ -2,11 +2,11 @@
 
 # set condition
 n=10
-batch_size=40
+batch_size=80
 range_end=$((n-1))
 synapses=( "exc" "inh" )
 stps=( "sd" "sf" )
-group="antihebbian"
+groups=( "stdp_sym" "stdp_asym" "antihebbian" "oja" "antioja" )
 
 # limit amount of threads that each Python process can work with
 n_threads=2
@@ -17,13 +17,14 @@ export NUMEXPR_NUM_THREADS=$n_threads
 export VECLIB_MAXIMUM_THREADS=$n_threads
 
 # execute python scripts in batches of batch_size
-for IDX in $(seq 0 $range_end); do
-  for syn in "${synapses[@]}"; do
-    for stp in "${stps[@]}"; do
+for group in "${groups[@]}"; do
+  for IDX in $(seq 0 $range_end); do
+    for syn in "${synapses[@]}"; do
+      for stp in "${stps[@]}"; do
 
         # python calls
         (
-        echo "Starting job #$((IDX+1)) of ${n} jobs for for syn = ${syn} and stp = ${stp}."
+        echo "Starting job #$((IDX+1)) of ${n} jobs for group = ${group}, syn = ${syn} and stp = ${stp}."
         python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/grid_search/qif_mpmf_stdp_simulation.py $group $stp $syn $c $IDX
         sleep 1
         ) &
@@ -33,6 +34,7 @@ for IDX in $(seq 0 $range_end); do
               wait -n
         fi
 
+      done
     done
   done
 done

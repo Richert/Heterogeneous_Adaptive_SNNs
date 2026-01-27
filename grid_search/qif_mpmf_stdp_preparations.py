@@ -12,8 +12,8 @@ syn_types = ["exc", "inh"]
 stp_types = ["sd", "sf"]
 
 # sweep parameters
-tau_p = np.arange(20.0, 110.0, 20.0)
-tau_d = np.arange(20.0, 110.0, 20.0)
+tau_p = np.arange(10.0, 100.0, 20.0)
+tau_d = np.arange(10.0, 100.0, 20.0)
 a_p = np.arange(0.001, 0.01, 0.002)
 a_d = np.arange(0.001, 0.01, 0.002)
 sweep_params = []
