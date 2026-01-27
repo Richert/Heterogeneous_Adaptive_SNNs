@@ -1,12 +1,13 @@
 import h5py
 import numpy as np
 from mpi4py import MPI
+import sys
 
 # directory
 path = "/home/richard/data/mpmf_simulations"
 
 # sweep conditions
-group = "antihebbian"
+group = str(sys.argv[-1])
 syn_types = ["exc", "inh"]
 stp_types = ["sd", "sf"]
 
