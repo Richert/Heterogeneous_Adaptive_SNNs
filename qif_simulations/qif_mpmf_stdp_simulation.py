@@ -97,10 +97,10 @@ tau_d = 20.0
 
 # set model parameters
 M = 10
-J = 10.0
+J = 12.0
 Delta = 2.0
 p = 1.0
-eta = -0.5
+eta = -0.63
 b = 0.5
 tau_s = 0.5
 tau_a = 20.0

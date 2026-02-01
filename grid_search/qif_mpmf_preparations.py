@@ -49,7 +49,7 @@ conditions = {"exc_sd": {"eta": -0.85, "J": 20.0, "kappa": 0.1},
               "inh_sf": {"eta": 2.5, "J": -15.0, "kappa": 0.6}}
 
 # create storage file
-f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "a", driver='mpio', comm=MPI.COMM_WORLD)
+f = h5py.File(f"{path}/qif_1pop_data.hdf5", "a", driver='mpio', comm=MPI.COMM_WORLD)
 try:
     gr = f[group]
 except KeyError:
@@ -70,7 +70,7 @@ for syn in syn_types:
 
         # create dataset
         ds_key = f"{syn}_{stp}"
-        if ds_key in gr.keys():
+        if ds_key in list(gr.keys()):
             del gr[ds_key]
         ds = gr.create_dataset(ds_key, shape=(n_reps, n_params, len(result_vars), M))
 
