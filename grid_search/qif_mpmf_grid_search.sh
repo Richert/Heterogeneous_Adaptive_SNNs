@@ -2,7 +2,7 @@
 
 # set condition
 n=10
-batch_size=80
+batch_size=40
 range_end=$((n-1))
 synapses=( "exc" "inh" )
 stps=( "sd" "sf" )
