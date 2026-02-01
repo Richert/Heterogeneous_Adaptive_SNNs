@@ -89,7 +89,7 @@ stp = str(sys.argv[-3])
 group = str(sys.argv[-4])
 
 # load data file
-f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "r+", driver='mpio', comm=MPI.COMM_WORLD)
+f = h5py.File(f"{path}/qif_1pop_data.hdf5", "r+", driver='mpio', comm=MPI.COMM_WORLD)
 gr = f[group]
 
 # load sweep parameters
