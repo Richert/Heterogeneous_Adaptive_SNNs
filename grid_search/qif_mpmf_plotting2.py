@@ -9,7 +9,7 @@ import seaborn as sb
 # load data file
 path = "/home/rgast/data/mpmf_simulations"
 f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "r")
-gr = f["stdp"]
+gr = f["antihebbian"]
 
 # load parameter sweep
 param_sweep = gr["param_sweep"]
@@ -20,8 +20,8 @@ conditions = list(gr.keys())
 conditions.pop(conditions.index("param_sweep"))
 
 # get results
-results = {key: {"tau_ratio": [], "a_ratio": [], "in_degree": [], "in_degree_diff": [], "out_degree": [], "out_degree_diff": [],
-                 "ff": [], "ff_diff": [], "pr": [], "pr_diff": []} for key in conditions}
+results = {key: {"eta": [], "stdp_ratio": [], "in_degree": [], "in_degree_diff": [], "out_degree": [],
+                 "out_degree_diff": [], "ff": [], "ff_diff": [], "pr": [], "pr_diff": []} for key in conditions}
 result_vars = gr.attrs["result_vars"].tolist()
 for c in conditions:
 
@@ -46,6 +46,7 @@ for c in conditions:
         ff_0 = ds[:, i, result_vars.index("fano-factors_pre"), :]
         ff_1 = ds[:, i, result_vars.index("fano-factors_post"), :]
         ff_diff = np.mean(ff_1 - ff_0, axis=0)
+        ff = np.mean(ff_1, axis=0)
 
         evs_0 = ds[:, i, result_vars.index("eigvals_pre"), :]
         evs_1 = ds[:, i, result_vars.index("eigvals_post"), :]
@@ -54,32 +55,53 @@ for c in conditions:
         pr_diff = pr1 - pr0
 
         for j in range(len(etas)):
-            results[c]["tau_ratio"].append(np.round(tau_ratio, decimals=2))
-            results[c]["a_ratio"].append(np.round(a_ratio, decimals=2))
-            results[c]["in_degree"].append(np.corrcoef(in_degrees, etas)[0][1])
-            results[c]["in_degree_diff"].append(np.corrcoef(in_degree_diff, etas)[0][1])
-            results[c]["out_degree"].append(np.corrcoef(out_degrees, etas)[0][1])
-            results[c]["out_degree_diff"].append(np.corrcoef(out_degree_diff, etas)[0][1])
-            results[c]["ff"].append(np.corrcoef(ff_1, etas)[0][1])
-            results[c]["ff_diff"].append(np.corrcoef(ff_diff, etas)[0][1])
+            results[c]["eta"].append(etas[j])
+            results[c]["stdp_ratio"].append(np.round(tau_ratio*a_ratio, decimals=2))
+            results[c]["in_degree"].append(in_degrees[j])
+            results[c]["in_degree_diff"].append(in_degree_diff[j])
+            results[c]["out_degree"].append(out_degrees[j])
+            results[c]["out_degree_diff"].append(out_degree_diff[j])
+            results[c]["ff"].append(ff[j])
+            results[c]["ff_diff"].append(ff_diff[j])
             results[c]["pr"].append(pr1)
             results[c]["pr_diff"].append(pr_diff)
 
+    # visualization of changes
     fig, axes = plt.subplots(ncols=2, nrows=2, figsize=(12, 9))
     df = DataFrame.from_dict(results[c])
     ax = axes[0, 0]
-    sb.heatmap(df.pivot_table(index="tau_ratio", columns="a_ratio", values="in_degree_diff"), vmin=-1.0, vmax=1.0, ax=ax, cmap="icefire")
-    ax.set_title("corr(eta, delta(d_in))")
+    sb.heatmap(df.pivot_table(index="stdp_ratio", columns="eta", values="in_degree_diff"), ax=ax, cmap="icefire")
+    ax.set_title("delta(d_in)")
     ax = axes[0, 1]
-    sb.heatmap(df.pivot_table(index="tau_ratio", columns="a_ratio", values="out_degree_diff"), vmin=-1.0, vmax=1.0, ax=ax, cmap="icefire")
-    ax.set_title("corr(eta, delta(d_out))")
+    sb.heatmap(df.pivot_table(index="stdp_ratio", columns="eta", values="out_degree_diff"), ax=ax, cmap="icefire")
+    ax.set_title("delta(d_out)")
     ax = axes[1, 0]
-    sb.heatmap(df.pivot_table(index="tau_ratio", columns="a_ratio", values="ff_diff"), ax=ax, cmap="icefire")
-    ax.set_title("corr(eta, delta(ff))")
+    sb.heatmap(df.pivot_table(index="stdp_ratio", columns="eta", values="ff_diff"), ax=ax, cmap="icefire")
+    ax.set_title("delta(ff)")
     ax = axes[1, 1]
-    sb.heatmap(df.pivot_table(index="tau_ratio", columns="a_ratio", values="pr_diff"), ax=ax, cmap="icefire")
+    sb.lineplot(df, x="stdp_ratio", y="pr_diff", ax=ax)
+    ax.set_xscale("log")
     ax.set_title("delta(pr)")
+    fig.suptitle(f"{c}, t1-t0")
     plt.tight_layout()
-    fig.suptitle(c)
+
+    # visualization of final network state
+    fig, axes = plt.subplots(ncols=2, nrows=2, figsize=(12, 9))
+    df = DataFrame.from_dict(results[c])
+    ax = axes[0, 0]
+    sb.heatmap(df.pivot_table(index="stdp_ratio", columns="eta", values="in_degree"), ax=ax, cmap="icefire")
+    ax.set_title("d_in")
+    ax = axes[0, 1]
+    sb.heatmap(df.pivot_table(index="stdp_ratio", columns="eta", values="out_degree"), ax=ax, cmap="icefire")
+    ax.set_title("d_out")
+    ax = axes[1, 0]
+    sb.heatmap(df.pivot_table(index="stdp_ratio", columns="eta", values="ff"), ax=ax, cmap="icefire")
+    ax.set_title("ff")
+    ax = axes[1, 1]
+    sb.lineplot(df, x="stdp_ratio", y="pr", ax=ax)
+    ax.set_xscale("log")
+    ax.set_title("pr")
+    fig.suptitle(f"{c}, t1")
+    plt.tight_layout()
 
 plt.show()

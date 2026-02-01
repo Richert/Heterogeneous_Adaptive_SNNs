@@ -45,7 +45,7 @@ t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NP
 # set synaptic coupling strength
 p0 = "J"
 p0_idx = 2
-p0_val = -20.0
+p0_val = 12.0
 p0_max = 50.0
 c0_sols, c0_cont = ode.run(starting_point='UZ1', c='1d', ICP=p0_idx, NPAR=n_params, NDIM=n_dim, name=f'{p0}:0',
                            origin="t", UZR={p0_idx: p0_val}, STOP=["UZ1"], NPR=20, RL1=p0_max, RL0=-p0_max,
@@ -54,7 +54,7 @@ c0_sols, c0_cont = ode.run(starting_point='UZ1', c='1d', ICP=p0_idx, NPAR=n_para
 # continuation in independent parameter
 p1 = "A0"
 p1_idx = 6
-p1_vals = [0.4, 0.6, 0.8]
+p1_vals = [0.6]
 c1_sols, c1_cont = ode.run(starting_point='UZ1', ICP=p1_idx, name=f'{p1}:0', origin=c0_cont, UZR={p1_idx: p1_vals},
                            STOP=[], RL1=1.0, RL0=0.0, DSMAX=0.02, bidirectional=True)
 
@@ -103,7 +103,7 @@ for i, p1_val in enumerate(p1_vals):
     plt.tight_layout()
 
 # 2D continuation I
-p1_val_idx = 1
+p1_val_idx = 0
 p1_min, p1_max = 0.0, 10.0
 dsmax = 0.02
 NMX = 2000

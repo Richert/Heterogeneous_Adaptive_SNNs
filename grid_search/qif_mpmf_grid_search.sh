@@ -6,7 +6,7 @@ batch_size=80
 range_end=$((n-1))
 synapses=( "exc" "inh" )
 stps=( "sd" "sf" )
-groups=( "stdp_sym" "stdp_asym" "antihebbian" "oja" "antioja" )
+groups=( "stdp_sym" "stdp_asym" "antihebbian" "oja" )
 
 # limit amount of threads that each Python process can work with
 n_threads=2
@@ -25,7 +25,7 @@ for group in "${groups[@]}"; do
         # python calls
         (
         echo "Starting job #$((IDX+1)) of ${n} jobs for group = ${group}, syn = ${syn} and stp = ${stp}."
-        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/grid_search/qif_mpmf_stdp_simulation.py $group $stp $syn $c $IDX
+        python /home/richard/PycharmProjects/Heterogeneous_Adaptive_SNNs/grid_search/qif_mpmf_simulation.py $group $stp $syn $c $IDX
         sleep 1
         ) &
 

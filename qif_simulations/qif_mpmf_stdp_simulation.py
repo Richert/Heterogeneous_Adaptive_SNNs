@@ -49,12 +49,11 @@ def integrate(y: np.ndarray, func, args, T, dt, dts, cutoff, N):
     store_step = int(dts / dt)
     store_steps = int((T - cutoff) / dts)
     state_rec = []
-    N2 = int(N*N)
 
     # solve ivp with Heun's method
     for step in range(steps):
         if step > cutoff_steps and step % store_step == 0:
-            state_rec.append(y[:-N2])
+            state_rec.append(y[:])
         rhs = func(step, y, *args)
         y_0 = y + dt * rhs
         y = y + (rhs + func(step, y_0, *args)) * dt/2
@@ -85,25 +84,27 @@ path = "/home/richard/data/mpmf_simulations"
 # read condition
 trial = 0
 syn = "exc"
-stp = "sd"
-group = "antioja"
+stp = "sf"
+group = "stdp_sym"
 
 # define stdp parameters
-a_p = 0.005
-a_d = 0.005
+a = 0.01
+a_r = 2.0
+a_p = a*a_r
+a_d = a/a_r
 tau_p = 10.0
-tau_d = 80.0
+tau_d = 20.0
 
 # set model parameters
 M = 10
-J = 20.0
+J = 10.0
 Delta = 2.0
 p = 1.0
-eta = -0.9
+eta = -0.5
 b = 0.5
 tau_s = 0.5
 tau_a = 20.0
-kappa = 0.1
+kappa = 0.6
 node_vars = {"eta": uniform(M, eta, Delta), "Delta": Delta/(2*M), "J": J/(0.5*M)}
 edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
@@ -253,7 +254,7 @@ ax.imshow(W1, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0)
 ax.set_title("Final Weights")
 
 # plotting dynamics
-fig, axes = plt.subplots(nrows=3, figsize=(12, 6))
+fig, axes = plt.subplots(nrows=5, figsize=(12, 10))
 ax = axes[0]
 ax.plot(np.mean(r0, axis=1), label="r0")
 ax.plot(np.mean(r1, axis=1), label="r1")
@@ -269,11 +270,23 @@ ax.set_xlabel("time")
 ax.set_ylabel("u")
 ax.set_title("LTP trace variables")
 ax = axes[2]
-u = y1_hist[:, 5 * M:6 * M]
+u = y1_hist[:, 5*M:6*M]
 ax.plot(u)
 ax.set_xlabel("time")
 ax.set_ylabel("u")
 ax.set_title("LTD trace variables")
+w = y1_hist[:, 6*M:]
+w = w.reshape(w.shape[0], M, M)
+ax = axes[3]
+ax.plot(np.sum(w, axis=2))
+ax.set_xlabel("time")
+ax.set_ylabel("w_in")
+ax.set_title("incoming weights")
+ax = axes[4]
+ax.plot(np.sum(w, axis=1))
+ax.set_xlabel("time")
+ax.set_ylabel("w_out")
+ax.set_title("outgoing weights")
 plt.tight_layout()
 
 # plotting DV relationships

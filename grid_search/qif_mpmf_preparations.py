@@ -12,18 +12,18 @@ syn_types = ["exc", "inh"]
 stp_types = ["sd", "sf"]
 
 # sweep parameters
-tau_p = np.arange(10.0, 100.0, 20.0)
-tau_d = np.arange(10.0, 100.0, 20.0)
-a_p = np.arange(0.001, 0.01, 0.002)
-a_d = np.arange(0.001, 0.01, 0.002)
+tau0 = np.asarray([3.0, 10.0, 30.0])
+tau_ratio = np.asarray([0.5, 0.75, 1.0, 1.5, 2.0])
+a0 = np.asarray([0.001, 0.003, 0.01])
+a_ratio = np.asarray([5/10, 6/10, 7/10, 9/10, 10/10, 10/9, 10/8, 10/7, 10/6, 10/5])
 sweep_params = []
-for tp in tau_p:
-    for td in tau_d:
-        for ap in a_p:
-            for ad in a_d:
-                sweep_params.append((tp, td, ap, ad))
+for tau in tau0:
+    for tr in tau_ratio:
+        for a in a0:
+            for ar in a_ratio:
+                sweep_params.append((tau, tau*tr, a*ar, a/ar))
 n_params = len(sweep_params)
-sweep_keys = ["tau_p", "tau_d", "a_p", "a_d"]
+sweep_keys = ["tau", "tau_ratio", "a", "a_ratio"]
 
 # default model parameters
 n_reps = 10
@@ -43,8 +43,8 @@ result_vars = ["etas", "etas_pre", "etas_post",
                ]
 
 # condition-specific parameters
-conditions = {"exc_sd": {"eta": -0.9, "J": 20.0, "kappa": 0.1},
-              "exc_sf": {"eta": -0.5, "J": 10.0, "kappa": 0.6},
+conditions = {"exc_sd": {"eta": -0.85, "J": 20.0, "kappa": 0.1},
+              "exc_sf": {"eta": -0.63, "J": 12.0, "kappa": 0.6},
               "inh_sd": {"eta": 2.5, "J": -20.0, "kappa": 0.1},
               "inh_sf": {"eta": 2.5, "J": -15.0, "kappa": 0.6}}
 

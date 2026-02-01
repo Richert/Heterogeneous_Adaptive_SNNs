@@ -14,20 +14,23 @@ def exp_conv(time, x, tau):
     return y_col
 
 # define time parameters
-n_time = 1000
-time = np.linspace(0, 1000.0, n_time)
+n_time = 5000
+time = np.linspace(0, 600.0, n_time)
 spike_times = np.arange(0, n_time, step=50)
 spike_pre = np.zeros((n_time,))
 t_pre = int(0.5*n_time)
+dt = time[1]-time[0]
 spike_pre[t_pre] = 1.0
 spike_post = np.zeros((n_time,))
 
 # define stdp parameters
 tau_s = 5.0
-tau_p = 100.0
-tau_d = 800.0
-a_p = 0.005
-a_d = 0.005
+a = 1e-2
+a_r = 2.0
+tau_p = 10.0
+tau_d = 20.0
+a_p = a*a_r
+a_d = a/a_r
 
 # calculate pre-synaptic trace variables
 s_pre = exp_conv(time, spike_pre, tau_s)
@@ -98,7 +101,7 @@ for i, key in enumerate(keys):
     ax = axes[i]
     ax.plot(results["spike_time_diff"], results[key])
     ax.axhline(y=0, color='k', linestyle='--')
-    ax.set_xlabel("t_post-t_pre")
+    ax.set_xlabel("t_post-t_pre (ms)")
     ax.set_ylabel("dW")
     ax.set_title(key)
 fig.tight_layout()
