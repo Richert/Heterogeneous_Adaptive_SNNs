@@ -23,7 +23,7 @@ for tau in tau0:
             for ar in a_ratio:
                 sweep_params.append((tau, tau*tr, a*ar, a/ar))
 n_params = len(sweep_params)
-sweep_keys = ["tau", "tau_ratio", "a", "a_ratio"]
+sweep_keys = ["tau_p", "tau_d", "a_p", "a_d"]
 
 # default model parameters
 n_reps = 10
