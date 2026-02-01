@@ -45,19 +45,16 @@ def generate_colored_noise(num_samples, tau, scale=1.0):
         colored_noise[sample] = x
     return colored_noise
 
-def integrate(y: np.ndarray, func, args, T, dt, dts, cutoff, N):
+def integrate(y: np.ndarray, func, args, T, dt, dts):
 
     steps = int(T / dt)
-    cutoff_steps = int(cutoff / dt)
     store_step = int(dts / dt)
-    store_steps = int((T - cutoff) / dts)
     state_rec = []
-    N2 = int(N*N)
 
     # solve ivp with Heun's method
     for step in range(steps):
-        if step > cutoff_steps and step % store_step == 0:
-            state_rec.append(y[:-N2])
+        if step % store_step == 0:
+            state_rec.append(y[:])
         rhs = func(step, y, *args)
         y_0 = y + dt * rhs
         y = y + (rhs + func(step, y_0, *args)) * dt/2
@@ -218,21 +215,24 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
 
     # define extrinsic input
     noise = np.asarray(generate_colored_noise(int(T/dt), noise_tau, noise_scale), dtype=np.float32)
-    args[inp_idx] = noise
+
+    # set initial state
+    init_hist, y_init = integrate(args[1], rhs, tuple(args[2:]), cutoff, dt, dts)
 
     # run initial simulation
-    y0_hist, y0 = integrate(args[1], rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
+    args[inp_idx] = noise
+    y0_hist, y0 = integrate(y_init, rhs, tuple(args[2:]), T, dt, dts)
 
     # turn on synaptric plasticity and run simulation again
     args[a_p_idx] = a_p
     args[a_d_idx] = a_d
-    y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
+    y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts)
     W1 = y1[-int(M * M):].reshape(M, M)
 
     # turn off synaptic plasticity and run simulation a final time
     args[a_p_idx] = 0.0
     args[a_d_idx] = 0.0
-    y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts, cutoff, M)
+    y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts)
 
     # calculate in- and out-degrees
     in_degree_pre = np.sum(W0, axis=1)
