@@ -2,6 +2,7 @@ import numpy as np
 from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
 from copy import deepcopy
 from numba import njit
+from scipy.signal import welch
 # import matplotlib.pyplot as plt
 # import matplotlib
 # matplotlib.use('tkagg')
@@ -240,6 +241,10 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
     in_degree_post = np.sum(W1, axis=1)
     out_degree_post = np.sum(W1, axis=0)
 
+    # calculate fano factors
+    ff_pre = get_ff(r0)
+    ff_post = get_ff(r2)
+
     # calculate network covariance eigenvalues
     r0, r1, r2 = y0_hist[:, :M], y1_hist[:, :M], y2_hist[:, :M]
     eigvals_pre, eigvecs_pre = get_eigs(r0)
@@ -250,16 +255,28 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
     etas_pre = np.dot(eigvecs_pre.T, etas)
     etas_post = np.dot(eigvecs_post.T, etas)
 
-    # calculate fano factors
-    ff_pre = get_ff(r0)
-    ff_post = get_ff(r2)
+    # get PSD of first PC
+    pc1_pre, pc1_post = np.dot(eigvecs_pre[:, 0], r0*100.0), np.dot(eigvecs_post[:, 0], r2)
+    fs_pre, ps_pre = welch(pc1_pre, fs=100.0/dts, nperseg=512)
+    fs_post, ps_post = welch(pc1_post, fs=100.0/dts, nperseg=512)
+    f_max_pre, f_max_post = fs_pre[np.argmax(ps_pre)], fs_post[np.argmax(ps_post)]
+    pow_pre = (fs_pre[1] - fs_pre[0]) * np.sum(ps_pre)
+    pow_post = (fs_post[1] - fs_post[0]) * np.sum(ps_post)
+
+    # calculate correlation between input and first PC
+    in_corr_pre = np.corrcoef(pc1_pre, noise[::int(dts/dt)])[0, 1]
+    in_corr_post = np.corrcoef(pc1_post, noise[::int(dts/dt)])[0, 1]
 
     # save results
     results = {"etas": etas, "etas_pre": etas_pre, "etas_post": etas_post,
                "in-degrees_pre": in_degree_pre, "out-degrees_pre": out_degree_pre,
                "in-degrees_post": in_degree_post, "out-degrees_post": out_degree_post,
                "eigvals_pre": eigvals_pre, "eigvals_post": eigvals_post,
-               "fano-factors_pre": ff_pre, "fano-factors_post": ff_post}
+               "fano-factors_pre": ff_pre, "fano-factors_post": ff_post,
+               "sig-pow-pre": pow_pre, "sig-pow-post": pow_post,
+               "max-freq-pre": f_max_pre, "max-freq-post": f_max_post,
+               "in-corr-pre": in_corr_pre, "in-corr-post": in_corr_post,
+               }
     for j, key in enumerate(gr.attrs["result_vars"]):
         ds[trial, i, j, :] = results[key]
 

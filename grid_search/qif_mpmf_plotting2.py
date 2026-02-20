@@ -8,7 +8,7 @@ import seaborn as sb
 
 # load data file
 path = "/home/rgast/data/mpmf_simulations"
-f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "r")
+f = h5py.File(f"{path}/qif_1pop_data.hdf5", "r")
 gr = f["stdp_sym"]
 
 # load parameter sweep
