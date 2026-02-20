@@ -252,7 +252,7 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
     etas_post = np.dot(eigvecs_post.T, etas)
 
     # get PSD of first PC
-    pc1_pre, pc1_post = np.dot(eigvecs_pre[:, 0], r0*100.0), np.dot(eigvecs_post[:, 0], r2)
+    pc1_pre, pc1_post = np.dot(r0*100.0, eigvecs_pre[:, 0]), np.dot(r2, eigvecs_post[:, 0])
     fs_pre, ps_pre = welch(pc1_pre, fs=100.0/dts, nperseg=512)
     fs_post, ps_post = welch(pc1_post, fs=100.0/dts, nperseg=512)
     f_max_pre, f_max_post = fs_pre[np.argmax(ps_pre)], fs_post[np.argmax(ps_post)]
