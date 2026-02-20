@@ -40,7 +40,7 @@ default_params = {"J": J, "Delta": Delta, "M": M, "p": p, "eta": eta, "b": b, "t
 result_vars = ["etas", "etas_pre", "etas_post",
                "in-degrees_pre", "out-degrees_pre", "in-degrees_post", "out-degrees_post",
                "fano-factors_pre", "eigvals_pre",  "fano-factors_post", "eigvals_post",
-               "sig-pow-pre", "sig-pow-post", "in-corr-pre", "in-corr-post", "max-freq-pre", "max_freq_post"
+               "sig-pow-pre", "sig-pow-post", "in-corr-pre", "in-corr-post", "max-freq-pre", "max-freq-post"
                ]
 
 # condition-specific parameters

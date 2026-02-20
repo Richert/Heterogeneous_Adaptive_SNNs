@@ -241,10 +241,6 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
     in_degree_post = np.sum(W1, axis=1)
     out_degree_post = np.sum(W1, axis=0)
 
-    # calculate fano factors
-    ff_pre = get_ff(r0)
-    ff_post = get_ff(r2)
-
     # calculate network covariance eigenvalues
     r0, r1, r2 = y0_hist[:, :M], y1_hist[:, :M], y2_hist[:, :M]
     eigvals_pre, eigvecs_pre = get_eigs(r0)
@@ -266,6 +262,10 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
     # calculate correlation between input and first PC
     in_corr_pre = np.corrcoef(pc1_pre, noise[::int(dts/dt)])[0, 1]
     in_corr_post = np.corrcoef(pc1_post, noise[::int(dts/dt)])[0, 1]
+
+    # calculate fano factors
+    ff_pre = get_ff(r0)
+    ff_post = get_ff(r2)
 
     # save results
     results = {"etas": etas, "etas_pre": etas_pre, "etas_post": etas_post,

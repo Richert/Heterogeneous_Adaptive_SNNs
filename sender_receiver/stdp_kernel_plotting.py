@@ -3,6 +3,8 @@ from scipy.ndimage import convolve1d
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
+matplotlib.rcParams['text.usetex'] = True
+matplotlib.rcParams['font.size'] = 16
 
 def exp_conv(time, x, tau):
     y = 0.0
@@ -14,7 +16,7 @@ def exp_conv(time, x, tau):
     return y_col
 
 # define time parameters
-n_time = 5000
+n_time = 10000
 time = np.linspace(0, 600.0, n_time)
 spike_times = np.arange(0, n_time, step=50)
 spike_pre = np.zeros((n_time,))
@@ -26,7 +28,7 @@ spike_post = np.zeros((n_time,))
 # define stdp parameters
 tau_s = 5.0
 a = 1e-2
-a_r = 2.0
+a_r = 1.8
 tau_p = 10.0
 tau_d = 20.0
 a_p = a*a_r
@@ -95,14 +97,20 @@ for t_post in spike_times:
     # plt.show()
 
 # plotting
-keys = ["stdp_sym", "stdp_asym", "anti", "oja", "anti_oja"]
-fig, axes = plt.subplots(ncols=len(keys), sharex=True, sharey=True, figsize=(16,4))
+keys = ["stdp_sym", "stdp_asym", "anti", "oja"]
+titles = ["sym. STDP", "asym. STDP", "AH STDP", "Oja's rule"]
+colors = ["royalblue", "darkorange", "purple", "darkgreen"]
+fig, axes = plt.subplots(ncols=len(keys), sharex=True, sharey=True, figsize=(12,4))
 for i, key in enumerate(keys):
     ax = axes[i]
-    ax.plot(results["spike_time_diff"], results[key])
+    ax.plot(results["spike_time_diff"], results[key], color=colors[i])
     ax.axhline(y=0, color='k', linestyle='--')
-    ax.set_xlabel("t_post-t_pre (ms)")
-    ax.set_ylabel("dW")
-    ax.set_title(key)
+    ax.set_xlabel(r"$t_{post}-t_{pre}$ (ms)")
+    if i == 0:
+        ax.set_ylabel(r"$d w$")
+    ax.set_xlim([-200.0, 200.0])
+    ax.set_title(titles[i])
 fig.tight_layout()
+fig.canvas.draw()
+fig.savefig("/home/rgast/data/qif_plasticity/stdp_kernels.svg")
 plt.show()

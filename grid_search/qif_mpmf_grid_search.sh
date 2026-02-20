@@ -2,11 +2,11 @@
 
 # set condition
 n=10
-batch_size=40
+batch_size=80
 range_end=$((n-1))
 synapses=( "exc" "inh" )
 stps=( "sd" "sf" )
-groups=( "stdp_sym" "stdp_asym" "antihebbian" "oja" )
+groups=( "stdp_sym" "stdp_asym" "antihebbian" "oja" "anti-oja" )
 
 # limit amount of threads that each Python process can work with
 n_threads=2
