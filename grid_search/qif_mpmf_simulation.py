@@ -70,7 +70,7 @@ def get_eigs(rates: np.ndarray, epsilon: float = 1e-12) -> tuple:
         rates_centered[:, i] /= (np.std(rates[:, i]) + epsilon)
     C = np.cov(rates_centered, rowvar=False)
     eigvals, eigvecs = np.linalg.eigh(C)
-    idx = np.argsort(eigvals)
+    idx = np.argsort(eigvals)[::-1]
     return eigvals[idx], eigvecs[:, idx]
 
 def get_ff(rates: np.ndarray) -> np.ndarray:
@@ -268,11 +268,11 @@ for i, (tau_p, tau_d, a_p, a_d) in enumerate(sweep_params):
     ff_post = get_ff(r2)
 
     # save results
-    results = {"etas": etas, "etas_pre": etas_pre, "etas_post": etas_post,
-               "in-degrees_pre": in_degree_pre, "out-degrees_pre": out_degree_pre,
-               "in-degrees_post": in_degree_post, "out-degrees_post": out_degree_post,
-               "eigvals_pre": eigvals_pre, "eigvals_post": eigvals_post,
-               "fano-factors_pre": ff_pre, "fano-factors_post": ff_post,
+    results = {"etas": etas, "etas-pre": etas_pre, "etas-post": etas_post,
+               "in-degrees-pre": in_degree_pre, "out-degrees-pre": out_degree_pre,
+               "in-degrees-post": in_degree_post, "out-degrees-post": out_degree_post,
+               "eigvals-pre": eigvals_pre, "eigvals-post": eigvals_post,
+               "fano-factors-pre": ff_pre, "fano-factors-post": ff_post,
                "sig-pow-pre": pow_pre, "sig-pow-post": pow_post,
                "max-freq-pre": f_max_pre, "max-freq-post": f_max_post,
                "in-corr-pre": in_corr_pre, "in-corr-post": in_corr_post,
