@@ -19,9 +19,11 @@ group = "antihebbian"
 
 # define stdp parameters
 a = 0.01
-a_r = 1.5
-tau = 30.0
+a_r = 1.3
+tau = 10.0
 tau_r = 2.0
+m = 0.0007
+tau_w = 30.0
 a_p = a*a_r
 a_d = a/a_r
 tau_p = tau
@@ -41,7 +43,7 @@ tau_s = 0.5
 tau_a = 20.0
 kappa = 0.1
 node_vars = {"eta": uniform(M, eta, Delta), "Delta": Delta/(2*M)}
-edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
+edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b, "m": m, "tau_w": tau_w}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
 # simulation parameters
@@ -53,7 +55,7 @@ noise_tau = 200.0
 noise_scale = 0.02
 
 # node and edge template initiation
-edge, edge_op = "stdp_edge", "stdp_op"
+edge, edge_op = "pitchfork_edge", "pitchfork_op"
 node, node_op, syn_op = f"qif_stdp_{stp}", "qif_op", f"syn_{stp}_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
@@ -87,7 +89,7 @@ for i in range(M):
                           {"weight": J,
                            f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                            f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
-                           f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/p2": f"p{j}/{syn_op}/s",
                            f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
                            f"{edge}/{edge_op}/d2": f"p{j}/ltd_op/u_d",
                            }))
@@ -95,19 +97,10 @@ for i in range(M):
             edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
                           {"weight": J,
                            f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
-                           f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
                            f"{edge}/{edge_op}/p2": f"p{i}/{syn_op}/s",
                            f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
-                           f"{edge}/{edge_op}/d2": f"p{i}/ltd_op/u_d",
-                           }))
-        elif group == "antioja":
-            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                          {"weight": J,
-                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
-                           f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
-                           f"{edge}/{edge_op}/p2": f"p{j}/{syn_op}/s",
-                           f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
-                           f"{edge}/{edge_op}/d2": f"p{j}/ltd_op/u_d",
+                           f"{edge}/{edge_op}/d2": f"p{i}/{syn_op}/s",
                            }))
         else:
             raise ValueError(f"Unknown group {group}")
@@ -156,7 +149,7 @@ y0_hist, y0 = integrate(y_init, rhs, tuple(args[2:]), T, dt, dts)
 args[a_p_idx] = a_p
 args[a_d_idx] = a_d
 y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts)
-W1 = y1[-int(M * M):].reshape(M, M)
+W1 = y1[-int(M*M):].reshape(M, M)
 
 # turn off synaptic plasticity and run simulation a final time
 args[a_p_idx] = 0.0
@@ -215,7 +208,7 @@ ax.legend()
 ax.set_ylabel(r"$r$ (Hz)")
 ax.set_title("network dynamics")
 ax = fig.add_subplot(grid[2:4, :2])
-w = y1_hist[:, 6*M:]
+w = y1_hist[:, -int(M*M):]
 w = w.reshape(w.shape[0], M, M)
 ax.plot(time, np.sum(w, axis=2))
 ax.set_ylabel(r"$w_{in}$")
@@ -269,7 +262,7 @@ ax.set_ylabel(r"$\lambda$")
 
 fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.01, hspace=0.01, wspace=0.01)
 fig.canvas.draw()
-fig.savefig(f"/home/rgast/data/qif_plasticity/exc_{stp}_stdp_dynamics.png", dpi=300)
+# fig.savefig(f"/home/rgast/data/qif_plasticity/exc_{stp}_stdp_dynamics.png", dpi=300)
 plt.show()
 
 # clear files up

@@ -15,7 +15,7 @@ from sklearn.manifold import TSNE, Isomap
 # load data file
 path = "/home/rgast/data/mpmf_simulations"
 f = h5py.File(f"{path}/qif_1pop_data2.hdf5", "r")
-stdp_conditions = ["stdp_asym", "stdp_sym", "antihebbian", "oja"]
+stdp_conditions = ["stdp_asym", "stdp_sym", "antihebbian", "oja", "antioja"]
 
 # get results
 results = {"plasticity rule": [], "synapse type": [], "short-term plasticity": [], "trial": [], "tau": [], "a": [], "LTP/LTD": [],
@@ -128,7 +128,7 @@ connectivity_vars = ["corr(firing rate, incoming weights)", "corr(firing rate, o
 function_vars = ["dimensionality", "corr(firing rate, fano factor)", "corr(PC1, input)"]
 levels = ["plasticity parameters", "synaptic connectivity", "network dynamics"]
 level_colors = [(210/255, 210/255, 210/255), (240/255, 240/255, 240/255), (210/255, 210/255, 210/255)]
-for syn in ["exc"]:
+for syn in ["inh"]:
     idx1 = np.argwhere(np.asarray(results["synapse type"])== syn).squeeze()
     idx2 = np.argwhere(np.asarray(results["synapse type"]) != syn).squeeze()
     fig = plt.figure(figsize=(16, 15), layout="constrained")

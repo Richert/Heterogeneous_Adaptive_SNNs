@@ -5,7 +5,7 @@
 fre_op:
   base: OperatorTemplate
   equations:
-    - "inp = J*tau*s_in + eta + I_ext"
+    - "inp = tau*s_in + eta + I_ext"
     - "inp_sq = absv(inp + sqrt(inp^2 + Delta^2))/2*pi"
     - "r' = (sqrt(inp_sq) - r) / tau"
   variables:
@@ -15,7 +15,6 @@ fre_op:
     s_in: input(0.0)
     I_ext: input(0.0)
     tau: 1.0
-    J: 10.0
     Delta: 1.0
     eta: 0.0
 
@@ -24,13 +23,12 @@ qif_op:
   base: OperatorTemplate
   equations:
     - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
-    - "v' = (v^2 - (pi*tau*r)^2 + tau*J*s_in + eta + I_ext) / tau"
+    - "v' = (v^2 - (pi*tau*r)^2 + tau*s_in + eta + I_ext) / tau"
   variables:
     r: output(0.0)
     v: variable(0.0)
     Delta: 0.1
     tau: 1.0
-    J: 20.0
     eta: 0.0
     I_ext: input(0.0)
     s_in: input(0.0)
@@ -45,6 +43,18 @@ syn_op:
     r: input(0.0)
     tau_s: 0.5
 
+# synaptic operator
+alpha_op:
+  base: OperatorTemplate
+  equations:
+    - "s' = x"
+    - "x' = r - (2*x + s/tau_s)/tau_s"
+  variables:
+    s: output(0.0)
+    x: variable(0.0)
+    r: input(0.0)
+    tau_s: 0.5
+
 # depressive synaptic operator
 syn_sd_op:
   base: OperatorTemplate
@@ -53,6 +63,22 @@ syn_sd_op:
     - "a' = (1-a)/tau_a - kappa*a*r"
   variables:
     s: output(0.0)
+    a: variable(1.0)
+    r: input(0.0)
+    tau_s: 0.5
+    tau_a: 20.0
+    kappa: 0.1
+
+# synaptic operator
+alpha_sd_op:
+  base: OperatorTemplate
+  equations:
+    - "s' = x_s"
+    - "x_s' = a*r - (2*x_s + s/tau_s)/tau_s"
+    - "a' = (1-a)/tau_a - a*kappa*r"
+  variables:
+    s: output(0.0)
+    x_s: variable(0.0)
     a: variable(1.0)
     r: input(0.0)
     tau_s: 0.5
@@ -215,6 +241,28 @@ oja_op:
     r_s: input(0.0)
     r_t: input(0.0)
 
+# STDP rule
+pitchfork_op:
+  base: OperatorTemplate
+  equations:
+    - "x' = a_p*p1*p2 - a_d*d1*d2 + m*x - x^3"
+    - "w' = x*(w-w^2)/tau_w"
+    - "s_out = s_in*w"
+  variables:
+    s_out: output(0.0)
+    w: variable(1.0)
+    x: variable(0.0)
+    a_p: 0.1
+    a_d: 0.1
+    b: 0.5
+    m: 0.0
+    tau_w: 10.0
+    s_in: input(0.0)
+    p1: input(0.0)
+    p2: input(0.0)
+    d1: input(0.0)
+    d2: input(0.0)
+
 # node templates
 ################
 
@@ -307,6 +355,11 @@ stdp_edge:
   operators:
     - stdp_op
 
+pitchfork_edge:
+  base: EdgeTemplate
+  operators:
+    - pitchfork_op
+
 oja_edge:
   base: EdgeTemplate
   operators:
@@ -348,3 +401,12 @@ qif_sp:
   base: CircuitTemplate
   nodes:
     p: qif_sp_pop
+
+qif_eic:
+  base: CircuitTemplate
+  nodes:
+    exc: qif_sd_pop
+    inh: qif_pop
+  edges:
+    - [exc/syn_sd_op/s, inh/qif_op/s_in, null, weight: 1.0]
+    - [inh/syn_op/s, exc/qif_op/s_in, null, weight: -1.0]

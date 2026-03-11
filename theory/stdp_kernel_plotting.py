@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
 matplotlib.rcParams['text.usetex'] = True
-matplotlib.rcParams['font.size'] = 16
+matplotlib.rcParams['font.size'] = 14
 
 def exp_conv(time, x, tau):
     y = 0.0
@@ -28,7 +28,7 @@ spike_post = np.zeros((n_time,))
 # define stdp parameters
 tau_s = 5.0
 a = 1e-2
-a_r = 1.8
+a_r = 1.5
 tau_p = 10.0
 tau_d = 20.0
 a_p = a*a_r
@@ -100,7 +100,7 @@ for t_post in spike_times:
 keys = ["stdp_sym", "stdp_asym", "anti", "oja"]
 titles = ["sym. STDP", "asym. STDP", "AH STDP", "Oja's rule"]
 colors = ["royalblue", "darkorange", "purple", "darkgreen"]
-fig, axes = plt.subplots(ncols=len(keys), sharex=True, sharey=True, figsize=(12,4))
+fig, axes = plt.subplots(ncols=len(keys), sharex=True, sharey=True, figsize=(8,3))
 for i, key in enumerate(keys):
     ax = axes[i]
     ax.plot(results["spike_time_diff"], results[key], color=colors[i])
@@ -112,5 +112,5 @@ for i, key in enumerate(keys):
     ax.set_title(titles[i])
 fig.tight_layout()
 fig.canvas.draw()
-fig.savefig("/home/rgast/data/qif_plasticity/stdp_kernels.svg")
+fig.savefig("/home/rgast/data/qif_plasticity/stdp_kernels.png", dpi=300)
 plt.show()
