@@ -11,16 +11,14 @@ from config.utility_functions import *
 # read condition
 syn = "exc"
 stp = "sd"
-group = "antihebbian"
-
-# TODO: implement gradients of heterogeneity
+group = "stdp_asym"
 
 # define stdp parameters
 a = 0.01
 a_r = 1.0
 tau = 10.0
 tau_r = 2.0
-m = 0.0007
+m = -1.0
 tau_w = 30.0
 a_p = a*a_r
 a_d = a/a_r
@@ -31,10 +29,10 @@ a_ratio = a_p / a_d
 stdp_ratio = tau_ratio*a_ratio
 
 # set model parameters
-M = 50
+M = 20
 p = 0.2
 p_in = 0.1
-J = 20.0
+J = 20.0 / (0.5*M*p)
 Delta = 2.0
 eta = -0.85
 b = 0.5
@@ -42,8 +40,12 @@ tau_s = 0.5
 tau_a = 20.0
 kappa = 0.1
 conn_pow = 1.5
+v = 10.0
+d_max = 10.0
 indices = np.arange(1, M+1)
-node_vars = {"eta": np.random.permutation(uniform(M, eta, Delta)), "Delta": Delta/(2*M), "J": J/(0.5*M)}
+node_vars = {"eta": uniform(M, eta, 1.0)[::-1], #uniform(M, eta, Delta)
+             "Delta": uniform(M, 0.5, 0.01), #Delta/(2*M)
+             }
 edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
@@ -80,7 +82,7 @@ for i in range(M):
         if W0[i, j] > 0.0:
             if group == "stdp_asym":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{i}/{syn_op}/s",
                                f"{edge}/{edge_op}/p2": f"p{j}/ltp_op/u_p",
@@ -89,7 +91,7 @@ for i in range(M):
                                }))
             elif group == "stdp_sym":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
                                f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
@@ -98,7 +100,7 @@ for i in range(M):
                                }))
             elif group == "antihebbian":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
@@ -107,7 +109,7 @@ for i in range(M):
                                }))
             elif group == "oja":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
                                f"{edge}/{edge_op}/p2": f"p{i}/{syn_op}/s",
@@ -116,7 +118,7 @@ for i in range(M):
                                }))
             elif group == "antioja":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
                                f"{edge}/{edge_op}/p2": f"p{j}/{syn_op}/s",
@@ -201,22 +203,25 @@ fig = plt.figure(figsize=(16, 5), layout="constrained")
 grid = fig.add_gridspec(ncols=5, nrows=6)
 
 # plotting dynamics
+w_step = 5
 ax = fig.add_subplot(grid[:2, :2])
 time = np.linspace(0.0, T, int(T/dts)) / 100.0
-ax.plot(time, np.mean(r0, axis=1)*100.0, label="T0: no plasticity")
-ax.plot(time, np.mean(r1, axis=1)*100.0, label="T1: plasticity")
-ax.plot(time, np.mean(r2, axis=1)*100.0, label="T2: no plasticity")
-ax.legend()
+# ax.plot(time, np.mean(r0, axis=1)*100.0, label="T0: no plasticity")
+# ax.plot(time, np.mean(r1, axis=1)*100.0, label="T1: plasticity")
+ax.plot(time, r2*100.0, ) #label="T2: no plasticity"
+# ax.legend()
 ax.set_ylabel(r"$r$ (Hz)")
 ax.set_title("network dynamics")
 ax = fig.add_subplot(grid[2:4, :2])
-w = y1_hist[:, 7*M:]
-ax.plot(time, np.mean(w, axis=1))
-ax.set_ylabel(r"$w$")
+w_tmp = y1_hist[:, -len(conn_indices):]
+w = np.zeros((w_tmp.shape[0], M, M))
+w[:, conn_indices[:, 0], conn_indices[:, 1]] = w_tmp
+ax.plot(time, np.sum(w, axis=2)[:, ::w_step])
+ax.set_ylabel(r"$w_{in}$")
 ax = fig.add_subplot(grid[4:6, :2])
-ax.plot(time, inp[::int(dts/dt), inp_indices[0]])
-ax.set_xlabel(r"$t$ (s)")
-ax.set_ylabel(r"$(I(t)$")
+ax.plot(time, np.sum(w, axis=1)[:, ::w_step])
+ax.set_ylabel(r"$w_{out}$")
+ax.set_xlabel("time (s)")
 
 # plotting weights
 ax = fig.add_subplot(grid[:3, 2])
