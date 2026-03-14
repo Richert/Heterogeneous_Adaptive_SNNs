@@ -39,15 +39,15 @@
 
        RM = 0
        do n=1,M
-         ETA(n) = I + D*((n-1.0)/(M-1.0)
-         RM = RM + S(n)*(c1*ETA(n) + c2)
+         ETA(n) = I + D*((n-1.0)/(M-1.0) - 0.5)
+         RM = RM + S(n)*(c1*(ETA(n)-I) + c2)
        end do
        RM = RM * J/M
        DS = D/(PI*2.0*M)
 
        do n=1,M
          F(n) = DS + 2.0*R(n)*V(n)
-         F(n+M) = V(n)*V(n) + RM*(c3*ETA(n) + c4) + ETA(n) - 0.5) - PI*PI*R(n)*R(n)
+         F(n+M) = V(n)*V(n) + RM*(c3*(ETA(n)-I) + c4) + ETA(n) - PI*PI*R(n)*R(n)
          F(n+2*M) = A(n)*R(n) - S(n)/tau_s
          F(n+3*M) = (1.0-A(n))/tau_a - kappa*A(n)*R(n)
        end do
@@ -64,16 +64,17 @@
       DOUBLE PRECISION, INTENT(IN) :: T
       DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,kappa,TPI,c1,c2,c3,c4
 
+       M = (NDIM)/4
        I = -10.0
        J = 0.0
        D = 2.0
        tau_s = 0.5
        tau_a = 20.0
        kappa = 0.0
-       c1 = 1.0
-       c2 = 0.0
-       c3 = 1.0
-       c4 = 0.0
+       c1 = 0.0
+       c2 = 1.0
+       c3 = 0.0
+       c4 = 1.0
 
        PAR(1)=I
        PAR(2)=J
@@ -86,7 +87,6 @@
        PAR(9)=c3
        PAR(15)=c4
        TPI=8.0*ATAN(1.0D0)
-       M =(NDIM)/4
 
        do n=1,M
          U(n) = 0.0
