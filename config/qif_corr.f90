@@ -15,7 +15,7 @@
       DOUBLE PRECISION, INTENT(IN) :: U(NDIM), PAR(*)
       DOUBLE PRECISION, INTENT(OUT) :: F(NDIM)
       DOUBLE PRECISION, INTENT(INOUT) :: DFDU(NDIM,NDIM), DFDP(NDIM,*)
-      DOUBLE PRECISION I,J,D,tau_s,tau_a,kappa,PI,DS,RM
+      DOUBLE PRECISION I,J,D,tau_s,tau_a,kappa,PI,DS,RM,c1,c2,c3,c4
 
        I = PAR(1)
        J = PAR(2)
@@ -23,6 +23,10 @@
        tau_s = PAR(4)
        tau_a = PAR(5)
        kappa = PAR(6)
+       c1 = PAR(7)
+       c2 = PAR(8)
+       c3 = PAR(9)
+       c4 = PAR(15)
        PI = 4*ATAN(1.0D0)
        M = (NDIM)/4
 
@@ -43,7 +47,7 @@
 
        do n=1,M
          F(n) = DS + 2.0*R(n)*V(n)
-         F(n+M) = V(n)*V(n) + RM*(c3*ETA(n) + c4) + I + D*((n-1.0)/(M-1.0) - 0.5) - PI*PI*R(n)*R(n)
+         F(n+M) = V(n)*V(n) + RM*(c3*ETA(n) + c4) + ETA(n) - 0.5) - PI*PI*R(n)*R(n)
          F(n+2*M) = A(n)*R(n) - S(n)/tau_s
          F(n+3*M) = (1.0-A(n))/tau_a - kappa*A(n)*R(n)
        end do
@@ -58,7 +62,7 @@
       INTEGER :: n,M
       DOUBLE PRECISION, INTENT(INOUT) :: U(NDIM),PAR(*)
       DOUBLE PRECISION, INTENT(IN) :: T
-      DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,kappa,TPI
+      DOUBLE PRECISION I,J,D,tau_s,tau_a,A0,kappa,TPI,c1,c2,c3,c4
 
        I = -10.0
        J = 0.0
@@ -66,6 +70,10 @@
        tau_s = 0.5
        tau_a = 20.0
        kappa = 0.0
+       c1 = 1.0
+       c2 = 0.0
+       c3 = 1.0
+       c4 = 0.0
 
        PAR(1)=I
        PAR(2)=J
@@ -73,6 +81,10 @@
        PAR(4)=tau_s
        PAR(5)=tau_a
        PAR(6)=kappa
+       PAR(7)=c1
+       PAR(8)=c2
+       PAR(9)=c3
+       PAR(15)=c4
        TPI=8.0*ATAN(1.0D0)
        M =(NDIM)/4
 
