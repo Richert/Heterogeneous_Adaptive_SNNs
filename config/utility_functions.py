@@ -49,8 +49,7 @@ def integrate(y: np.ndarray, func, args, T, dt, dts):
         if step % store_step == 0:
             state_rec.append(y[:])
         rhs = func(step, y, *args)
-        y_0 = y + dt * rhs
-        y = y + (rhs + func(step, y_0, *args)) * dt/2
+        y = y + dt * rhs
 
     return np.asarray(state_rec), y
 

@@ -151,7 +151,7 @@ if tr_bifurcation:
 # 2D continuation II
 params_2d = ["c1", "c3"]
 params_idx = [7, 9]
-for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [-10.0, -10.0], [10.0, 10.0]):
+for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [-3.0, -3.0], [3.0, 3.0]):
     if fold_bifurcations:
         ode.run(starting_point='LP1', ICP=[p2_idx, eta_idx], name=f'{p2}/eta:lp1', origin=f"eta:{p1_val_idx+1}",
                 NMX=NMX, DSMAX=dsmax, NPR=10, RL1=p2_max, RL0=p2_min, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,

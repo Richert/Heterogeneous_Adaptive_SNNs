@@ -33,6 +33,28 @@ qif_op:
     I_ext: input(0.0)
     s_in: input(0.0)
 
+# qif operator
+qif_hom_op:
+  base: OperatorTemplate
+  equations:
+    - "r' = (Delta/(pi*tau) + 2.0*r*v) / tau"
+    - "v' = (v^2 - (pi*tau*r)^2 + tau*s_in + eta + I_ext + alpha*z) / tau"
+    - "z' = z1"
+    - "z1' = r0-r - (2*z1 + z/tau_z)/tau_z"
+  variables:
+    r: output(0.0)
+    v: variable(0.0)
+    z: variable(0.0)
+    z1: variable(0.0)
+    r0 : 0.0
+    Delta: 0.1
+    tau: 1.0
+    tau_z: 10.0
+    alpha: 1.0
+    eta: 0.0
+    I_ext: input(0.0)
+    s_in: input(0.0)
+
 # synaptic operator
 syn_op:
   base: OperatorTemplate
@@ -40,18 +62,6 @@ syn_op:
     - "s' = r - s/tau_s"
   variables:
     s: output(0.0)
-    r: input(0.0)
-    tau_s: 0.5
-
-# synaptic operator
-alpha_op:
-  base: OperatorTemplate
-  equations:
-    - "s' = x"
-    - "x' = r - (2*x + s/tau_s)/tau_s"
-  variables:
-    s: output(0.0)
-    x: variable(0.0)
     r: input(0.0)
     tau_s: 0.5
 
@@ -68,22 +78,6 @@ syn_sd_op:
     tau_s: 0.5
     tau_a: 20.0
     kappa: 0.1
-
-# synaptic operator
-alpha_sd_op:
-  base: OperatorTemplate
-  equations:
-    - "s' = x_s"
-    - "x_s' = a*r - (2*x_s + s/tau_s)/tau_s"
-    - "a' = (1-a)/tau_a - a*kappa*r"
-  variables:
-    s: output(0.0)
-    x_s: variable(0.0)
-    a: variable(1.0)
-    r: input(0.0)
-    tau_s: 0.5
-    tau_a: 20.0
-    kappa: 0.5
 
 # facilitative synaptic operator
 syn_sf_op:
@@ -254,7 +248,6 @@ pitchfork_op:
     x: variable(0.0)
     a_p: 0.1
     a_d: 0.1
-    b: 0.5
     m: 0.0
     tau_w: 10.0
     s_in: input(0.0)
@@ -262,6 +255,25 @@ pitchfork_op:
     p2: input(0.0)
     d1: input(0.0)
     d2: input(0.0)
+
+# homeostatic STDP rule
+pitchfork_hom_op:
+  base: OperatorTemplate
+  equations:
+    - "x' = z_post*u_pre*u_post + (c1 + c2*z_post^2)*x - x^3"
+    - "w' = c3*x*w*(1-w)"
+    - "s_out = s_in*w"
+  variables:
+    s_out: output(0.0)
+    w: variable(0.5)
+    x: variable(0.0)
+    u_pre: variable
+    u_post: variable
+    z_post: variable
+    s_in: input(0.0)
+    c1: -1.0
+    c2: 0.0
+    c3: 1.0
 
 # node templates
 ################
@@ -298,6 +310,13 @@ qif_stdp_pop:
     - ltp_op
     - ltd_op
 
+qif_hom_pop:
+  base: NodeTemplate
+  operators:
+    - qif_hom_op
+    - syn_sd_op
+    - ltp_op
+
 qif_stdp_sd_pop:
   base: NodeTemplate
   operators:
@@ -311,6 +330,14 @@ qif_stdp_sf_pop:
   operators:
     - qif_op
     - syn_sf_op
+    - ltp_op
+    - ltd_op
+
+qif_stdp_hom_pop:
+  base: NodeTemplate
+  operators:
+    - qif_hom_op
+    - syn_op
     - ltp_op
     - ltd_op
 
@@ -359,6 +386,11 @@ pitchfork_edge:
   base: EdgeTemplate
   operators:
     - pitchfork_op
+
+pitchfork_hom_edge:
+  base: EdgeTemplate
+  operators:
+    - pitchfork_hom_op
 
 oja_edge:
   base: EdgeTemplate
