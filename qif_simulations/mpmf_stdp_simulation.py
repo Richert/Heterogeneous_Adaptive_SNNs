@@ -1,58 +1,57 @@
-import numpy as np
 from pyrates import CircuitTemplate, NodeTemplate, EdgeTemplate, clear
 from copy import deepcopy
-from numba import njit
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('tkagg')
 from scipy.signal import welch
 from config.utility_functions import *
-
-def ssr(eta: np.ndarray, Delta: float):
-    return np.sqrt(eta + np.sqrt(eta**2 + Delta**2))/(2*np.pi)
+np.random.seed(42)
 
 # define data directory
 path = "/home/rgast/data/mpmf_simulations"
 
 # read condition
 trial = 0
-syn = "exc"
-stp = "sd"
+syn = "inh"
+group = "oja"
 
 # define stdp parameters
-c1 = -1.0
-c2 = 0.01
-c3 = 0.005
+a = 0.01
+a_r = 1.5
+tau = 2.0
+tau_r = 2.0
+a_p = a*a_r
+a_d = a/a_r
+tau_p = tau
+tau_d = tau*tau_r
+tau_ratio = tau_p / tau_d
+a_ratio = a_p / a_d
+stdp_ratio = tau_ratio*a_ratio
 
 # set model parameters
-M = 10
-J = 30.0 / (0.5*M)
-Delta = 2.0
+M = 50
+J = -10.0 / (0.5*M)
+Delta = 1.0
 p = 1.0
-eta = -10.0
-tau_s = 0.5
-tau_a = 20.0
-tau_u = 2.0
-tau_z = 200.0
-kappa = 0.1
-alpha = 0.5
-etas = uniform(M, eta, Delta)
-r0 = np.linspace(0.05, 0.2, M)[::-1]
-node_vars = {"eta": etas, "Delta": Delta/(2*M), "alpha": alpha, "tau_z": tau_z, "r0": r0}
-edge_vars = {"c1": c1, "c2": c2, "c3": c3}
-syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
+eta = 0.0
+b = 0.5
+tau_s = 1.0
+node_vars = {"eta": uniform(M, eta, Delta), "Delta": Delta/(2*M)}
+edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
+syn_vars = {"tau_s": tau_s}
 
 # simulation parameters
-cutoff = 0.0
-T = 2000.0 + cutoff
-dt = 5e-4
+cutoff = 100.0
+T = 2000.0
+dt = 1e-3
 dts = 1.0
-noise_tau = 200.0
-noise_scale = 0.02
+inp_amp = 3.0
+inp_freq = 0.005
+inp_dur = 5.0
 
 # node and edge template initiation
-edge, edge_op = "pitchfork_hom_edge", "pitchfork_hom_op"
-node, node_op, syn_op = f"qif_hom", "qif_hom_op", f"syn_{stp}_op"
+edge, edge_op = "stdp_edge", "stdp_op"
+node, node_op, syn_op = f"qif_stdp", "qif_op", f"syn_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 edge_temp = EdgeTemplate.from_yaml(f"../config/fre_equations/{edge}")
 for key, val in edge_vars.items():
@@ -62,21 +61,60 @@ for key, val in edge_vars.items():
 edges = []
 for i in range(M):
     for j in range(M):
-        edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                      {"weight": J,
-                       f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
-                       f"{edge}/{edge_op}/u_post": f"p{i}/ltp_op/u_p",
-                       f"{edge}/{edge_op}/u_pre": f"p{j}/ltp_op/u_p",
-                       f"{edge}/{edge_op}/z_post": f"p{i}/{node_op}/z",
-                       }))
+        if group == "stdp_asym":
+            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
+                          {"weight": 1.0,
+                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p1": f"p{i}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p2": f"p{j}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/d1": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d2": f"p{i}/ltd_op/u_d",
+                           }))
+        elif group == "stdp_sym":
+            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
+                          {"weight": J,
+                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/d1": f"p{i}/ltd_op/u_d",
+                           f"{edge}/{edge_op}/d2": f"p{j}/ltd_op/u_d",
+                           }))
+        elif group == "antihebbian":
+            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
+                          {"weight": J,
+                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d2": f"p{j}/ltd_op/u_d",
+                           }))
+        elif group == "oja":
+            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
+                          {"weight": J,
+                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/p2": f"p{i}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d2": f"p{i}/ltd_op/u_d",
+                           }))
+        elif group == "antioja":
+            edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
+                          {"weight": J,
+                           f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
+                           f"{edge}/{edge_op}/p2": f"p{j}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d1": f"p{i}/{syn_op}/s",
+                           f"{edge}/{edge_op}/d2": f"p{j}/ltd_op/u_d",
+                           }))
+        else:
+            raise ValueError(f"Unknown group {group}")
 net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)
 net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
 net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.items()})
-net.update_var(node_vars={f"all/ltp_op/tau_p": tau_u})
 
 # generate run function
 inp = np.zeros((int(T/dt), 1), dtype=np.float32)
-func, args, arg_keys, _ = net.get_run_func(f"{syn}_{stp}_vectorfield", file_name=f"{syn}_{stp}_run",
+func, args, arg_keys, _ = net.get_run_func(f"{syn}_vectorfield", file_name=f"{syn}_run",
                                            step_size=dt, backend="numpy", solver="heun", float_precision="float32",
                                            vectorize=True, inputs={f"all/{node_op}/I_ext": inp}, clear=False)
 func_njit = njit(func)
@@ -85,32 +123,49 @@ rhs = func_njit
 
 # find argument positions of free parameters
 inp_idx = arg_keys.index(f"I_ext_input_node/I_ext_input_op/I_ext_input")
-c_idx = arg_keys.index(f"{edge}/{edge_op}/c3")
+a_p_idx = arg_keys.index(f"{edge}/{edge_op}/a_p")
+a_d_idx = arg_keys.index(f"{edge}/{edge_op}/a_d")
+tau_p_idx = arg_keys.index(f"p0/ltp_op/tau_p")
+tau_d_idx = arg_keys.index(f"p0/ltd_op/tau_d")
 eta_idx = arg_keys.index(f"p0/{node_op}/eta")
+
+# set LTP/LTD time constants
 args = list(args)
+args[tau_p_idx] = tau_p
+args[tau_d_idx] = tau_d
 
 # set random initial connectivity
 W0 = np.random.uniform(low=0.0, high=1.0, size=(M, M))
 args[1][-int(M*M):] = W0.reshape((int(M*M),))
 
-# define extrinsic input
-noise = np.asarray(generate_colored_noise(int(T/dt), noise_tau, noise_scale), dtype=np.float32)
-args[inp_idx] = noise
-
 # set initial state
 init_hist, y_init = integrate(args[1], rhs, tuple(args[2:]), cutoff, dt, dts)
 
+# generate intrinsic input
+steps = int(T/dt)
+inp = np.zeros((steps,))
+period = int(1.0/(inp_freq*dt))
+dur = int(inp_dur/dt)
+step = 0
+while step < steps:
+    inp[step:step+dur] += inp_amp
+    step += period
+# plt.plot(inp)
+# plt.show()
+args[inp_idx] = inp
+
 # run initial simulation
-args[inp_idx] = noise
 y0_hist, y0 = integrate(y_init, rhs, tuple(args[2:]), T, dt, dts)
 
 # turn on synaptric plasticity and run simulation again
-args[c_idx] = c3
+args[a_p_idx] = a_p
+args[a_d_idx] = a_d
 y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts)
-W1 = y1[-int(M*M):].reshape(M, M)
+W1 = y1[-int(M * M):].reshape(M, M)
 
 # turn off synaptic plasticity and run simulation a final time
-args[c_idx] = 0.0
+args[a_p_idx] = 0.0
+args[a_d_idx] = 0.0
 y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts)
 
 # calculate in- and out-degrees
@@ -123,8 +178,6 @@ out_degree_post = np.sum(W1, axis=0)
 r0, r1, r2 = y0_hist[:, :M], y1_hist[:, :M], y2_hist[:, :M]
 eigvals_pre, eigvecs_pre, C_pre = get_eigs(r0)
 eigvals_post, eigvecs_post, C_post = get_eigs(r2)
-C_pre[np.eye(M) > 0.0] = 0.0
-C_post[np.eye(M) > 0.0] = 0.0
 
 # transform etas into covariance eigenvector space
 etas = args[eta_idx]
@@ -147,7 +200,8 @@ ff_post = get_ff(r2)
 #########################
 
 print(f"Neuron type: {syn}")
-print(f"STP type: {stp}")
+print(f"Plasticity rule: {group}")
+print(f"Log LTP/LTD ratio: {np.log(stdp_ratio)}")
 
 # plotting
 ##########
@@ -165,38 +219,37 @@ ax.legend()
 ax.set_ylabel(r"$r$ (Hz)")
 ax.set_title("network dynamics")
 ax = fig.add_subplot(grid[2:4, :2])
-z = y1_hist[:, 2*M:3*M]
-ax.plot(time, z)
-ax.set_ylabel(r"$z$")
+w = y1_hist[:, -int(M*M):]
+w = w.reshape(w.shape[0], M, M)
+ax.plot(time, np.sum(w, axis=2))
+ax.set_ylabel(r"$w_{in}$")
 ax = fig.add_subplot(grid[4:6, :2])
-x = y1_hist[:, -2*int(M*M):-int(M*M)]
-ax.plot(time, x)
+ax.plot(time, np.sum(w, axis=1))
 ax.set_xlabel(r"$t$ (s)")
-ax.set_ylabel(r"$x$")
+ax.set_ylabel(r"$w_{out}$")
 
 # plotting weights
 ax = fig.add_subplot(grid[:3, 2])
-im = ax.imshow(W0, interpolation="none", aspect="auto", cmap="viridis", vmin=0.0, vmax=1.0)
+im = ax.imshow(W0, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0, cmap="viridis")
 plt.colorbar(im, ax=ax, shrink=0.8)
 ax.set_title("Connectivity Weights")
 ax.set_xlabel("n")
 ax.set_ylabel("n")
 ax = fig.add_subplot(grid[3:, 2])
-im = ax.imshow(W1, interpolation="none", aspect="auto", cmap="viridis", vmin=0.0, vmax=1.0)
+im = ax.imshow(W1, interpolation="none", aspect="auto", vmin=0.0, vmax=1.0, cmap="viridis")
 ax.set_xlabel("n")
 ax.set_ylabel("n")
 plt.colorbar(im, ax=ax, shrink=0.8)
 
 # plotting covariances
-c_max = np.max(C_post)
 ax = fig.add_subplot(grid[:3, 3])
-im = ax.imshow(C_pre, interpolation="none", aspect="auto", vmin=-c_max, vmax=c_max, cmap="berlin")
+im = ax.imshow(C_pre, interpolation="none", aspect="auto", vmin=-1.0, vmax=1.0, cmap="berlin")
 plt.colorbar(im, ax=ax, shrink=0.8)
 ax.set_title("Network Covariance")
 ax.set_xlabel("n")
 ax.set_ylabel("n")
 ax = fig.add_subplot(grid[3:, 3])
-im = ax.imshow(C_post, interpolation="none", aspect="auto", vmin=-c_max, vmax=c_max, cmap="berlin")
+im = ax.imshow(C_post, interpolation="none", aspect="auto", vmin=-1.0, vmax=1.0, cmap="berlin")
 plt.colorbar(im, ax=ax, shrink=0.8)
 ax.set_xlabel("n")
 ax.set_ylabel("n")

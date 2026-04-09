@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use('tkagg')
 
 """
-Bifurcation analysis of a QIF mean-field model with synaptic depression.
+Bifurcation analysis of a QIF mean-field model with synaptic plasticity.
 """
 
 # preparations
@@ -27,12 +27,12 @@ auto_dir = "~/PycharmProjects/auto-07p"
 config_dir = "../config"
 
 # config
-continue_lcs = True
+continue_lcs = False
 N = 10
-n_dim = int(4*N)
-n_params = 6
+n_dim = int(6*N+N*N)
+n_params = 16
 ncol = 4
-ode = ODESystem(eq_file="qif_sd", working_dir=config_dir, auto_dir=auto_dir, init_cont=False)
+ode = ODESystem(eq_file="qif_stdp", working_dir=config_dir, auto_dir=auto_dir, init_cont=False)
 
 # initial continuation in time to converge to fixed point
 t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NPR=1000, NPAR=n_params, NDIM=n_dim,
@@ -45,7 +45,7 @@ t_sols, t_cont = ode.run(c='ivp', name='t', DS=1e-4, DSMIN=1e-10, EPSL=1e-06, NP
 # set synaptic coupling strength
 p0 = "J"
 p0_idx = 2
-p0_max = 50.0
+p0_max = 30.0
 p0_val = 20.0
 c0_sols, c0_cont = ode.run(starting_point='UZ1', c='1d', ICP=p0_idx, NPAR=n_params, NDIM=n_dim, name=f'{p0}:0',
                            origin="t", UZR={p0_idx: p0_val}, STOP=["UZ1"], NPR=20, RL1=p0_max, RL0=-p0_max,
@@ -149,9 +149,9 @@ if tr_bifurcation:
         tr_bifurcation = False
 
 # 2D continuation II
-params_2d = ["Delta", "J"]
-params_idx = [3, 2]
-for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, 0.0 if p0_val > 0 else -p0_max], [10.0, p0_max if p0_val > 0 else 0.0]):
+params_2d = ["Delta", "tau_p"]
+params_idx = [3, 7]
+for p2, p2_idx, p2_min, p2_max in zip(params_2d, params_idx, [0.0, 0.0], [10.0, 10.0]):
     if fold_bifurcations:
         ode.run(starting_point='LP1', ICP=[p2_idx, eta_idx], name=f'{p2}/eta:lp1', origin=f"eta:{p1_val_idx+1}",
                 NMX=NMX, DSMAX=dsmax, NPR=10, RL1=p2_max, RL0=p2_min, bidirectional=True, ILP=0, IPS=1, ISW=2, NTST=400,

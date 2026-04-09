@@ -1,6 +1,4 @@
 from pycobi import ODESystem
-from pyrates import CircuitTemplate
-import sys
 import matplotlib.pyplot as plt
 from numpy.exceptions import AxisError
 
@@ -27,7 +25,7 @@ config_dir = "../config"
 
 # config
 continue_lcs = False
-N = 20
+N = 10
 n_dim = int(3*N)
 n_params = 4
 ode = ODESystem(eq_file="qif_mp", working_dir=config_dir, auto_dir=auto_dir, init_cont=False)

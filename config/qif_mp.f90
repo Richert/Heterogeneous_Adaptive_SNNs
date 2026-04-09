@@ -14,7 +14,7 @@
       DOUBLE PRECISION, INTENT(IN) :: U(NDIM), PAR(*)
       DOUBLE PRECISION, INTENT(OUT) :: F(NDIM)
       DOUBLE PRECISION, INTENT(INOUT) :: DFDU(NDIM,NDIM), DFDP(NDIM,*)
-      DOUBLE PRECISION I,J,D,tau_s,D2,PI,RM,I_m,I_step
+      DOUBLE PRECISION I,J,D,tau_s,D2,PI,RM
 
        I = PAR(1)
        J = PAR(2)
@@ -23,8 +23,6 @@
        M = (NDIM)/3
        D2 = D/(2*M)
        PI = 4*ATAN(1.0D0)
-       I_m = -0.5
-       I_step = 1.0/M
 
        do n=1,M
          R(n) = U(n)
@@ -38,9 +36,8 @@
 
        do n=1,M
          F(n) = D2/PI + 2.0*R(n)*V(n)
-         F(n+M) = V(n)*V(n) + J*RM/M - PI*PI*R(n)*R(n) + I + D*I_m
+         F(n+M) = V(n)*V(n) + J*RM/M - PI*PI*R(n)*R(n) + I + D*((n-1.0)/(M-1.0)-0.5)
          F(n+2*M) = (R(n) - S(n)) / tau_s
-         I_m = I_m + I_step
        end do
 
       END SUBROUTINE FUNC
@@ -53,7 +50,7 @@
       INTEGER :: n,M
       DOUBLE PRECISION, INTENT(INOUT) :: U(NDIM),PAR(*)
       DOUBLE PRECISION, INTENT(IN) :: T
-      DOUBLE PRECISION I,J,D,tau_s,TPI,I_m,I_step
+      DOUBLE PRECISION I,J,D,tau_s,TPI
 
        I = -3.0
        J = -10.0
@@ -66,14 +63,11 @@
        PAR(4)=tau_s
        TPI=8.0*ATAN(1.0D0)
        M =(NDIM)/3
-       I_m = -0.5
-       I_step = 1.0/M
 
        do n=1,M
          U(n) = 0.0
-         U(n+M) = -SQRT(-(I+D*I_m))
+         U(n+M) = -SQRT(-(I-D+(n-0.5)*(2.0*D/M)))
          U(n+2*M) = 0.0
-         I_m = I_m + I_step
        end do
 
       END SUBROUTINE STPNT

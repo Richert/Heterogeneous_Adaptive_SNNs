@@ -14,36 +14,32 @@ stp = "sd"
 group = "stdp_asym"
 
 # define stdp parameters
-a = 0.0005
-a_r = 1.0
-tau = 2.0
+a = 0.01
+a_r = 1.2
+tau = 1.0
 tau_r = 2.0
-m = -1.0
-tau_w = 30.0
 a_p = a*a_r
 a_d = a/a_r
 tau_p = tau
 tau_d = tau*tau_r
-tau_ratio = tau_p / tau_d
-a_ratio = a_p / a_d
-stdp_ratio = tau_ratio*a_ratio
+# tau_ratio = tau_p / tau_d
+# a_ratio = a_p / a_d
+# stdp_ratio = tau_ratio*a_ratio
 
 # set model parameters
-M = 20
-p = 0.2
-J = 20.0 / (0.5*M*p)
-Delta = 1.0
-eta = -0.5
+M = 10
+J = 15.0
+Delta = 1.5
+eta = -1.5
+eta2 = 0.1
+Delta2 = 0.05
 b = 0.5
-tau_s = 0.5
+tau_s = 1.0
 tau_a = 10.0
 kappa = 2.0
-conn_pow = 1.5
-v = 10.0
-d_max = 10.0
 indices = np.arange(1, M+1)
 node_vars = {"eta": uniform(M, eta, Delta), #uniform(M, eta, Delta)
-             "Delta": uniform(M, 0.08, 0.04), #Delta/(2*M)
+             "Delta": uniform(M, eta2, Delta2), #Delta/(2*M)
              }
 edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
@@ -55,7 +51,9 @@ dt = 1e-3
 dts = 1.0
 freq = 0.002
 amp = 2.0
-pow = 10.0
+pow = 20.0
+noise_lvl = 3.0
+noise_tau = 10.0
 
 # node and edge template initiation
 edge, edge_op = "stdp_edge", "stdp_op"
@@ -70,9 +68,11 @@ for key, val in edge_vars.items():
     edge_temp.update_var(edge_op, key, val)
 
 # create coupling matrix
-pdfs = np.asarray([dist(idx, method="inverse", zero_val=0.0, inverse_pow=conn_pow) for idx in indices])
-pdfs /= np.sum(pdfs)
-W0 = chain_connectivity(M, p, spatial_distribution=rv_discrete(values=(indices, pdfs)), homogeneous_weights=False)
+W0 = np.zeros((M, M))
+for i in range(M):
+    start = i-1 if i > 0 else 0
+    stop = i+2 if i < M-1 else M
+    W0[i, start:stop] = np.random.uniform(0.1, 0.9, size=(stop-start,))
 
 # create network
 edges = []
@@ -134,7 +134,12 @@ net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.it
 steps = int(T/dt)
 time = np.arange(0, steps) * dt
 inp = np.zeros((steps, M))
-inp[:, 0] += amp * np.sin(2.0*np.pi*freq*time)**pow
+inp_indices = [0]
+for i in range(M):
+    noise = generate_colored_noise(steps, noise_tau, noise_lvl)
+    inp[:, i] = noise
+    if i in inp_indices:
+        inp[:, i] += amp * np.sin(2.0*np.pi*freq*time)**pow
 
 # fig, ax = plt.subplots(figsize=(12, 3))
 # ax.plot(inp[:, inp_indices[0]])

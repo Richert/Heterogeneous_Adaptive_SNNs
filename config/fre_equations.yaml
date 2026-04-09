@@ -93,23 +93,41 @@ syn_sf_op:
     tau_a: 20.0
     kappa: 0.5
 
+# depressive synaptic operator
+alpha_sd_op:
+  base: OperatorTemplate
+  equations:
+    - "s' = x_s"
+    - "x_s' = (a*r - 2*x_s - s/tau_s)/tau_s"
+    - "a' = (x_a-a)/tau_a"
+    - "x_a' = (1-x_a)/tau_a - kappa*x_a*r"
+  variables:
+    s: output(0.0)
+    x_s: variable(0.0)
+    a: variable(1.0)
+    x_a: variable(1.0)
+    r: input(0.0)
+    tau_s: 0.5
+    tau_a: 20.0
+    kappa: 0.1
+
 # calcium trace operator
 ltp_op:
   base: OperatorTemplate
   equations:
-    - "u_p' = r - u_p/tau_p"
+    - "u_p' = s - u_p/tau_p"
   variables:
     u_p: output(0.0)
-    r: input(0.0)
+    s: input(0.0)
     tau_p: 100.0
 
 ltd_op:
   base: OperatorTemplate
   equations:
-    - "u_d' = r - u_d/tau_d"
+    - "u_d' = s - u_d/tau_d"
   variables:
     u_d: output(0.0)
-    r: input(0.0)
+    s: input(0.0)
     tau_d: 100.0
 
 # clopath operator
