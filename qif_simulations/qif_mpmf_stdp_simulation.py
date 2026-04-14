@@ -15,12 +15,12 @@ path = "/home/rgast/data/mpmf_simulations"
 trial = 0
 syn = "exc"
 stp = "sd"
-group = "antihebbian"
+group = "stdp_asym"
 
 # define stdp parameters
-a = 0.01
-a_r = 1.5
-tau = 30.0
+a = 0.1
+a_r = 1.2
+tau = 10.0
 tau_r = 2.0
 a_p = a*a_r
 a_d = a/a_r
@@ -32,23 +32,23 @@ stdp_ratio = tau_ratio*a_ratio
 
 # set model parameters
 M = 10
-J = 20.0 / (0.5*M)
+J = 15.0 / (0.5*M)
 Delta = 2.0
-p = 1.0
-eta = -0.85
+eta = -0.7
 b = 0.5
 tau_s = 0.5
 tau_a = 20.0
-kappa = 0.1
-node_vars = {"eta": uniform(M, eta, Delta), "Delta": Delta/(2*M)}
+kappa = 0.0
+etas = uniform(M, eta, Delta)
+node_vars = {"eta": etas, "Delta": Delta/(2*M)}
 edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
 # simulation parameters
-cutoff = 0.0
+cutoff = 100.0
 T = 2000.0 + cutoff
 dt = 1e-3
-dts = 1.0
+dts = 0.1
 noise_tau = 200.0
 noise_scale = 0.02
 
@@ -66,7 +66,7 @@ for i in range(M):
     for j in range(M):
         if group == "stdp_asym":
             edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                          {"weight": 1.0,
+                          {"weight": J,
                            f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                            f"{edge}/{edge_op}/p1": f"p{i}/{syn_op}/s",
                            f"{edge}/{edge_op}/p2": f"p{j}/ltp_op/u_p",
@@ -118,7 +118,7 @@ net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.it
 # generate run function
 inp = np.zeros((int(T/dt), 1), dtype=np.float32)
 func, args, arg_keys, _ = net.get_run_func(f"{syn}_{stp}_vectorfield", file_name=f"{syn}_{stp}_run",
-                                           step_size=dt, backend="numpy", solver="heun", float_precision="float32",
+                                           step_size=dt, backend="numpy", solver="euler", float_precision="float32",
                                            vectorize=True, inputs={f"all/{node_op}/I_ext": inp}, clear=False)
 func_njit = njit(func)
 func_njit(*args)
@@ -138,7 +138,7 @@ args[tau_p_idx] = tau_p
 args[tau_d_idx] = tau_d
 
 # set random initial connectivity
-W0 = np.random.uniform(low=0.0, high=1.0, size=(M, M))
+W0 = np.random.uniform(low=0.49, high=0.51, size=(M, M))
 args[1][-int(M*M):] = W0.reshape((int(M*M),))
 
 # define extrinsic input
@@ -152,16 +152,17 @@ init_hist, y_init = integrate(args[1], rhs, tuple(args[2:]), cutoff, dt, dts)
 args[inp_idx] = noise
 y0_hist, y0 = integrate(y_init, rhs, tuple(args[2:]), T, dt, dts)
 
-# turn on synaptric plasticity and run simulation again
+# turn on synaptic plasticity and run simulation again
 args[a_p_idx] = a_p
 args[a_d_idx] = a_d
-y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts)
+y1_hist, y1 = integrate(y_init, rhs, tuple(args[2:]), T, dt, dts)
 W1 = y1[-int(M * M):].reshape(M, M)
+y_init[-int(M*M):] = y1[-int(M * M):]
 
 # turn off synaptic plasticity and run simulation a final time
 args[a_p_idx] = 0.0
 args[a_d_idx] = 0.0
-y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts)
+y2_hist, y2 = integrate(y_init, rhs, tuple(args[2:]), T, dt, dts)
 
 # calculate in- and out-degrees
 in_degree_pre = np.sum(W0, axis=1)
@@ -175,9 +176,9 @@ eigvals_pre, eigvecs_pre, C_pre = get_eigs(r0)
 eigvals_post, eigvecs_post, C_post = get_eigs(r2)
 
 # transform etas into covariance eigenvector space
-etas = args[eta_idx]
-etas_pre = np.dot(eigvecs_pre.T, etas)
-etas_post = np.dot(eigvecs_post.T, etas)
+# etas = args[eta_idx]
+# etas_pre = np.dot(eigvecs_pre.T, etas)
+# etas_post = np.dot(eigvecs_post.T, etas)
 
 # get PSD of first PC
 pc1_pre, pc1_post = np.dot(r0*100.0, eigvecs_pre[:, 0]), np.dot(r2, eigvecs_post[:, 0])

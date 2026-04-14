@@ -70,7 +70,7 @@ syn_sd_op:
   base: OperatorTemplate
   equations:
     - "s' = a*r - s/tau_s"
-    - "a' = (1-a)/tau_a - kappa*a*r"
+    - "a' = (1.0-a)/tau_a - kappa*a*r"
   variables:
     s: output(0.0)
     a: variable(1.0)
@@ -84,7 +84,7 @@ syn_sf_op:
   base: OperatorTemplate
   equations:
     - "s' = a*r - s/tau_s"
-    - "a' = (kappa-a)/tau_a + kappa*(1-a)*r"
+    - "a' = (kappa-a)/tau_a + kappa*(1.0-a)*r"
   variables:
     s: output(0.0)
     a: variable(0.0)
@@ -115,19 +115,19 @@ alpha_sd_op:
 ltp_op:
   base: OperatorTemplate
   equations:
-    - "u_p' = s - u_p/tau_p"
+    - "u_p' = r - u_p/tau_p"
   variables:
     u_p: output(0.0)
-    s: input(0.0)
+    r: input(0.0)
     tau_p: 100.0
 
 ltd_op:
   base: OperatorTemplate
   equations:
-    - "u_d' = s - u_d/tau_d"
+    - "u_d' = r - u_d/tau_d"
   variables:
     u_d: output(0.0)
-    s: input(0.0)
+    r: input(0.0)
     tau_d: 100.0
 
 # clopath operator
@@ -224,7 +224,7 @@ stdp_op:
   equations:
     - "ltp = a_p*p1*p2"
     - "ltd = a_d*d1*d2"
-    - "w' = b*((1-w)*ltp - w*ltd) + (1-b)*(ltp - ltd)*(w-w^2)"
+    - "w' = b*((1.0-w)*ltp - w*ltd) + (1.0-b)*(ltp - ltd)*(w-w^2)"
     - "s_out = s_in*w"
   variables:
     s_out: output(0.0)
