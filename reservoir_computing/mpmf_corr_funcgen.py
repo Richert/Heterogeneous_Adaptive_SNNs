@@ -32,19 +32,19 @@ stp = "sd"
 
 # set model parameters
 M = 50
-Delta = 2.0
+Delta = 3.0
 p = 1.0
-eta = -1.0
+eta = -1.5
 b = 0.5
 tau_s = 1.0
-tau_a = 20.0
-kappa = 0.1
+tau_a = 40.0
+kappa = 0.2
 etas = uniform(M, eta, Delta)
 Delta2 = Delta/(2*M)
-fr_scale = 1.0
 c0 = 30.0
-c1 = 10.0
-c2 = -10.0
+c1 = 20.0
+c2 = -1.0
+c3 = 1.0
 node_vars = {"eta": etas, "Delta": Delta2}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
@@ -53,11 +53,11 @@ T = 50.0
 dt = 1e-4
 dts = 1e-2
 sr = int(dts/dt)
-n_stims = 10
-n_tests = 2
-stim_amp = 2.0
+n_stims = 30
+n_tests = 5
+stim_amp = 3.0
 stim_dur = int(1.0/dt)
-noise = 1e-2
+noise = 1e-4
 
 # other analysis parameters
 K_width = 100
@@ -100,12 +100,12 @@ node, node_op, syn_op = f"qif_stdp_{stp}", "qif_op", f"syn_{stp}_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 
 # create network
-frs = 1.0 / (1.0 + np.exp(-fr_scale*etas))
+fr1 = 1.0 / (1.0 + np.exp(-c2*etas))
+fr2 = 1.0 / (1.0 + np.exp(-c3*etas))
 edges = []
-W = np.zeros((M, M))
+W = (c0 + c1 * np.outer(fr1, fr2)) / M
 for i in range(M):
     for j in range(M):
-        W[i, j] = (c0 + c1*frs[i]*c2*frs[j]) / M
         edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", None,
                       {"weight": W[i, j]}))
 net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)

@@ -34,7 +34,7 @@ stdp_ratio = tau_ratio*a_ratio
 M = 10
 J = 15.0 / (0.5*M)
 Delta = 2.0
-eta = -0.7
+eta = -0.65
 b = 0.5
 tau_s = 0.5
 tau_a = 20.0
@@ -50,7 +50,7 @@ T = 2000.0 + cutoff
 dt = 1e-3
 dts = 0.1
 noise_tau = 200.0
-noise_scale = 0.02
+noise_scale = 0.0
 
 # node and edge template initiation
 edge, edge_op = "stdp_edge", "stdp_op"

@@ -6,17 +6,23 @@ matplotlib.use('tkagg')
 from numba import config
 config.THREADING_LAYER = "tbb"
 from config.utility_functions import *
-np.random.seed(42)
+from time import perf_counter
+# np.random.seed(42)
 
-@njit(parallel=True)
-def get_xy(fr_source: np.ndarray, fr_target: np.ndarray, p_source: np.ndarray, p_target: np.ndarray,
-           d_source: np.ndarray, d_target: np.ndarray) -> tuple:
+@njit
+def get_xy(s: np.ndarray, u_p: np.ndarray, u_d: np.ndarray) -> tuple:
     if plasticity == "oja":
-        x = np.outer(fr_target, p_source)
-        y = np.repeat(fr_target*d_target, N).reshape(N, N)
+        x = np.outer(s, u_p)
+        y = np.repeat(s*u_d, N).reshape(N, N)
     elif plasticity == "antioja":
-        x = np.repeat(fr_source*p_source, N).reshape(N, N).T
-        y = np.outer(fr_target, d_source)
+        x = np.repeat(s*u_p, N).reshape(N, N).T
+        y = np.outer(s, u_d)
+    elif plasticity == "stdp_asym":
+        x = np.outer(s, u_p)
+        y = np.outer(u_d, s)
+    elif plasticity == "stdp_sym":
+        x = np.outer(u_p, u_p)
+        y = np.outer(u_d, u_d)
     else:
         raise ValueError(f"Invalid condition: {plasticity}.")
     return x, y
@@ -26,7 +32,7 @@ def qif_rhs(y: np.ndarray, w: np.ndarray, spikes: np.ndarray, eta: np.ndarray, i
             tau_p: float, tau_d: float, a_p: float, a_d: float, b: float) -> tuple:
     v, s, u_p, u_d = y[:N], y[N:2*N], y[2*N:3*N], y[3*N:4*N]
     dy = np.zeros_like(y)
-    x, y = get_xy(s, s, u_p, u_p, u_d, u_d)
+    x, y = get_xy(s, u_p, u_d)
     dy[:N] = v**2 + eta + J*np.dot(w, s) + inp
     dy[N:2*N] = spikes - s/tau_s
     dy[2*N:3*N] = s - u_p/tau_p
@@ -77,7 +83,7 @@ def solve_fr(dt: float, w: np.ndarray, r: np.ndarray, eta: np.ndarray, inp: np.n
 def delta_w(w: np.ndarray, r: np.ndarray, inp: np.ndarray, eta: np.ndarray, J: float, b: float, a_p: float,
             a_d: float) -> tuple:
     r = get_qif_fr(inp + eta + J*np.dot(w, r))
-    x, y = get_xy(r*tau_s, r*tau_s, r*tau_p, r*tau_p, r*tau_d, r*tau_d)
+    x, y = get_xy(r*tau_s, r*tau_p, r*tau_d)
     return r, b*(a_p*(1-w)*x - a_d*w*y) + (1-b)*(a_p*x-a_d*y)*(w-w**2)
 
 @njit
@@ -91,13 +97,13 @@ path = "/home/rgast/data/mpmf_simulations"
 
 # read condition
 trial = 0
-syn = "inh"
-plasticity = "antioja"
+syn = "exc"
+plasticity = "stdp_asym"
 
 # define stdp parameters
-a = 0.01
-a_r = 1.5
-tau = 2.0
+a = 0.1
+a_r = 1.2
+tau = 10.0
 tau_r = 2.0
 a_p = a*a_r
 a_d = a/a_r
@@ -108,15 +114,15 @@ a_ratio = a_p / a_d
 stdp_ratio = tau_ratio*a_ratio
 
 # set model parameters
-M = 20
+M = 10
 N = 200
-J = -10.0
+J = 15.0
 J_mp = J / (0.5*M)
 J_qif = J / (0.5*N)
 Delta = 2.0
-eta = 0.0
+eta = -0.65
 b = 0.5
-tau_s = 1.0
+tau_s = 0.5
 v_p = 100.0
 etas_mp = uniform(M, eta, Delta)
 etas = uniform(N, eta, Delta)
@@ -128,9 +134,9 @@ syn_vars = {"tau_s": tau_s}
 cutoff = 100.0
 T = 2000.0
 dt = 1e-3
-dt2 = 1e-2
+dt2 = 5e-3
 dts = 1e-1
-inp_amp = 3.0
+inp_amp = 0.0
 inp_freq = 0.005
 inp_dur = 5.0
 sr = int(dts/dt)
@@ -223,19 +229,21 @@ args[tau_p_idx] = tau_p
 args[tau_d_idx] = tau_d
 
 # set random initial connectivity
-W0 = np.random.uniform(low=0.0, high=1.0, size=(M, M))
-w0 = np.random.uniform(low=0.0, high=1.0, size=(N, N))
+W0 = np.random.uniform(low=0.49, high=0.51, size=(M, M))
+w0 = np.random.uniform(low=0.49, high=0.51, size=(N, N))
 args[1][-int(M*M):] = W0.reshape((int(M*M),))
 
 # get initial rate model rate
 fr = get_qif_fr(etas)
 
 # set initial state
+t0 = perf_counter()
 print("Starting initial washout simulations ...")
 init_hist, y_init = integrate(args[1], rhs, tuple(args[2:]), cutoff, dt, dts)
-s_init, _ = solve_ivp(dt, np.zeros((4*N,)), w0, etas, inp[:, 0], J_qif, tau_s, tau_p, tau_d, 0.0, 0.0, b, sr=sr)
+s_init, _ = solve_ivp(dt2, np.zeros((4*N,)), w0, etas, inp[::sr3, 0], J_qif, tau_s, tau_p, tau_d, 0.0, 0.0, b, sr=sr2)
 fr_init, _ = solve_fr(dt2, w0, fr, etas, inp[::sr3, 0], J_qif, 0.0, 0.0, b, sr=sr2)
-print("finished initial washout simulations.")
+t1 = perf_counter()
+print(f"Finished initial washout simulations after {t1-t0:.2f} seconds.")
 
 # generate intrinsic input
 steps = int(T/dt)
@@ -254,7 +262,7 @@ args[inp_idx] = inp
 print("Starting T0 simulations ...")
 y0_hist, y0 = integrate(y_init, rhs, tuple(args[2:]), T, dt, dts)
 w0 = np.random.uniform(0.0, 1.0, size=(N, N,))
-s0_hist, _ = solve_ivp(dt, s_init[-1], w0, etas, inp, J_qif, tau_s, tau_p, tau_d, 0.0, 0.0, b, sr=sr)
+s0_hist, _ = solve_ivp(dt2, s_init[-1], w0, etas, inp[::sr3], J_qif, tau_s, tau_p, tau_d, 0.0, 0.0, b, sr=sr2)
 fr0, _ = solve_fr(dt2, w0, fr_init[-1], etas, inp[::sr3], J_qif, 0.0, 0.0, b, sr=sr2)
 print("finished T0 simulations.")
 
@@ -264,7 +272,7 @@ args[a_p_idx] = a_p
 args[a_d_idx] = a_d
 y1_hist, y1 = integrate(y0, rhs, tuple(args[2:]), T, dt, dts)
 W1 = y1[-int(M * M):].reshape(M, M)
-s1_hist, w1 = solve_ivp(dt, s_init[-1], w0, etas, inp, J_qif, tau_s, tau_p, tau_d, a_p, a_d, b, sr=sr)
+s1_hist, w1 = solve_ivp(dt2, s_init[-1], w0, etas, inp[::sr3], J_qif, tau_s, tau_p, tau_d, a_p, a_d, b, sr=sr2)
 fr1, wr1 = solve_fr(dt2, w0, fr_init[-1], etas, inp[::sr3], J_qif, a_p, a_d, b, sr=sr2)
 print("Finished T1 simulations.")
 
@@ -273,7 +281,7 @@ print("Starting T2 simulations ...")
 args[a_p_idx] = 0.0
 args[a_d_idx] = 0.0
 y2_hist, y2 = integrate(y1, rhs, tuple(args[2:]), T, dt, dts)
-s2_hist, _ = solve_ivp(dt, s_init[-1], w1, etas, inp, J_qif, tau_s, tau_p, tau_d, 0.0, 0.0, b, sr=sr)
+s2_hist, _ = solve_ivp(dt2, s_init[-1], w1, etas, inp[::sr3], J_qif, tau_s, tau_p, tau_d, 0.0, 0.0, b, sr=sr2)
 fr2, _ = solve_fr(dt2, wr1, fr_init[-1], etas, inp[::sr3], J_qif, 0.0, 0.0, b, sr=sr2)
 print("Finished T2 simulations.")
 
@@ -296,10 +304,8 @@ grid = fig.add_gridspec(ncols=3, nrows=4)
 
 # plotting dynamics
 time = np.linspace(0.0, T, int(T/dts)) / 100.0
-time_start, time_stop = T-1000.0, T
 for i, (s, r, fr) in enumerate(zip([s0, s1, s2], [r0, r1, r2], [fr0, fr1, fr2])):
     ax = fig.add_subplot(grid[i, :])
-
     ax.plot(time, np.mean(s, axis=1)*tau_s*100.0, label="QIF")
     ax.plot(time, np.mean(r, axis=1)*tau_s*100.0, label="MFE")
     ax.plot(time, np.mean(fr, axis=1)*tau_s*100.0, label="SSR")
