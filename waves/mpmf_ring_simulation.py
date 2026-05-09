@@ -31,18 +31,21 @@ stdp_ratio = tau_ratio*a_ratio
 # set model parameters
 M = 50
 p = 0.2
-p_in = 0.1
-J = 20.0
-Delta = 2.0
+p_in = 1.0
+J = 20.0 / (0.5*M)
 eta = -0.85
-b = 0.5
+Delta = 2.0
+eta2 = Delta / (2*M)
+Delta2 = eta2 / 10.0
 tau_s = 0.5
 tau_a = 20.0
 kappa = 0.1
-conn_pow = 1.5
+conn_pow = 2.0
 indices = np.arange(1, M+1)
-node_vars = {"eta": np.random.permutation(uniform(M, eta, Delta)), "Delta": Delta/(2*M), "J": J/(0.5*M)}
-edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
+node_vars = {"eta": uniform(M, eta, Delta)[::1], #uniform(M, eta, Delta)
+             "Delta": uniform(M, eta2, Delta2)[::1], #Delta/(2*M)
+             }
+edge_vars = {"a_p": 0.0, "a_d": 0.0, "m": m, "tau_w": tau_w}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
 # simulation parameters
@@ -78,7 +81,7 @@ for i in range(M):
         if W0[i, j] > 0.0:
             if group == "stdp_asym":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{i}/{syn_op}/s",
                                f"{edge}/{edge_op}/p2": f"p{j}/ltp_op/u_p",
@@ -87,7 +90,7 @@ for i in range(M):
                                }))
             elif group == "stdp_sym":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
                                f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
@@ -96,7 +99,7 @@ for i in range(M):
                                }))
             elif group == "antihebbian":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p2": f"p{i}/ltp_op/u_p",
@@ -105,7 +108,7 @@ for i in range(M):
                                }))
             elif group == "oja":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
                                f"{edge}/{edge_op}/p2": f"p{i}/{syn_op}/s",
@@ -114,7 +117,7 @@ for i in range(M):
                                }))
             elif group == "antioja":
                 edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", deepcopy(edge_temp),
-                              {"weight": 1.0,
+                              {"weight": J,
                                f"{edge}/{edge_op}/s_in": f"p{j}/{syn_op}/s",
                                f"{edge}/{edge_op}/p1": f"p{j}/ltp_op/u_p",
                                f"{edge}/{edge_op}/p2": f"p{j}/{syn_op}/s",

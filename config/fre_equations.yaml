@@ -1,6 +1,33 @@
 # operator templates for nodes
 ##############################
 
+# Kuramoto phase operator
+phase_op:
+  base: OperatorTemplate
+  equations:
+    - d/dt * theta = omega + K*s_in + s_ext"
+  variables:
+    - theta: output
+    - omega: 10.0
+    - K: 1.0
+    - s_in: input
+    - s_ext: input
+
+# kuramoto order parameter evolution
+kmo_op:
+  base: OperatorTemplate
+  equations:
+    - "s = s_in + s_ext"
+    - "z' = (i*omega - Delta)*z + (s - conj(s)*z^2) / 2"
+  variables:
+    z: output(0.5+0.1j)
+    s: variable(complex)
+    omega: 10.0
+    Delta: 1.0
+    i: 0.0+1.0j
+    s_in: input(complex)
+    s_ext: input(complex)
+
 # fre operator
 fre_op:
   base: OperatorTemplate
@@ -169,6 +196,37 @@ ik_clopath_op:
     s_e: input(0.0)
     s_i: input(0.0)
 
+# sinusoidal phase coupling operator
+sin_op:
+  base: OperatorTemplate
+  equations:
+    - "s = sin(theta_s-theta_t)"
+  variables:
+    theta_s: input
+    theta_t: input
+    s: output
+
+sin_hebbian_op:
+  base: OperatorTemplate
+  equations:
+    - "theta_d = theta_s-theta_t"
+    - "s = k*sin(theta_d)"
+    - "k' = mu*cos(theta_d) - gamma*k"
+  variables:
+    theta_s: input
+    theta_t: input
+    theta_d: variable
+    s: output
+    k: variable
+    mu: 0.01
+    gamma: 0.001
+
+sin_antihebbian_op:
+  base: sin_hebbian_op
+  equations:
+    replace:
+      cos(theta_d): abs(sin(theta_d))
+
 # operator templates for edges
 ##############################
 
@@ -296,6 +354,16 @@ pitchfork_hom_op:
 # node templates
 ################
 
+kmo_pop:
+  base: NodeTemplate
+  operators:
+    - kmo_op
+
+phase_pop:
+  base: NodeTemplate
+  operators:
+    - phase_op
+
 fre_pop:
   base: NodeTemplate
   operators:
@@ -384,6 +452,19 @@ ik_clopath_pop:
 
 # edge templates
 ################
+
+sin_edge:
+  base: EdgeTemplate
+  operators:
+    - sin_op
+
+sin_hebbian_edge:
+  operators:
+    - sin_hebbian_op
+
+sin_antihebbian_edge:
+  operators:
+    - sin_antihebbian_op
 
 clopath_edge:
   base: EdgeTemplate

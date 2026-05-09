@@ -1,9 +1,21 @@
 import numpy as np
 from numba import njit
-from scipy.stats import bernoulli, rv_discrete
+from scipy.stats import bernoulli, rv_discrete, cauchy
+
+def lorentzian(n: int, eta: float, delta: float, lb: float, ub: float):
+    samples = np.zeros((n,))
+    for i in range(n):
+        s = cauchy.rvs(loc=eta, scale=delta)
+        while s <= lb or s >= ub:
+            s = cauchy.rvs(loc=eta, scale=delta)
+        samples[i] = s
+    return samples
+
+def lorentzian2(N: int, eta: float, Delta: float) -> np.ndarray:
+    return eta + Delta * np.tan(0.5*np.pi*(2*np.arange(1, N+1)-N-1)/(N+1))
 
 def uniform(N: int, eta: float, Delta: float) -> np.ndarray:
-    return eta + Delta*np.linspace(-0.5, 0.5, N)
+    return eta + (Delta*np.linspace(-0.5, 0.5, N) if N > 1 else np.zeros((1,)))
 
 def normalize(x):
     x = x - np.mean(x)

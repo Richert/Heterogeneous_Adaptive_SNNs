@@ -12,24 +12,24 @@ path = "/home/rgast/data/mpmf_simulations"
 
 # read condition
 trial = 0
-syn = "exc"
+syn = "inh"
 stp = "sd"
 
 # set model parameters
 M = 50
 Delta = 2.0
 p = 1.0
-eta = -1.0
+eta = 0.0
 b = 0.5
 tau_s = 1.0
 tau_a = 40.0
-kappa = 0.1
+kappa = 0.0
 etas = uniform(M, eta, Delta)
 Delta2 = Delta/(2*M)
 c0 = 5.0
 c1 = 20.0
 c2 = 1.0
-c3 = 1.0
+c3 = -1.0
 node_vars = {"eta": etas, "Delta": Delta2}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
@@ -54,7 +54,7 @@ W = (c0 + c1 * np.outer(fr1, fr2)) / M
 for i in range(M):
     for j in range(M):
         edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", None,
-                      {"weight": W[i, j]}))
+                      {"weight": W[i, j] if syn == "exc" else -W[i, j]}))
 net = CircuitTemplate(name=node, nodes={f"p{i}": node_temp for i in range(M)}, edges=edges)
 net.update_var(node_vars={f"all/{node_op}/{key}": val for key, val in node_vars.items()})
 net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.items()})

@@ -28,18 +28,18 @@ tau_d = tau*tau_r
 
 # set model parameters
 M = 10
-J = 15.0
-Delta = 1.5
+J = 20.0
+Delta = 0.0
 eta = -1.5
 eta2 = 0.1
-Delta2 = 0.05
+Delta2 = Delta / (2*M)
 b = 0.5
-tau_s = 1.0
-tau_a = 10.0
-kappa = 2.0
+tau_s = 0.5
+tau_a = 20.0
+kappa = 1.0
 indices = np.arange(1, M+1)
-node_vars = {"eta": uniform(M, eta, Delta), #uniform(M, eta, Delta)
-             "Delta": uniform(M, eta2, Delta2), #Delta/(2*M)
+node_vars = {"eta": uniform(M, eta, Delta)[::-1], #uniform(M, eta, Delta)
+             "Delta": uniform(M, eta2, Delta2)[::-1], #Delta/(2*M)
              }
 edge_vars = {"a_p": 0.0, "a_d": 0.0, "b": b}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
@@ -47,12 +47,12 @@ syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 # simulation parameters
 cutoff = 100.0
 T = 2000.0
-dt = 1e-3
-dts = 1.0
+dt = 5e-4
+dts = 0.1
 freq = 0.002
-amp = 2.0
+amp = 3.0
 pow = 20.0
-noise_lvl = 3.0
+noise_lvl = 0.0
 noise_tau = 10.0
 
 # node and edge template initiation
@@ -72,7 +72,7 @@ W0 = np.zeros((M, M))
 for i in range(M):
     start = i-1 if i > 0 else 0
     stop = i+2 if i < M-1 else M
-    W0[i, start:stop] = np.random.uniform(0.1, 0.9, size=(stop-start,))
+    W0[i, start:stop] = np.random.uniform(0.49, 0.51, size=(stop-start,))
 
 # create network
 edges = []
@@ -150,7 +150,7 @@ func, args, arg_keys, _ = net.get_run_func(f"{syn}_{stp}_vectorfield", file_name
                                            step_size=dt, backend="numpy", solver="heun", float_precision="float32",
                                            vectorize=True, inputs={f"all/{node_op}/I_ext": np.zeros_like(inp)},
                                            clear=False)
-func_njit = njit(func)
+func_njit = njit(func, fastmath=True)
 func_njit(*args)
 rhs = func_njit
 
@@ -206,21 +206,23 @@ grid = fig.add_gridspec(ncols=5, nrows=6)
 # plotting dynamics
 s, a, w_tmp = y1_hist[:, 2*M:3*M], y1_hist[:, 4*M:5*M], y1_hist[:, -len(conn_indices):]
 w_step = 5
-ax = fig.add_subplot(grid[:2, :2])
+ax0 = fig.add_subplot(grid[:2, :2])
 time = np.linspace(0.0, T, int(T/dts)) / 100.0
 # ax.plot(time, np.mean(r0, axis=1)*100.0, label="T0: no plasticity")
 # ax.plot(time, np.mean(r1, axis=1)*100.0, label="T1: plasticity")
-ax.plot(time, s) #label="T2: no plasticity"
+ax0.plot(time, s) #label="T2: no plasticity"
 # ax.legend()
-ax.set_ylabel(r"$s$")
-ax.set_title("network dynamics")
+ax0.set_ylabel(r"$s$")
+ax0.set_title("network dynamics")
 ax = fig.add_subplot(grid[2:4, :2])
 ax.plot(time, a)
 ax.set_ylabel(r"$a$")
+ax.sharex(ax0)
 ax = fig.add_subplot(grid[4:6, :2])
 w = np.zeros((w_tmp.shape[0], M, M))
 w[:, conn_indices[:, 0], conn_indices[:, 1]] = w_tmp
 ax.plot(time, np.sum(w, axis=2)[:, ::w_step])
+ax.sharex(ax0)
 ax.set_ylabel(r"$w_{in}$")
 ax.set_xlabel("time (s)")
 
