@@ -208,7 +208,7 @@ def oa_ode(t, y, eta_pop, delta_pop, J, mu, gamma, n_pulse, s_hat, cn, f_oa):
     A   = y[2*M:].reshape(M, M)
 
     S   = oa_synaptic_mean(n_pulse, R, Psi, s_hat, cn)   # (M,)
-    E   = eta_pop + J * (A @ S)                           # (M,)
+    E   = eta_pop + (J/M) * (A @ S)                           # (M,)
 
     cos_P = np.cos(Psi)
     sin_P = np.sin(Psi)
@@ -388,18 +388,18 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 500
+    d = 50
     CONFIG = dict(
-        N          = 1 * d,
+        N          = 10 * d,
         d          = d,
         T          = 200.0,
-        J          = 2.0,
+        J          = 1.0,
         mu         = 0.1,
         gamma      = 0.001,
         eta0       = -0.5,
         Delta0     = 1.0,
         n_pulse    = 1,
-        plasticity = "hebbian",
+        plasticity = "antihebbian",
         dist       = "lorentzian",
         seed       = 42,
         method     = "RK45",

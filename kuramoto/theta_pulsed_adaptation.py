@@ -1,44 +1,37 @@
 """
-Theta Neuron Network: Microscopic vs. OA Complex-Z Macroscopic Comparison
+Theta Neuron Network: Microscopic vs. Ott-Antonsen Macroscopic Comparison
+Pulse-based plasticity rule
 ==========================================================================
-Compares two parallel simulations with matched initial conditions:
+Microscopic model (N theta neurons):
+    dθ_k/dt  = (1 - cos θ_k) + (1 + cos θ_k) * [η_k + J/N Σ_l A_kl s(n, θ_l)]
+    dA_kl/dt = μ s(n2, θ_k) s(n3, θ_l) - γ A_kl
+    s(n, θ)  = c_n (1 - cos θ)^n,   c_n = 2^n (n!)^2 / (2n)!
 
-  1. Microscopic (TN):  N theta neurons
-         dθ_k/dt = 1 - cos(θ_k) + [1 + cos(θ_k)] * [η_k + J/N Σ_l A_kl s(n,θ_l)]
-         dA_kl/dt = μ f(θ_l - θ_k) - γ A_kl
-         s(n,θ)  = c_n (1 - cos θ)^n,    c_n = 2^n (n!)² / (2n)!
+    Three separate pulse parameters:
+        n      : synaptic coupling kernel
+        n2     : pre-synaptic plasticity kernel  (multiplies θ_k, the POST-synaptic neuron)
+        n3     : post-synaptic plasticity kernel (multiplies θ_l, the PRE-synaptic neuron)
 
-  2. Macroscopic (OA):  M = N/d populations, Z_m = x_m + i y_m integrated directly
-         Ż_m = ½ [(iη̄_m + iJ S_m - Δ_m)(1 + Z_m)² + i(1 - Z_m)²]
-         Ȧ_mn = μ R_m R_n f_OA(Ψ_n - Ψ_m) - γ A_mn
+OA mean-field (M populations, state [R_m, Ψ_m, A_mn]):
+    ṙ_m  = -Δ_m R_m - Δ_m(1+R_m²)/2 cos Ψ_m + (E_m-1)(1-R_m²)/2 sin Ψ_m
+    Ψ̇_m  = (E_m+1) + (E_m-1)(1+R_m²)/(2R_m) cos Ψ_m + Δ_m(1-R_m²)/(2R_m) sin Ψ_m
+    Ȧ_mn = μ S2_m S3_n - γ A_mn
 
-         where  S_m   = Σ_n A_mn · <s(n_pulse, θ)>_{Z_n}   (mean-field synaptic input)
-                R_m   = |Z_m|,   Ψ_m = arg(Z_m)
+    where  E_m  = η̄_m + J/M Σ_n A_mn S_n      (synaptic drive)
+           S_n  = <s(n,  θ)>_{Z_n}              (mean coupling kernel,   pulse n)
+           S2_m = <s(n2, θ)>_{Z_m}              (mean pre-syn  kernel,   pulse n2)
+           S3_n = <s(n3, θ)>_{Z_n}              (mean post-syn kernel,   pulse n3)
 
-  The mean-field average <s(n,θ)>_Z is computed via the Fourier expansion of
-  (1-cosθ)^n on the OA (Poisson kernel) manifold where <e^{ipθ}> = Z^p:
+Derivation of the OA plasticity rule
+--------------------------------------
+    Ȧ_mn = μ/d² Σ_{k∈m} Σ_{l∈n} s(n2,θ_k) s(n3,θ_l) - γ A_mn
+          = μ [1/d Σ_{k∈m} s(n2,θ_k)] [1/d Σ_{l∈n} s(n3,θ_l)] - γ A_mn
+          →  μ <s(n2,θ)>_{Z_m} <s(n3,θ)>_{Z_n} - γ A_mn     (OA manifold)
 
-         <s(n,θ)>_Z = c_n · Re[s_hat[0] + Σ_{p=1}^{n} s_hat[p] · Z^p]
-
-  where s_hat[p] are the (complex) Fourier coefficients of (1-cosθ)^n.
-  Note: since (1-cosθ)^n is real and even, all s_hat[p] are real, and
-  Re[s_hat[p] Z^p] = s_hat[p] R^p cos(pΨ), recovering the previous formula.
-  However, keeping Z complex avoids all manual trig separation.
-
-Key advantage over the (R, Ψ) formulation
-------------------------------------------
-  The complex Z ODE is integrated directly without any separation into
-  amplitude/phase components, eliminating the 1/R singularity at R→0 and
-  removing any risk of sign errors in the trig expansion.
-
-  The global order parameter is recovered as:
-         R_global(t) = |mean_m Z_m(t)|
-
-Initial condition matching
---------------------------
-  Z_m^0 = empirical mean complex phase of block m:
-         Z_m^0 = (1/d) Σ_{k∈m} e^{iθ_k}
-  This is consistent with the OA manifold definition Z = <e^{iθ}>.
+    The factorisation is exact because s(n2,θ_k) and s(n3,θ_l) depend on
+    different neurons (k∈m vs l∈n), so the double sum always separates.
+    Unlike cos/sin phase-difference rules, this rule is NOT antisymmetric
+    in general (unless n2 == n3).
 """
 
 import numpy as np
@@ -53,7 +46,7 @@ plt.rcParams["font.size"] = 16.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Synaptic coupling kernel and OA mean-field average
+# Pulse kernels and Fourier coefficients
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def coupling_norm(n):
@@ -63,14 +56,9 @@ def coupling_norm(n):
 
 def fourier_coeffs_s(n):
     """
-    Real Fourier cosine coefficients of (1 - cos θ)^n.
-
-    Returns s_hat of length n+1:
-        s_hat[0] = DC coefficient
-        s_hat[p] = amplitude of cos(pθ) for p = 1,...,n
-
-    All coefficients are real because (1-cosθ)^n is even and real.
-    Verified by verify_fourier_coeffs().
+    Real Fourier cosine coefficients of (1-cosθ)^n.
+    Returns s_hat of shape (n+1,):
+        s_hat[0] = DC,  s_hat[p] = amplitude of cos(pθ) for p>=1.
     """
     c = np.zeros(2 * n + 1, dtype=complex)
     for k in range(n + 1):
@@ -78,7 +66,6 @@ def fourier_coeffs_s(n):
         for j in range(k + 1):
             p = 2 * j - k
             c[p + n] += binom_nk * comb(k, j)
-
     s_hat = np.zeros(n + 1)
     s_hat[0] = c[n].real
     for p in range(1, n + 1):
@@ -87,41 +74,28 @@ def fourier_coeffs_s(n):
 
 
 def verify_fourier_coeffs(n, cn, s_hat, n_quad=10000):
-    """Print numerical vs analytical Fourier coefficients of s(n,θ)."""
     theta = np.linspace(-np.pi, np.pi, n_quad, endpoint=False)
     s_num = cn * (1.0 - np.cos(theta)) ** n
-    print(f"\n--- Fourier verification (n_pulse={n}) ---")
-    print(f"  p=0: numerical={s_num.mean():.8f},  "
-          f"analytical={cn * s_hat[0]:.8f}")
+    print(f"\n--- Fourier verification (n={n}, c_n={cn:.6f}) ---")
+    print(f"  p=0: numerical={s_num.mean():.8f},  analytical={cn * s_hat[0]:.8f}")
     for p in range(1, min(n + 1, 5)):
         amp_num = 2.0 * (s_num * np.cos(p * theta)).mean()
-        print(f"  p={p}: numerical={amp_num:.8f},  "
-              f"analytical={cn * s_hat[p]:.8f}")
-    print()
+        print(f"  p={p}: numerical={amp_num:.8f},  analytical={cn * s_hat[p]:.8f}")
 
 
-def oa_synaptic_mean_complex(n_pulse, Z, s_hat, cn):
+def oa_synaptic_mean(n_pulse, R, Psi, s_hat, cn):
     """
-    Mean-field average of s(n_pulse, θ) for an array of complex order
-    parameters Z (shape (M,)).
-
-    On the OA manifold <e^{ipθ}> = Z^p, so:
-
-        <s> = c_n * Re[ s_hat[0] + Σ_{p=1}^{n} s_hat[p] * Z^p ]
-
-    Since s_hat[p] is real and Z^p = R^p e^{ipΨ}, this equals
-    c_n * [s_hat[0] + Σ_p s_hat[p] R^p cos(pΨ)] — same as before
-    but computed without explicitly extracting R and Ψ.
+    <s(n_pulse, θ)>_Z on the OA manifold for Z = R exp(iΨ).
+    Returns real array of shape matching R.
     """
-    S = np.full(len(Z), s_hat[0], dtype=complex)
-    Zp = Z.copy()  # Z^1
+    S = np.full_like(R, s_hat[0], dtype=float)
     for p in range(1, n_pulse + 1):
-        S += s_hat[p] * Zp
-        Zp *= Z  # Z^{p+1}
-    return cn * S.real  # imaginary part vanishes by symmetry
+        S += s_hat[p] * R ** p * np.cos(p * Psi)
+    return cn * S
 
 
 def s_micro(n_pulse, theta, cn):
+    """Microscopic kernel s(n, θ) = c_n (1-cosθ)^n."""
     return cn * (1.0 - np.cos(theta)) ** n_pulse
 
 
@@ -147,48 +121,51 @@ def make_initial_conditions(N, d, eta0, Delta0, dist, seed):
 
     eta_micro = np.empty(N)
     theta0 = np.empty(N)
-    Z0 = np.empty(M, dtype=complex)  # complex initial OA state
+    r0 = np.empty(M)
+    psi0 = np.empty(M)
 
     for I in range(M):
         th = rng.uniform(-np.pi, np.pi, d)
         idx = slice(I * d, (I + 1) * d)
         eta_micro[idx] = lorentzian2(d, eta_pop[I], delta_pop[I])
         theta0[idx] = th
-        # Z_m^0 = (1/d) Σ_{k∈m} e^{iθ_k}  — normalised empirical order parameter
-        Z0[I] = np.mean(np.exp(1j * th))
+        z_mean = np.mean(np.exp(1j * th))
+        psi0[I] = np.angle(z_mean)
+        r0[I] = np.clip(np.abs(z_mean), _EPS, 1.0 - _EPS)
 
-    return eta_micro, theta0, eta_pop, delta_pop, Z0
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Plasticity rules
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def hebbian(x):
-    return np.cos(x)
-
-
-def antihebbian(x):
-    return np.sin(x)
+    return eta_micro, theta0, eta_pop, delta_pop, r0, psi0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Microscopic theta neuron ODE  (unchanged)
+# Microscopic theta neuron ODE — pulse plasticity
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def tn_ode(t, y, eta, J, mu, gamma, n_pulse, cn, f):
+def tn_ode(t, y, eta, J, mu, gamma, n_pulse, cn, n2, cn2, n3, cn3):
+    """
+    Theta neuron ODE with pulse-based plasticity.
+
+    dθ_k/dt  = (1-cosθ_k) + (1+cosθ_k)[η_k + J/N Σ_l A_kl s(n,θ_l)]
+    dA_kl/dt = μ s(n2,θ_k) s(n3,θ_l) - γ A_kl   (diagonal zeroed)
+
+    Note: k is the post-synaptic (row) index, l is the pre-synaptic (col) index.
+    s(n2,θ_k) — post-synaptic factor — broadcasts over columns.
+    s(n3,θ_l) — pre-synaptic factor  — broadcasts over rows.
+    """
     N = len(eta)
     theta = y[:N]
     A = y[N:].reshape(N, N)
 
-    s_vec = s_micro(n_pulse, theta, cn)
-    I_syn = (J / N) * (A @ s_vec)
+    # Synaptic input
+    s_syn = s_micro(n_pulse, theta, cn)  # (N,)
+    I_syn = (J / N) * (A @ s_syn)  # (N,)
 
     cm = np.cos(theta)
     dtheta = (1.0 - cm) + (1.0 + cm) * (eta + I_syn)
 
-    diff = theta[np.newaxis, :] - theta[:, np.newaxis]
-    dA = mu * f(diff) - gamma * A
+    # Pulse-based plasticity: outer product of pre- and post-synaptic kernels
+    s_post = s_micro(n2, theta, cn2)  # (N,) post-synaptic (row)
+    s_pre = s_micro(n3, theta, cn3)  # (N,) pre-synaptic  (col)
+    dA = mu * np.outer(s_post, s_pre) - gamma * A
     np.fill_diagonal(dA, 0.0)
 
     return np.concatenate([dtheta, dA.ravel()])
@@ -209,56 +186,58 @@ def tn_coarse_grain(A_fine, d):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Macroscopic OA ODE — complex Z formulation
+# Macroscopic OA ODE — pulse plasticity
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def oa_ode_complex(t, y, eta_pop, delta_pop, J, mu, gamma, n_pulse, s_hat, cn, f_oa):
+def oa_ode(t, y, eta_pop, delta_pop, J, mu, gamma,
+           n_pulse, s_hat, cn,
+           n2, s_hat2, cn2,
+           n3, s_hat3, cn3):
     """
-    OA mean-field ODE integrated in complex Z representation.
+    OA mean-field ODE with pulse-based plasticity.
 
-    State vector (all real):
-        y = [x_0,...,x_{M-1}, y_0,...,y_{M-1}, A_00,...,A_{M-1,M-1}]
-    where Z_m = x_m + i y_m.
+    State: y = [R_0,...,R_{M-1}, Ψ_0,...,Ψ_{M-1}, A_00,...,A_{M-1,M-1}]
 
-    ODE:
-        Ż_m = ½ [(iη̄_m + iJ S_m - Δ_m)(1+Z_m)² + i(1-Z_m)²]
-        Ȧ_mn = μ |Z_m| |Z_n| f_OA(arg(Z_n) - arg(Z_m)) - γ A_mn
+    ṙ_m  = -Δ_m R_m - Δ_m(1+R_m²)/2 cosΨ_m + (E_m-1)(1-R_m²)/2 sinΨ_m
+    Ψ̇_m  = (E_m+1) + (E_m-1)(1+R_m²)/(2R_m) cosΨ_m + Δ_m(1-R_m²)/(2R_m) sinΨ_m
+    Ȧ_mn  = μ S2_m S3_n - γ A_mn
+
+    where:
+        E_m  = η̄_m + J/M Σ_n A_mn S_n     S_n  = <s(n,  θ)>_{Z_n}
+        S2_m = <s(n2, θ)>_{Z_m}             (post-synaptic plasticity kernel)
+        S3_n = <s(n3, θ)>_{Z_n}             (pre-synaptic  plasticity kernel)
     """
     M = len(eta_pop)
-    x = y[:M]
-    yy = y[M:2 * M]
+    R = np.clip(y[:M], _EPS, 1.0 - _EPS)
+    Psi = y[M:2 * M]
     A = y[2 * M:].reshape(M, M)
 
-    Z = x + 1j * yy  # (M,) complex
+    # Mean-field synaptic input
+    S = oa_synaptic_mean(n_pulse, R, Psi, s_hat, cn)  # (M,) coupling kernel
+    E = eta_pop + (J / M) * (A @ S)  # (M,) effective drive
 
-    # Clip magnitude to avoid runaway (OA manifold requires |Z| < 1)
-    absZ = np.abs(Z)
-    mask = absZ > 1.0 - _EPS
-    Z = np.where(mask, Z / absZ * (1.0 - _EPS), Z)
+    cos_P = np.cos(Psi)
+    sin_P = np.sin(Psi)
 
-    # Mean-field synaptic input S_m = Σ_n A_mn <s>_{Z_n}
-    S_vec = oa_synaptic_mean_complex(n_pulse, Z, s_hat, cn)  # (M,) real
-    E = eta_pop + (J/M) * (A @ S_vec)  # (M,) real effective η
+    # OA equations (corrected signs from theta-neuron derivation)
+    dR = (-delta_pop * R
+          - delta_pop * (1.0 + R ** 2) / 2.0 * cos_P
+          + (E - 1.0) * (1.0 - R ** 2) / 2.0 * sin_P)
 
-    # Complex OA equation:  Ż = ½[(iE - Δ)(1+Z)² + i(1-Z)²]
-    one_plus_Z = 1.0 + Z
-    one_minus_Z = 1.0 - Z
-    coeff = delta_pop - 1j * E # (M,) complex
-    Zdot = -0.5 * (coeff * one_plus_Z ** 2 + 1j * one_minus_Z ** 2)
+    dPsi = ((E + 1.0)
+            + (E - 1.0) * (1.0 + R ** 2) / (2.0 * R) * cos_P
+            + delta_pop * (1.0 - R ** 2) / (2.0 * R) * sin_P)
 
-    # Plasticity in terms of R = |Z|, Ψ = arg(Z)
-    R = np.abs(Z)
-    Psi = np.angle(Z)
-    dPsi_mat = Psi[np.newaxis, :] - Psi[:, np.newaxis]  # Ψ_n - Ψ_m
-    rr = R[:, np.newaxis] * R[np.newaxis, :]
-    dA = mu * rr * f_oa(dPsi_mat) - gamma * A
+    # Pulse-based plasticity: outer product of population-averaged kernels
+    S2 = oa_synaptic_mean(n2, R, Psi, s_hat2, cn2)  # (M,) post-syn kernel
+    S3 = oa_synaptic_mean(n3, R, Psi, s_hat3, cn3)  # (M,) pre-syn  kernel
+    dA = mu * np.outer(S2, S3) - gamma * A  # (M, M)
 
-    return np.concatenate([Zdot.real, Zdot.imag, dA.ravel()])
+    return np.concatenate([dR, dPsi, dA.ravel()])
 
 
-def oa_order_parameter_complex(Z):
-    """Global order parameter |mean_m Z_m| from complex Z array (M, steps)."""
-    return np.abs(np.mean(Z, axis=0))
+def oa_order_parameter(R, Psi):
+    return np.abs(np.mean(R * np.exp(1j * Psi), axis=0))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -267,15 +246,16 @@ def oa_order_parameter_complex(Z):
 
 def simulate(
         N=500,
-        d=500,
+        d=50,
         T=200.0,
         J=1.0,
-        mu=0.0,
-        gamma=0.0,
+        mu=0.1,
+        gamma=0.001,
         eta0=-0.5,
-        Delta0=0.5,
-        n_pulse=2,
-        plasticity="hebbian",
+        Delta0=1.0,
+        n_pulse=1,  # synaptic coupling pulse shape
+        n2=2,  # post-synaptic plasticity pulse shape
+        n3=3,  # pre-synaptic  plasticity pulse shape
         dist="lorentzian",
         seed=42,
         method="RK45",
@@ -284,18 +264,20 @@ def simulate(
 ):
     assert N % d == 0, "N must be divisible by d"
     M = N // d
-    cn = coupling_norm(n_pulse)
-    s_hat = fourier_coeffs_s(n_pulse)
 
-    print(f"Theta neuron network (complex-Z OA): N={N}, d={d}, M={M}")
-    print(f"J={J}, μ={mu}, γ={gamma}, η₀={eta0}, Δ₀={Delta0}, n_pulse={n_pulse}")
-    print(f"c_n = {cn:.6f}")
+    # Precompute all three sets of Fourier coefficients and norms
+    cn, s_hat = coupling_norm(n_pulse), fourier_coeffs_s(n_pulse)
+    cn2, s_hat2 = coupling_norm(n2), fourier_coeffs_s(n2)
+    cn3, s_hat3 = coupling_norm(n3), fourier_coeffs_s(n3)
+
+    print(f"Theta neuron (pulse plasticity): N={N}, d={d}, M={M}")
+    print(f"J={J}, μ={mu}, γ={gamma}, η₀={eta0}, Δ₀={Delta0}")
+    print(f"n (synaptic)={n_pulse}, n2 (post-syn)={n2}, n3 (pre-syn)={n3}")
     verify_fourier_coeffs(n_pulse, cn, s_hat)
+    verify_fourier_coeffs(n2, cn2, s_hat2)
+    verify_fourier_coeffs(n3, cn3, s_hat3)
 
-    f = hebbian if plasticity == "hebbian" else antihebbian
-    f_oa = hebbian if plasticity == "hebbian" else antihebbian
-
-    eta_micro, theta0, eta_pop, delta_pop, Z0 = \
+    eta_micro, theta0, eta_pop, delta_pop, r0, psi0 = \
         make_initial_conditions(N, d, eta0, Delta0, dist, seed)
 
     A0_micro = np.ones((N, N))
@@ -303,10 +285,10 @@ def simulate(
 
     # ── Microscopic ──────────────────────────────────────────────────────────
     y0_tn = np.concatenate([theta0, A0_micro.ravel()])
-    print("Running TN (microscopic) simulation …")
+    print("\nRunning TN (microscopic) simulation …")
     sol_tn = solve_ivp(
         tn_ode, (0, T), y0_tn, method=method,
-        args=(eta_micro, J, mu, gamma, n_pulse, cn, f),
+        args=(eta_micro, J, mu, gamma, n_pulse, cn, n2, cn2, n3, cn3),
         rtol=rtol, atol=atol, dense_output=False,
     )
     if not sol_tn.success:
@@ -318,13 +300,15 @@ def simulate(
     A_tn = sol_tn.y[N:].reshape(N, N, -1)
     R_tn = tn_order_parameter(theta)
 
-    # ── Macroscopic OA (complex Z) ───────────────────────────────────────────
-    # State: [Re(Z_0),...,Re(Z_{M-1}), Im(Z_0),...,Im(Z_{M-1}), A.ravel()]
-    y0_oa = np.concatenate([Z0.real, Z0.imag, A0_oa.ravel()])
-    print("Running OA (complex-Z) simulation …")
+    # ── Macroscopic OA ───────────────────────────────────────────────────────
+    y0_oa = np.concatenate([r0, psi0, A0_oa.ravel()])
+    print("Running OA (macroscopic) simulation …")
     sol_oa = solve_ivp(
-        oa_ode_complex, (0, T), y0_oa, method=method,
-        args=(eta_pop, delta_pop, J, mu, gamma, n_pulse, s_hat, cn, f_oa),
+        oa_ode, (0, T), y0_oa, method=method,
+        args=(eta_pop, delta_pop, J, mu, gamma,
+              n_pulse, s_hat, cn,
+              n2, s_hat2, cn2,
+              n3, s_hat3, cn3),
         rtol=rtol, atol=atol, dense_output=False,
     )
     if not sol_oa.success:
@@ -332,16 +316,18 @@ def simulate(
     print(f"  Done — {sol_oa.t.size} steps, {sol_oa.nfev} evaluations")
 
     t_oa = sol_oa.t
-    Z_oa = sol_oa.y[:M] + 1j * sol_oa.y[M:2 * M]  # (M, steps) complex
+    R_oa_m = sol_oa.y[:M]
+    Psi_oa = sol_oa.y[M:2 * M]
     A_oa = sol_oa.y[2 * M:].reshape(M, M, -1)
-    R_oa = oa_order_parameter_complex(Z_oa)  # (steps,) global |<Z_m>|
+    R_oa = oa_order_parameter(R_oa_m, Psi_oa)
 
     return dict(
         t_tn=t_tn, theta=theta, A_tn=A_tn, R_tn=R_tn,
         eta_micro=eta_micro,
-        t_oa=t_oa, Z_oa=Z_oa, A_oa=A_oa, R_oa=R_oa,
+        t_oa=t_oa, R_oa_m=R_oa_m, Psi_oa=Psi_oa, A_oa=A_oa, R_oa=R_oa,
         eta_pop=eta_pop, delta_pop=delta_pop,
         N=N, M=M, d=d, mu=mu, gamma=gamma, T=T,
+        n_pulse=n_pulse, n2=n2, n3=n3,
     )
 
 
@@ -352,6 +338,7 @@ def simulate(
 def plot_comparison(res):
     N, M, d = res["N"], res["M"], res["d"]
     mu, gamma = res["mu"], res["gamma"]
+    n_pulse, n2, n3 = res["n_pulse"], res["n2"], res["n3"]
 
     t_tn, R_tn = res["t_tn"], res["R_tn"]
     t_oa, R_oa = res["t_oa"], res["R_oa"]
@@ -360,21 +347,21 @@ def plot_comparison(res):
     A_oa_final = res["A_oa"][:, :, -1]
     A_tn_cg = tn_coarse_grain(A_tn_final, d)
 
-    # Figure 1: order parameter
     fig1, ax = plt.subplots(figsize=(10, 4))
     ax.plot(t_tn, R_tn, color="steelblue", lw=1.8, label=f"TN  (N={N})")
     ax.plot(t_oa, R_oa, color="crimson", lw=1.8, ls="--",
-            label=f"OA complex-Z  (M={M}, d={d})")
+            label=f"OA  (M={M}, d={d})")
     ax.set_xlabel("Time")
     ax.set_ylabel("Global order parameter $R(t)$")
     ax.set_ylim(0, 1.05)
     ax.axhline(1.0, color="grey", lw=0.8, ls=":")
-    ax.set_title(f"TN vs OA (complex Z)  |  N={N}, d={d}, M={M},  "
-                 f"μ={mu}, γ={gamma}")
+    ax.set_title(
+        f"TN vs OA  |  N={N}, d={d}, M={M},  μ={mu}, γ={gamma}\n"
+        f"n (syn)={n_pulse}, n2 (post)={n2}, n3 (pre)={n3}"
+    )
     ax.legend(fontsize=11)
     fig1.tight_layout()
 
-    # Figure 2: coupling matrices
     vmax_full = np.abs(A_tn_final).max() or 1.0
     vmax_cg = max(np.abs(A_tn_cg).max(), np.abs(A_oa_final).max()) or 1.0
 
@@ -389,8 +376,8 @@ def plot_comparison(res):
         ax0.axhline(tick - 0.5, color="k", lw=0.4)
         ax0.axvline(tick - 0.5, color="k", lw=0.4)
     ax0.set_title(f"TN $A^{{TN}}$  ({N}×{N})")
-    ax0.set_xlabel("Neuron $l$");
-    ax0.set_ylabel("Neuron $k$")
+    ax0.set_xlabel("Neuron $l$ (pre)");
+    ax0.set_ylabel("Neuron $k$ (post)")
 
     ax1 = fig2.add_subplot(gs[1])
     im1 = ax1.imshow(A_tn_cg, cmap="RdBu_r", vmin=-vmax_cg, vmax=vmax_cg,
@@ -399,8 +386,8 @@ def plot_comparison(res):
     ax1.set_xticks(range(M));
     ax1.set_yticks(range(M))
     ax1.set_title(f"TN block-avg $\\bar{{A}}^{{TN}}$  ({M}×{M})")
-    ax1.set_xlabel("Pop $n$");
-    ax1.set_ylabel("Pop $m$")
+    ax1.set_xlabel("Pop $n$ (pre)");
+    ax1.set_ylabel("Pop $m$ (post)")
 
     ax2 = fig2.add_subplot(gs[2])
     im2 = ax2.imshow(A_oa_final, cmap="RdBu_r", vmin=-vmax_cg, vmax=vmax_cg,
@@ -409,12 +396,14 @@ def plot_comparison(res):
     ax2.set_xticks(range(M));
     ax2.set_yticks(range(M))
     ax2.set_title(f"OA $A^{{OA}}$  ({M}×{M})")
-    ax2.set_xlabel("Pop $n$");
-    ax2.set_ylabel("Pop $m$")
+    ax2.set_xlabel("Pop $n$ (pre)");
+    ax2.set_ylabel("Pop $m$ (post)")
 
     fig2.suptitle(
-        f"Final coupling matrices T={res['T']:.0f}  (μ={mu}, γ={gamma}, d={d})",
-        fontsize=12, fontweight="bold")
+        f"Final coupling matrices T={res['T']:.0f}  "
+        f"(μ={mu}, γ={gamma}, d={d}, n={n_pulse}, n2={n2}, n3={n3})",
+        fontsize=12, fontweight="bold",
+    )
     fig2.tight_layout()
     return fig1, fig2
 
@@ -424,18 +413,19 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 400
+    d = 50
     CONFIG = dict(
-        N=1 * d,
+        N=10 * d,
         d=d,
         T=200.0,
-        J=2.0,
-        mu=0.0,
-        gamma=0.0,
+        J=1.0,
+        mu=0.1,
+        gamma=0.001,
         eta0=-0.5,
         Delta0=1.0,
-        n_pulse=1,
-        plasticity="hebbian",
+        n_pulse=10,  # synaptic coupling pulse shape
+        n2=2,  # post-synaptic plasticity kernel
+        n3=4,  # pre-synaptic  plasticity kernel
         dist="lorentzian",
         seed=42,
         method="RK45",
@@ -446,8 +436,8 @@ if __name__ == "__main__":
     res = simulate(**CONFIG)
     fig1, fig2 = plot_comparison(res)
 
-    fig1.savefig("tn_complexZ_order_parameter.png", dpi=150, bbox_inches="tight")
-    fig2.savefig("tn_complexZ_coupling_matrices.png", dpi=150, bbox_inches="tight")
+    fig1.savefig("tn_pulse_plasticity_order_parameter.png", dpi=150, bbox_inches="tight")
+    fig2.savefig("tn_pulse_plasticity_coupling_matrices.png", dpi=150, bbox_inches="tight")
     print("Figures saved.")
     plt.show()
 
