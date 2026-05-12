@@ -1,96 +1,158 @@
 """
-Kuramoto vs Ott-Antonsen — Parameter Sweep
-============================================
-For a single (d, Delta0, mu) parameter set passed via the command line, run
-n_trials repetitions of the KM-vs-OA comparison with different RNG seeds and
-record agreement metrics in a pandas DataFrame.
+Systematic Sweep: KMO Microscopic vs. OA Mean-Field Ensemble
+==============================================================
+For each trial, simulate the microscopic Kuramoto network for each value of
+Δ (the width of the frequency distribution), then sweep over (M, μ) in
+parallel and simulate the OA mean-field equations.  For each (trial, Δ, M, μ)
+combination, compute:
 
-Outputs one row per trial with:
-    - All input parameters (N, d, M, T, K, mu, gamma, Delta0, omega0,
-                            plasticity, dist, n_trials, trial, seed)
-    - RMSE_R          : RMSE between R_KM(t) and R_OA(t) on a shared time grid
-    - corr_A          : Pearson correlation between block-averaged KM weights
-                        and OA weights at final time
-    - extras for diagnostics (final-time |ΔR|, mean |A|, etc.)
+    - rmse_R : RMSE between R_KMO(t) and R_OA(t) sampled on a common time grid
+    - corr_A : Pearson correlation between the block-averaged KMO weight
+               matrix A^{KMO}_{IJ} and the OA weight matrix A^{OA}_{IJ}
+               at the final time step (flattened to vectors)
 
-CLI
----
-  python sweep_kmo_oa.py --d 50 --Delta0 0.5 --mu 0.05 [other options...]
+Frequency distributions
+-----------------------
+"uniform":
+    Microscopic: ω_k drawn from Uniform(ω̄ - Δ, ω̄ + Δ)
+    Ensembles:   M centres ω̄_m equidistantly spaced on the same interval
+                 Δ_m = Δ / (2M)  for all m
+"lorentzian":
+    Microscopic: ω_k drawn from Cauchy(ω̄, Δ)
+    Ensembles:   centres and HWHM follow Gast et al. PRE 2021, Eq. 22:
+                 ω̄_m = ω̄ + Δ tan(π(2m-M-1)/(2(M+1)))
+                 Δ_m = Δ (tan(π(2m-M-1/2)/(2(M+1)))
+                       - tan(π(2m-M-3/2)/(2(M+1))))
+                 Population weights w_m = 1/M  (equal-weight quantile grid).
 
-The script saves the DataFrame as a Parquet file (or CSV with --csv) under
---out_dir, with a filename encoding the parameter triple so results from many
-cluster jobs can be concatenated later:
+Initial conditions
+------------------
+- KMO: θ_k ~ Uniform(-π, π) drawn once per (trial, Δ); A^{KMO} = ones((N, N)).
+- OA:  For each (M, μ), the same microscopic phases are used to compute
+       r_m^0, ψ_m^0 from the empirical mean of e^{iθ_k} over oscillators k
+       assigned to ensemble m by:
+         - uniform: k goes to the m for which |ω_k - ω̄_m| is minimal
+         - lorentzian: k goes to the m maximising w_m C(ω_k; ω̄_m, Δ_m)
 
-    sweep_d{d}_Delta{Delta0}_mu{mu}.parquet
+Output
+------
+A pandas DataFrame with columns
+    [trial, dist, Delta, M, mu, rmse_R, corr_A, status]
+saved as CSV.
+
+Usage
+-----
+    python sweep_kmo_vs_oa.py [--dist {uniform,lorentzian}] [--n_workers K]
+                              [--out output.csv]
 """
 
+from __future__ import annotations
+
 import argparse
+import os
 import time
-from pathlib import Path
-import sys
-sys.path.append("..")
+from dataclasses import dataclass
+from itertools import product
+from multiprocessing import Pool
+
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
-from scipy.stats import pearsonr
+from scipy.stats import cauchy, pearsonr
 
-from config.utility_functions import lorentzian2  # same helper as base script
-
-_EPS = 1e-9
+_EPS = 1e-12
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Initial conditions, ODEs, helpers — identical to the reference script
+# Frequency distributions
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def make_initial_conditions(N, d, omega0, Delta0, dist, seed):
-    assert N % d == 0, "N must be divisible by d"
-    M = N // d
-    rng = np.random.default_rng(seed)
-
+def sample_microscopic_frequencies(N, dist, omega0, Delta, rng):
+    """Draw N microscopic frequencies from the requested distribution."""
     if dist == "uniform":
-        from config.utility_functions import uniform
-        omega_pop = uniform(M, omega0, Delta0)
-        delta_pop = uniform(M, Delta0 / M, 0.0)
+        return rng.uniform(omega0 - Delta, omega0 + Delta, N)
     elif dist == "lorentzian":
-        n_idx = np.arange(1, M + 1)
-        omega_pop = omega0 + Delta0 * np.tan(0.5 * np.pi * (2 * n_idx - M - 1) / (M + 1))
-        delta_pop = Delta0 * (np.tan(0.5 * np.pi * (2 * n_idx - M - 0.5) / (M + 1))
-                              - np.tan(0.5 * np.pi * (2 * n_idx - M - 1.5) / (M + 1)))
-    else:
-        raise ValueError(f"Invalid dist='{dist}'")
+        return omega0 + Delta * rng.standard_cauchy(N)
+    raise ValueError(f"Unknown dist={dist!r}")
 
-    omega_micro = np.empty(N)
-    theta0 = np.empty(N)
-    r0 = np.empty(M)
-    psi0 = np.empty(M)
 
-    for I in range(M):
-        th = rng.uniform(-np.pi, np.pi, d)
-        idx = slice(I * d, (I + 1) * d)
-        omega_micro[idx] = lorentzian2(d, omega_pop[I], delta_pop[I])
-        theta0[idx] = th
-        z_mean = np.mean(np.exp(1j * th))
-        psi0[I] = np.angle(z_mean)
-        r0[I] = np.abs(z_mean)
+def ensemble_parameters(M, dist, omega0, Delta):
+    """
+    Build the (omega_m, Delta_m, w_m) parameters for the M-ensemble OA model.
 
-    return omega_micro, theta0, omega_pop, delta_pop, r0, psi0
+    Returns
+    -------
+    omega_pop : (M,)
+    delta_pop : (M,)
+    w_pop     : (M,) ensemble weights (sum to 1)
+    """
+    if dist == "uniform":
+        # Equidistant centres in (ω0-Δ, ω0+Δ); each ensemble equally weighted.
+        # Cell centres of M equal bins.
+        edges = np.linspace(omega0 - Delta, omega0 + Delta, M + 1)
+        omega_pop = 0.5 * (edges[:-1] + edges[1:])
+        delta_pop = np.full(M, Delta / (2 * M))
+        w_pop     = np.full(M, 1.0 / M)
+        return omega_pop, delta_pop, w_pop
 
+    elif dist == "lorentzian":
+        # Gast et al. PRE 2021, Eq. 22 (renamed from η to ω here).
+        m = np.arange(1, M + 1)
+        omega_pop = omega0 + Delta * np.tan(0.5 * np.pi * (2*m - M - 1) / (M + 1))
+        delta_pop = Delta * (
+            np.tan(0.5 * np.pi * (2*m - M - 0.5) / (M + 1))
+            - np.tan(0.5 * np.pi * (2*m - M - 1.5) / (M + 1))
+        )
+        w_pop = np.full(M, 1.0 / M)
+        return omega_pop, delta_pop, w_pop
+
+    raise ValueError(f"Unknown dist={dist!r}")
+
+
+def assign_oscillators_to_ensembles(omega_micro, omega_pop, delta_pop, w_pop, dist):
+    """
+    Hard-assign each microscopic oscillator k to one of M ensembles.
+
+    For uniform: nearest centre by |ω_k - ω̄_m|.
+    For lorentzian: most-likely component by w_m C(ω_k; ω̄_m, Δ_m).
+
+    Returns
+    -------
+    labels : (N,) int array with values in [0, M)
+    """
+    if dist == "uniform":
+        # Nearest centre
+        diff = np.abs(omega_micro[:, None] - omega_pop[None, :])
+        return np.argmin(diff, axis=1)
+
+    elif dist == "lorentzian":
+        # Posterior probability (log-space for numerical stability)
+        log_post = np.stack([
+            np.log(w_pop[I] + 1e-300)
+            + cauchy.logpdf(omega_micro, omega_pop[I], delta_pop[I])
+            for I in range(len(w_pop))
+        ], axis=0)
+        return np.argmax(log_post, axis=0)
+
+    raise ValueError(f"Unknown dist={dist!r}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ODEs
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def hebbian(x):     return np.cos(x)
-
-
 def antihebbian(x): return np.sin(x)
 
 
 def km_ode(t, y, K, omega, mu, gamma, f):
-    N = len(omega)
+    N     = len(omega)
     theta = y[:N]
-    A = y[N:].reshape(N, N)
+    A     = y[N:].reshape(N, N)
 
-    diff = theta[np.newaxis, :] - theta[:, np.newaxis]
+    diff        = theta[np.newaxis, :] - theta[:, np.newaxis]
     interaction = np.sum(A * np.sin(diff), axis=1)
-    dtheta = omega + (K / N) * interaction
+    dtheta      = omega + (K / N) * interaction
 
     dA = mu * f(diff) - gamma * A
     np.fill_diagonal(dA, 0.0)
@@ -101,246 +163,424 @@ def km_order_parameter(theta):
     return np.abs(np.mean(np.exp(1j * theta), axis=0))
 
 
-def km_coarse_grain(A_fine, d):
-    N = A_fine.shape[0]
-    M = N // d
-    Ac = np.zeros((M, M))
+def km_coarse_grain_labels(A_fine, labels, M):
+    """Block-average the full N×N weight matrix using arbitrary labels."""
+    A_cg = np.zeros((M, M))
     for I in range(M):
+        idx_I = np.where(labels == I)[0]
+        if idx_I.size == 0:
+            continue
         for J in range(M):
-            Ac[I, J] = A_fine[I * d:(I + 1) * d, J * d:(J + 1) * d].mean()
-    return Ac
+            idx_J = np.where(labels == J)[0]
+            if idx_J.size == 0:
+                continue
+            A_cg[I, J] = A_fine[np.ix_(idx_I, idx_J)].mean()
+    return A_cg
 
 
-def oa_ode(t, y, K, omega, delta, mu, gamma, f):
-    M = len(omega)
-    r = np.clip(y[:M], _EPS, 1.0 - _EPS)
-    psi = y[M:2 * M]
-    A = y[2 * M:].reshape(M, M)
+def oa_ode(t, y, K, omega, delta, mu, gamma, f, w):
+    """Weighted-population OA mean-field ODE."""
+    M   = len(omega)
+    r   = np.clip(y[:M], _EPS, 1.0 - _EPS)
+    psi = y[M:2*M]
+    A   = y[2*M:].reshape(M, M)
 
-    dpsi = psi[np.newaxis, :] - psi[:, np.newaxis]
-    Ar = A * r[np.newaxis, :]
-    w_cos = np.sum(Ar * np.cos(dpsi), axis=1)
-    w_sin = np.sum(Ar * np.sin(dpsi), axis=1)
+    dpsi  = psi[np.newaxis, :] - psi[:, np.newaxis]
+    Ar    = A * r[np.newaxis, :]
+    w_cos = Ar * np.cos(dpsi)
+    w_sin = Ar * np.sin(dpsi)
 
-    dr = -delta * r + 0.5 * (1.0 - r ** 2) * w_cos * K / M
-    dpsi_ = omega + 0.5 * (1.0 + r ** 2) / r * w_sin * K / M
+    dr    = -delta * r + 0.5 * (1.0 - r**2) * K * (w_cos @ w)
+    dpsi_ = omega     + 0.5 * (1.0 + r**2) / r * K * (w_sin @ w)
 
     rr = r[np.newaxis, :] * r[:, np.newaxis]
     dA = mu * rr * f(dpsi) - gamma * A
     return np.concatenate([dr, dpsi_, dA.ravel()])
 
 
-def oa_order_parameter(r, psi):
-    return np.abs(np.mean(r * np.exp(1j * psi), axis=0))
+def oa_order_parameter(r, w, psi):
+    return np.abs(w @ (r * np.exp(1j * psi)))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Single-trial run
+# Single-trial KMO + per-(M, μ) OA helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_trial(N, d, T, K, mu, gamma, omega0, Delta0, plasticity, dist,
-              seed, method, rtol, atol, n_eval):
-    """
-    Run one KM+OA pair with the given seed and return the agreement metrics.
-    Uses dense_output so both trajectories can be sampled on a common grid.
-    """
-    assert N % d == 0
-    M = N // d
+@dataclass
+class KMResult:
+    t_grid: np.ndarray      # shared time grid
+    R_km:   np.ndarray      # R_KMO sampled on t_grid
+    A_km_final: np.ndarray  # final N×N weight matrix
+    theta0: np.ndarray
+    omega_micro: np.ndarray
 
-    omega_micro, theta0, omega_pop, delta_pop, r0, psi0 = \
-        make_initial_conditions(N, d, omega0, Delta0, dist, seed)
 
-    f = hebbian if plasticity == "hebbian" else antihebbian
-
+def run_km(N, T, K, mu, gamma, omega_micro, theta0, plasticity,
+           n_eval, method, rtol, atol):
+    """Run the microscopic Kuramoto simulation once for given (Δ, trial)."""
+    f     = hebbian if plasticity == "hebbian" else antihebbian
     A_km0 = np.ones((N, N))
-    A_oa0 = np.ones((M, M))
-
-    # KM
     y0_km = np.concatenate([theta0, A_km0.ravel()])
-    sol_km = solve_ivp(km_ode, (0, T), y0_km, method=method,
-                       args=(K, omega_micro, mu, gamma, f),
-                       rtol=rtol, atol=atol, dense_output=True)
-    if not sol_km.success:
-        raise RuntimeError(f"KM failed: {sol_km.message}")
 
-    # OA
-    y0_oa = np.concatenate([r0, psi0, A_oa0.ravel()])
-    sol_oa = solve_ivp(oa_ode, (0, T), y0_oa, method=method,
-                       args=(K, omega_pop, delta_pop, mu, gamma, f),
-                       rtol=rtol, atol=atol, dense_output=True)
-    if not sol_oa.success:
-        raise RuntimeError(f"OA failed: {sol_oa.message}")
-
-    # ── Order parameter on common time grid ──────────────────────────────────
     t_grid = np.linspace(0.0, T, n_eval)
-    y_km_g = sol_km.sol(t_grid)
-    y_oa_g = sol_oa.sol(t_grid)
-    R_km = km_order_parameter(y_km_g[:N])
-    R_oa = oa_order_parameter(y_oa_g[:M], y_oa_g[M:2 * M])
+    sol = solve_ivp(km_ode, (0, T), y0_km, method=method,
+                    args=(K, omega_micro, mu, gamma, f),
+                    rtol=rtol, atol=atol,
+                    dense_output=True)
+    if not sol.success:
+        raise RuntimeError(f"KMO solve_ivp failed: {sol.message}")
 
-    rmse_R = float(np.sqrt(np.mean((R_km - R_oa) ** 2)))
-    final_dR = float(np.abs(R_km[-1] - R_oa[-1]))
-    mean_R_km = float(R_km.mean())
-    mean_R_oa = float(R_oa.mean())
+    y_grid = sol.sol(t_grid)
+    theta_grid = y_grid[:N]
+    R_km   = km_order_parameter(theta_grid)
+    A_final = y_grid[N:, -1].reshape(N, N)
+    return KMResult(t_grid=t_grid, R_km=R_km, A_km_final=A_final,
+                    theta0=theta0, omega_micro=omega_micro)
 
-    # ── Coupling matrix correlation at final time ────────────────────────────
-    A_km_final = y_km_g[N:, -1].reshape(N, N)
-    A_oa_final = y_oa_g[2 * M:, -1].reshape(M, M)
-    A_km_cg = km_coarse_grain(A_km_final, d)
 
-    a_km = A_km_cg.ravel()
-    a_oa = A_oa_final.ravel()
-    if np.std(a_km) < 1e-12 or np.std(a_oa) < 1e-12:
-        # Pearson undefined for constant arrays — fall back to NaN
-        corr_A = float("nan")
-    else:
-        corr_A, _ = pearsonr(a_km, a_oa)
-        corr_A = float(corr_A)
+def run_oa_task(task):
+    """
+    Worker function executed in a multiprocessing pool.
 
-    frob_A = float(np.sqrt(np.mean((A_km_cg - A_oa_final) ** 2)))
+    Each task contains everything needed to:
+      - build OA initial conditions from the shared KMO phases,
+      - integrate the OA ODE,
+      - compute (rmse_R, corr_A) versus the shared KMO results.
 
-    return dict(
-        rmse_R=rmse_R,
-        corr_A=corr_A,
-        frob_A_blk=frob_A,
-        final_dR=final_dR,
-        mean_R_km=mean_R_km,
-        mean_R_oa=mean_R_oa,
-        mean_absA_km=float(np.abs(A_km_cg).mean()),
-        mean_absA_oa=float(np.abs(A_oa_final).mean()),
-        nfev_km=int(sol_km.nfev),
-        nfev_oa=int(sol_oa.nfev),
-    )
+    Returns a single-row dict.
+    """
+    (trial, dist, Delta, M, mu_val,
+     omega0, gamma, plasticity, T, K,
+     omega_micro, theta0,
+     A_km_final, t_grid, R_km,
+     N, n_eval, method, rtol, atol) = task
+
+    try:
+        f = hebbian if plasticity == "hebbian" else antihebbian
+
+        # Ensemble parameters and oscillator assignments
+        omega_pop, delta_pop, w_pop = ensemble_parameters(M, dist, omega0, Delta)
+        labels = assign_oscillators_to_ensembles(
+            omega_micro, omega_pop, delta_pop, w_pop, dist
+        )
+
+        # Initial OA state from empirical means
+        r0   = np.empty(M)
+        psi0 = np.empty(M)
+        for I in range(M):
+            mask = labels == I
+            if mask.sum() == 0:
+                r0[I], psi0[I] = _EPS, 0.0
+                continue
+            z = np.mean(np.exp(1j * theta0[mask]))
+            r0[I]   = np.clip(np.abs(z), _EPS, 1.0 - _EPS)
+            psi0[I] = np.angle(z)
+
+        A_oa0 = np.ones((M, M))
+        y0_oa = np.concatenate([r0, psi0, A_oa0.ravel()])
+
+        sol = solve_ivp(oa_ode, (0, T), y0_oa, method=method,
+                        args=(K, omega_pop, delta_pop, mu_val, gamma, f, w_pop),
+                        rtol=rtol, atol=atol, dense_output=True)
+        if not sol.success:
+            raise RuntimeError(f"OA solve_ivp failed: {sol.message}")
+
+        y_grid = sol.sol(t_grid)
+        r_grid   = y_grid[:M]
+        psi_grid = y_grid[M:2*M]
+        A_oa_final = y_grid[2*M:, -1].reshape(M, M)
+        R_oa = oa_order_parameter(r_grid, w_pop, psi_grid)
+
+        # Metrics
+        rmse_R = float(np.sqrt(np.mean((R_km - R_oa) ** 2)))
+
+        A_km_cg = km_coarse_grain_labels(A_km_final, labels, M)
+        a_km = A_km_cg.ravel()
+        a_oa = A_oa_final.ravel()
+        if np.std(a_km) < 1e-12 or np.std(a_oa) < 1e-12:
+            corr_A = float("nan")
+        else:
+            corr_A, _ = pearsonr(a_km, a_oa)
+            corr_A    = float(corr_A)
+
+        return dict(
+            trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
+            rmse_R=rmse_R, corr_A=corr_A, status="ok", error="",
+        )
+
+    except Exception as e:
+        return dict(
+            trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
+            rmse_R=float("nan"), corr_A=float("nan"),
+            status="error", error=str(e),
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Sweep over trials for one parameter set
+# Sweep driver
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def sweep(args):
+def run_sweep(
+    *,
+    dist,
+    n_trials,
+    Delta_values,
+    M_values,
+    mu_values,
+    N, T, K, gamma, omega0,
+    plasticity,
+    n_eval,
+    method, rtol, atol,
+    seed_base,
+    n_workers,
+    verbose=True,
+):
     rows = []
-    for trial in range(args.n_trials):
-        seed = args.seed_base + trial
-        t0 = time.time()
-        print(f"\n[trial {trial + 1}/{args.n_trials}]  seed={seed}  "
-              f"d={args.d}  Δ={args.Delta0}  μ={args.mu}")
-        try:
-            metrics = run_trial(
-                N=args.N, d=args.d, T=args.T, K=args.K,
-                mu=args.mu, gamma=args.gamma,
-                omega0=args.omega0, Delta0=args.Delta0,
-                plasticity=args.plasticity, dist=args.dist,
-                seed=seed,
-                method=args.method, rtol=args.rtol, atol=args.atol,
-                n_eval=args.n_eval,
+    t_total = time.time()
+
+    for trial in range(n_trials):
+        seed = seed_base + trial
+        rng  = np.random.default_rng(seed)
+
+        # ── Draw initial phases once per trial; reused for all Δ ──────────────
+        theta0 = rng.uniform(-np.pi, np.pi, N)
+
+        for Delta in Delta_values:
+            # Sample microscopic frequencies for THIS (trial, Δ)
+            omega_micro = sample_microscopic_frequencies(
+                N, dist, omega0, Delta, rng
             )
-            status = "ok"
-            err = ""
-        except Exception as e:
-            print(f"  FAILED: {e}")
-            metrics = dict(rmse_R=np.nan, corr_A=np.nan, frob_A_blk=np.nan,
-                           final_dR=np.nan, mean_R_km=np.nan, mean_R_oa=np.nan,
-                           mean_absA_km=np.nan, mean_absA_oa=np.nan,
-                           nfev_km=-1, nfev_oa=-1)
-            status = "error"
-            err = str(e)
 
-        dt = time.time() - t0
-        print(f"  RMSE_R={metrics['rmse_R']:.4f}  corr_A={metrics['corr_A']:.4f}  "
-              f"({dt:.1f}s)")
+            # ── Run KMO once for this (trial, Δ) ─────────────────────────────
+            t0 = time.time()
+            try:
+                km_res = run_km(
+                    N=N, T=T, K=K, mu=0.0, gamma=0.0,  # KMO weights frozen here?
+                    omega_micro=omega_micro, theta0=theta0,
+                    plasticity=plasticity, n_eval=n_eval,
+                    method=method, rtol=rtol, atol=atol,
+                )
+            except Exception as e:
+                # If KMO failed, mark all (M, μ) entries as failed
+                for M, mu_val in product(M_values, mu_values):
+                    rows.append(dict(
+                        trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
+                        rmse_R=float("nan"), corr_A=float("nan"),
+                        status="error_km", error=str(e),
+                    ))
+                continue
+            t_km = time.time() - t0
+            if verbose:
+                print(f"[trial {trial+1}/{n_trials}  Δ={Delta:g}]  "
+                      f"KMO done in {t_km:.1f}s")
 
-        rows.append(dict(
-            N=args.N,
-            d=args.d,
-            M=args.N // args.d,
-            T=args.T,
-            K=args.K,
-            mu=args.mu,
-            gamma=args.gamma,
-            omega0=args.omega0,
-            Delta0=args.Delta0,
-            plasticity=args.plasticity,
-            dist=args.dist,
-            n_trials=args.n_trials,
-            trial=trial,
-            seed=seed,
-            wallclock=dt,
-            status=status,
-            error=err,
-            **metrics,
-        ))
+            # NOTE: above call used mu=0, gamma=0 so weights stay at A=1.
+            # If the comparison needs adaptive KMO weights, re-run with the
+            # appropriate μ here.  See the main() wrapper.
 
+            # ── Build all (M, μ) tasks for the OA sweep ─────────────────────
+            tasks = []
+            for M, mu_val in product(M_values, mu_values):
+                tasks.append((
+                    trial, dist, Delta, M, mu_val,
+                    omega0, gamma, plasticity, T, K,
+                    omega_micro, theta0,
+                    km_res.A_km_final, km_res.t_grid, km_res.R_km,
+                    N, n_eval, method, rtol, atol,
+                ))
+
+            t0 = time.time()
+            if n_workers > 1:
+                with Pool(n_workers) as pool:
+                    chunk_rows = pool.map(run_oa_task, tasks)
+            else:
+                chunk_rows = [run_oa_task(t) for t in tasks]
+            t_oa = time.time() - t0
+
+            rows.extend(chunk_rows)
+            if verbose:
+                ok = sum(r["status"] == "ok" for r in chunk_rows)
+                print(f"   OA sweep over (M, μ) = "
+                      f"{len(tasks)} tasks done in {t_oa:.1f}s  "
+                      f"({ok}/{len(tasks)} ok)")
+
+    if verbose:
+        print(f"\nTotal wallclock: {time.time() - t_total:.1f}s")
     return pd.DataFrame(rows)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CLI
+# IMPORTANT: the KMO/OA comparison requires the SAME μ in both models if
+# weights are adaptive. The structure of run_sweep above runs ONE KMO per Δ
+# (with μ_km fixed) and reuses it across all OA-μ values. That is only
+# correct if the KMO weights don't depend on μ, i.e. if μ_km = 0.
+#
+# To compare *adaptive* KMO weights against adaptive OA weights, we instead
+# need to run KMO once per (trial, Δ, μ).  This is implemented in
+# run_sweep_adaptive() below, which is what the main entry point uses.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_sweep_adaptive(
+    *,
+    dist,
+    n_trials,
+    Delta_values,
+    M_values,
+    mu_values,
+    N, T, K, gamma, omega0,
+    plasticity,
+    n_eval,
+    method, rtol, atol,
+    seed_base,
+    n_workers,
+    verbose=True,
+):
+    """Same as run_sweep but runs KMO for each (trial, Δ, μ).  The (M)-sweep
+    is parallelised within each (trial, Δ, μ) block."""
+    rows = []
+    t_total = time.time()
+
+    for trial in range(n_trials):
+        seed = seed_base + trial
+        rng  = np.random.default_rng(seed)
+        theta0 = rng.uniform(-np.pi, np.pi, N)
+
+        for Delta in Delta_values:
+            omega_micro = sample_microscopic_frequencies(
+                N, dist, omega0, Delta, rng
+            )
+
+            for mu_val in mu_values:
+                t0 = time.time()
+                try:
+                    km_res = run_km(
+                        N=N, T=T, K=K, mu=mu_val, gamma=gamma,
+                        omega_micro=omega_micro, theta0=theta0,
+                        plasticity=plasticity, n_eval=n_eval,
+                        method=method, rtol=rtol, atol=atol,
+                    )
+                except Exception as e:
+                    for M in M_values:
+                        rows.append(dict(
+                            trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
+                            rmse_R=float("nan"), corr_A=float("nan"),
+                            status="error_km", error=str(e),
+                        ))
+                    continue
+                t_km = time.time() - t0
+
+                tasks = [
+                    (trial, dist, Delta, M, mu_val,
+                     omega0, gamma, plasticity, T, K,
+                     omega_micro, theta0,
+                     km_res.A_km_final, km_res.t_grid, km_res.R_km,
+                     N, n_eval, method, rtol, atol)
+                    for M in M_values
+                ]
+
+                t0 = time.time()
+                if n_workers > 1:
+                    with Pool(n_workers) as pool:
+                        chunk_rows = pool.map(run_oa_task, tasks)
+                else:
+                    chunk_rows = [run_oa_task(t) for t in tasks]
+                t_oa = time.time() - t0
+
+                rows.extend(chunk_rows)
+                if verbose:
+                    ok = sum(r["status"] == "ok" for r in chunk_rows)
+                    print(f"[trial {trial+1}/{n_trials} Δ={Delta:g} μ={mu_val:g}] "
+                          f"KMO {t_km:.1f}s | OA (M-sweep, {len(tasks)} tasks) "
+                          f"{t_oa:.1f}s  [{ok}/{len(tasks)} ok]")
+
+    if verbose:
+        print(f"\nTotal wallclock: {time.time() - t_total:.1f}s")
+    return pd.DataFrame(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLI / main
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_args():
-    p = argparse.ArgumentParser(description="KM vs OA sweep for one parameter set.")
-    # Swept parameters
-    p.add_argument("--d", type=int, required=False, help="oscillators per population", default=50)
-    p.add_argument("--Delta0", type=float, required=False, help="Lorentzian HWHM", default=1.0)
-    p.add_argument("--mu", type=float, required=False, help="plasticity learning rate", default=0.1)
-
-    # Fixed model parameters
-    p.add_argument("--N", type=int, default=1000, help="total oscillators")
-    p.add_argument("--T", type=float, default=100.0)
-    p.add_argument("--K", type=float, default=2.0)
-    p.add_argument("--gamma", type=float, default=0.0)
-    p.add_argument("--omega0", type=float, default=1.0)
-    p.add_argument("--plasticity", choices=["hebbian", "antihebbian"], default="antihebbian")
-    p.add_argument("--dist", choices=["uniform", "lorentzian"], default="lorentzian")
-
-    # Trial / RNG control
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--dist", choices=["uniform", "lorentzian"],
+                   default="lorentzian",
+                   help="Microscopic frequency distribution")
     p.add_argument("--n_trials", type=int, default=10)
-    p.add_argument("--seed_base", type=int, default=42)
+    p.add_argument("--N", type=int, default=1000,
+                   help="Number of microscopic oscillators")
+    p.add_argument("--T", type=float, default=150.0)
+    p.add_argument("--K", type=float, default=2.0)
+    p.add_argument("--omega0", type=float, default=1.0)
+    p.add_argument("--gamma", type=float, default=0.001)
+    p.add_argument("--plasticity", choices=["hebbian", "antihebbian"],
+                   default="antihebbian")
+
+    # Sweep grids
+    p.add_argument("--Delta", type=float, nargs="+",
+                   default=[0.1, 0.2, 0.4, 0.8, 1.6, 3.2],
+                   help="Δ values to sweep")
+    p.add_argument("--M", type=int, nargs="+",
+                   default=[5, 10, 25, 50, 100],
+                   help="M values to sweep")
+    p.add_argument("--mu", type=float, nargs="+",
+                   default=[0.0, 0.005, 0.01, 0.02, 0.04, 0.08],
+                   help="μ values to sweep")
 
     # Solver
     p.add_argument("--method", default="RK45")
     p.add_argument("--rtol", type=float, default=1e-6)
     p.add_argument("--atol", type=float, default=1e-8)
-    p.add_argument("--n_eval", type=int, default=1000,
-                   help="number of time points for shared-grid evaluation")
+    p.add_argument("--n_eval", type=int, default=400)
 
-    # I/O
-    p.add_argument("--out_dir", default="sweep_results")
-    p.add_argument("--csv", action="store_true", help="save CSV instead of Parquet")
-    p.add_argument("--tag", default="", help="optional tag appended to filename")
+    # Execution control
+    p.add_argument("--seed_base", type=int, default=42)
+    p.add_argument("--n_workers", type=int,
+                   default=max(1, (os.cpu_count() or 2) - 1))
+    p.add_argument("--out", default="kmo_sweep_results.csv")
 
     return p.parse_args()
 
 
 def main():
     args = parse_args()
+    print("Sweep configuration")
+    print("-" * 60)
+    for k, v in vars(args).items():
+        print(f"  {k:12s} = {v}")
+    print("-" * 60)
+    n_tasks = args.n_trials * len(args.Delta) * len(args.M) * len(args.mu)
+    print(f"Total (trial, Δ, M, μ) tasks: {n_tasks}")
+    print(f"Using {args.n_workers} parallel worker(s)\n")
 
-    if args.N % args.d != 0:
-        raise SystemExit(f"N={args.N} not divisible by d={args.d}")
+    df = run_sweep_adaptive(
+        dist=args.dist,
+        n_trials=args.n_trials,
+        Delta_values=args.Delta,
+        M_values=args.M,
+        mu_values=args.mu,
+        N=args.N, T=args.T, K=args.K, gamma=args.gamma, omega0=args.omega0,
+        plasticity=args.plasticity,
+        n_eval=args.n_eval,
+        method=args.method, rtol=args.rtol, atol=args.atol,
+        seed_base=args.seed_base,
+        n_workers=args.n_workers,
+    )
 
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    df.to_csv(args.out, index=False, mode="a")
+    print(f"\nResults saved → {args.out}  ({len(df)} rows)")
 
-    df = sweep(args)
-
-    # Filename encodes the parameter triple for easy concatenation
-    tag = f"_{args.tag}" if args.tag else ""
-    stem = f"sweep_d{args.d}_Delta{args.Delta0}_mu{args.mu}{tag}"
-    out_path = out_dir / (stem + (".csv" if args.csv else ".parquet"))
-
-    if args.csv:
-        df.to_csv(out_path, index=False)
-    else:
-        try:
-            df.to_parquet(out_path, index=False)
-        except ImportError:
-            print("pyarrow/fastparquet not installed; falling back to CSV.")
-            out_path = out_path.with_suffix(".csv")
-            df.to_csv(out_path, index=False)
-
-    print(f"\nWrote {len(df)} rows to {out_path}")
-    print(df[["trial", "rmse_R", "corr_A", "final_dR",
-              "mean_R_km", "mean_R_oa", "wallclock"]].to_string(index=False))
+    # Compact summary
+    if "status" in df.columns:
+        ok = df[df["status"] == "ok"]
+        if len(ok) > 0:
+            grouped = (ok.groupby(["Delta", "M", "mu"])
+                       [["rmse_R", "corr_A"]].mean()
+                       .reset_index())
+            print("\nMean metrics across trials:")
+            print(grouped.to_string(index=False))
 
 
 if __name__ == "__main__":

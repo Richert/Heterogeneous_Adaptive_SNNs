@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # set condition
-batch_size=10
+batch_size=5
 deltas=( 0.01 0.03 0.1 0.3 1.0 3.0 )
 ds=( 10 50 100 )
 mus=( 0.001 0.003 0.01 0.03 0.1 0.3 1.0 )
 distribution=( "lorentzian" "uniform" )
 
 # limit amount of threads that each Python process can work with
-n_threads=8
+n_threads=15
 export OMP_NUM_THREADS=$n_threads
 export OPENBLAS_NUM_THREADS=$n_threads
 export MKL_NUM_THREADS=$n_threads
