@@ -92,7 +92,7 @@ def make_initial_conditions(N, d, omega0, Delta0, dist, seed):
     for I in range(M):
         th = rng.uniform(-np.pi, np.pi, d)
         idx = slice(I * d, (I + 1) * d)
-        omega_micro[idx] = lorentzian2(d, omega_pop[I], delta_pop[I]) #lb=omega_pop[I]-5*Delta1, ub=omega_pop[I]+5*Delta1)
+        omega_micro[idx] = lorentzian2(d, omega_pop[I], delta_pop[I]) #, lb=omega_pop[I]-10*delta_pop[I], ub=omega_pop[I]+10*delta_pop[I])
         theta0[idx] = th
         z_mean = np.mean(np.exp(1j * th))
         psi0[I] = np.angle(z_mean)
@@ -348,17 +348,17 @@ def plot_comparison(res):
 if __name__ == "__main__":
     d = 50
     CONFIG = dict(
-        N=12*d,  # total oscillators  (must be divisible by d)
+        N=10*d,  # total oscillators  (must be divisible by d)
         d=d,  # oscillators per population  →  M = N/d = 10
         T=100.0,  # simulation time
-        K=1.0,  # global coupling strength
-        mu=0.05,  # Hebbian learning rate
-        gamma=0.001,  # weight decay  →  |A*| ≤ μ/γ ≈ 2.67
+        K=2.0,  # global coupling strength
+        mu=0.1,  # Hebbian learning rate
+        gamma=0.0,  # weight decay  →  |A*| ≤ μ/γ ≈ 2.67
         omega0=1.0,  # Lorentzian centre frequency
-        Delta0=0.5,  # Lorentzian HWHM
+        Delta0=0.3,  # Lorentzian HWHM
         #   smaller Δ → less incoherence damping → higher r
         plasticity="antihebbian",
-        dist="lorentzian",
+        dist="uniform",
         seed=42,
         method="RK45",
         rtol=1e-6,
