@@ -413,19 +413,19 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 50
+    d = 20
     CONFIG = dict(
-        N=10 * d,
+        N=10*d,
         d=d,
         T=200.0,
         J=1.0,
-        mu=0.1,
+        mu=0.03,
         gamma=0.001,
-        eta0=-0.5,
+        eta0=-1.0,
         Delta0=1.0,
         n_pulse=10,  # synaptic coupling pulse shape
         n2=2,  # post-synaptic plasticity kernel
-        n3=4,  # pre-synaptic  plasticity kernel
+        n3=2,  # pre-synaptic  plasticity kernel
         dist="lorentzian",
         seed=42,
         method="RK45",
