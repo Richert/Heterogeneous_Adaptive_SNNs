@@ -501,7 +501,7 @@ if __name__ == "__main__":
 
     CONFIG = dict(
         N          = 500,
-        M_list     = (5, 25),     # two values of M to compare
+        M_list     = (5, 10),     # two values of M to compare
         T          = 150.0,
         K          = 2.5,
         mu         = 0.02,
