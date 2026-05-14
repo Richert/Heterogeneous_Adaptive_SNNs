@@ -536,7 +536,7 @@ if __name__ == "__main__":
         n1=10,                 # antihebbian / oja plasticity pulse shape
         n2=2,                 # post-synaptic plasticity kernel
         n3=3,                 # pre-synaptic  plasticity kernel
-        plasticity="oja", # {"hebbian", "antihebbian", "oja"}
+        plasticity="antihebbian", # {"hebbian", "antihebbian", "oja"}
         dist="uniform",       # {"uniform", "lorentzian"}
         seed=42,
         method="RK45",

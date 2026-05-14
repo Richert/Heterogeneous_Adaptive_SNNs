@@ -1,25 +1,27 @@
 """
-Plot K × n_terms Sweep Results
-================================
+Plot K × n_terms Sweep Results — PRX style
+============================================
 Renders a 3×3 figure summarising a sweep produced by
-``fourier_truncation_gridsearch.py``.  Columns correspond to a chosen subset
-of K values; rows show
+``fourier_truncation_gridsearch.py``.  Columns correspond to a chosen
+subset of K values; rows show
 
-    Row 1 — corr_A   (Pearson correlation between coupling matrices)
-    Row 2 — rmse_sbar (RMSE between empirical s̄_ml and OA truncation)
-    Row 3 — mean phase coherence R for KMO and OA, with variance of R(t)
-            shown as error bars
+    Row 1 — corr_A     (Pearson correlation between coupling matrices)
+    Row 2 — rmse_sbar  (RMSE between empirical s̄_ml and OA truncation)
+    Row 3 — mean phase coherence R for KMO and OA, with the temporal
+            variance of R(t) shown as error bars
 
 All curves are plotted vs. n_terms; markers indicate per-trial means and
 error bars indicate across-trial std (rows 1 & 2) or the mean temporal
-variance of R(t) reported by the sweep (row 3, per the user spec).
+variance of R(t) reported by the sweep (row 3).
+
+The matplotlib style, figure-size convention, panel labels, and colour
+scheme match `kuramoto_ensemble_fitting.py` so this plot fits in the same
+Physical Review manuscript.
 
 Usage
 -----
     python plot_sweep_results.py --csv sweep_K_nterms_results.csv
-    python plot_sweep_results.py --csv path/to/results.csv --K 1 3 5
-
-If --K is omitted, three evenly spaced K values are picked from the CSV.
+    python plot_sweep_results.py --csv ... --K 1 3 5 --out fig.pdf
 """
 
 from __future__ import annotations
@@ -30,21 +32,54 @@ import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+
+
+# ─── PRX figure style (mirrors kuramoto_ensemble_fitting.py) ─────────────────
+
+def set_prx_style():
+    plt.rcParams.update({
+        "font.family":        "serif",
+        "font.serif":         ["STIXGeneral", "Times New Roman", "Times"],
+        "mathtext.fontset":   "stix",
+        "font.size":          12,
+        "axes.titlesize":     12,
+        "axes.labelsize":     12,
+        "xtick.labelsize":    10,
+        "ytick.labelsize":    10,
+        "legend.fontsize":    10,
+        "axes.linewidth":     0.7,
+        "lines.linewidth":    1.2,
+        "xtick.major.width":  0.6,
+        "ytick.major.width":  0.6,
+        "xtick.major.size":   3.0,
+        "ytick.major.size":   3.0,
+        "xtick.direction":    "in",
+        "ytick.direction":    "in",
+        "axes.spines.top":    True,
+        "axes.spines.right":  True,
+        "savefig.dpi":        300,
+        "figure.dpi":         150,
+        "pdf.fonttype":       42,
+        "ps.fonttype":        42,
+    })
+
+
+# Match the colour palette used in kuramoto_ensemble_fitting.py
+C_KM = "#1f4e79"     # KMO  — deep blue
+C_OA = "#c44e52"     # OA   — muted red
+C_AUX = "#4c4c4c"    # grey accent (used for corr_A and rmse_sbar in this fig)
+C_AUX2 = "#3a8e7c"    # grey accent (used for corr_A and rmse_sbar in this fig)
+
+def make_panel_label(ax, label, *, x=-0.22, y=1.04, fontsize=12):
+    ax.text(x, y, label, transform=ax.transAxes,
+            fontsize=fontsize, fontweight="bold",
+            ha="left", va="bottom")
 
 
 # ─── Aggregation ─────────────────────────────────────────────────────────────
 
 def aggregate(df, K_values):
-    """
-    Returns a dict keyed by K of DataFrames indexed by n_terms with columns
-        corr_A_mean, corr_A_std,
-        rmse_sbar_mean, rmse_sbar_std,
-        mean_R_km_mean, mean_R_oa_mean,
-        var_R_km_mean,  var_R_oa_mean.
-
-    Aggregation: across trials, treating each (K, n_terms) cell as a sample
-    of size n_trials.  Failed rows (status != "ok") are dropped.
-    """
     if "status" in df.columns:
         df = df[df["status"] == "ok"].copy()
     out = {}
@@ -70,17 +105,25 @@ def aggregate(df, K_values):
 
 # ─── Plotting ────────────────────────────────────────────────────────────────
 
-def plot_sweep(agg, K_values, params, savepath=None):
+def plot_sweep(agg, K_values, params, savepath):
+    set_prx_style()
+
     K_list = [K for K in K_values if K in agg]
     if not K_list:
         raise RuntimeError("No K values to plot — check --K and the CSV.")
     n_cols = len(K_list)
-    fig, axes = plt.subplots(3, n_cols, figsize=(4.0 * n_cols, 9.5),
-                             sharex=True, constrained_layout=True)
-    if n_cols == 1:
-        axes = axes[:, None]   # keep 2D indexing
 
-    # Pre-compute row-wide y-limits for rows 1 and 2 so columns are comparable
+    # Two-column PRX width = 7.0 in (used by the reference figure).  For the
+    # 3×3 grid we keep that width and choose a height that gives roughly
+    # square panels.
+    fig = plt.figure(figsize=(7.0, 7.2))
+    gs = gridspec.GridSpec(
+        nrows=3, ncols=n_cols, figure=fig,
+        hspace=0.45, wspace=0.45,
+        left=0.10, right=0.97, top=0.93, bottom=0.085,
+    )
+
+    # Row-wide y-limits for rows 1 and 2 so columns are visually comparable
     corr_lo = min(agg[K]["corr_A_mean"].min() - agg[K]["corr_A_std"].max()
                   for K in K_list)
     corr_hi = max(agg[K]["corr_A_mean"].max() + agg[K]["corr_A_std"].max()
@@ -92,69 +135,71 @@ def plot_sweep(agg, K_values, params, savepath=None):
     corr_pad = 0.03 * (corr_hi - corr_lo) if corr_hi > corr_lo else 0.02
     rmse_pad = 0.03 * (rmse_hi - rmse_lo) if rmse_hi > rmse_lo else 0.02
 
+    # Row-major panel labels: (a)(b)(c) on row 1, (d)(e)(f) on row 2, …
+    letters = "abcdefghijklmnop"
+    label_at = lambda row, col: letters[row * n_cols + col]
+
     for j, K in enumerate(K_list):
         a = agg[K]
         n_terms_axis = a.index.to_numpy()
 
         # ── Row 1: corr_A ────────────────────────────────────────────────
-        ax = axes[0, j]
+        ax = fig.add_subplot(gs[0, j])
         ax.errorbar(n_terms_axis, a["corr_A_mean"], yerr=a["corr_A_std"],
-                    fmt="o-", color="C0", capsize=3, lw=1.5)
+                    fmt="o-", color=C_AUX, mfc=C_AUX, mec=C_AUX,
+                    capsize=2.5, lw=1.2, ms=4.0)
         ax.set_title(fr"$K = {K:g}$")
         if j == 0:
-            ax.set_ylabel(r"corr$(A^\mathrm{KMO}_\mathrm{cg}, A^\mathrm{OA})$")
+            ax.set_ylabel(r"$\mathrm{corr}(A^{\mathrm{KO}},"
+                          r"\, A^{\mathrm{OA}})$")
         ax.set_ylim(corr_lo - corr_pad, min(1.01, corr_hi + corr_pad))
-        ax.grid(True, alpha=0.3)
+        make_panel_label(ax, f"({label_at(0, j)})")
 
         # ── Row 2: rmse_sbar ─────────────────────────────────────────────
-        ax = axes[1, j]
+        ax = fig.add_subplot(gs[1, j])
         ax.errorbar(n_terms_axis, a["rmse_sbar_mean"], yerr=a["rmse_sbar_std"],
-                    fmt="s-", color="C2", capsize=3, lw=1.5)
+                    fmt="s-", color=C_AUX2, mfc=C_AUX2, mec=C_AUX2,
+                    capsize=2.5, lw=1.2, ms=4.0)
         if j == 0:
-            ax.set_ylabel(r"RMSE$(\bar s^\mathrm{KMO}_{ml}, "
-                          r"\bar s^\mathrm{trunc}_{ml})$")
+            ax.set_ylabel(r"$\mathrm{RMSE}(\bar s^{\mathrm{KO}},\,"
+                          r"\bar s^{\mathrm{OA}})$")
         ax.set_ylim(max(0.0, rmse_lo - rmse_pad), rmse_hi + rmse_pad)
-        ax.grid(True, alpha=0.3)
+        make_panel_label(ax, f"({label_at(1, j)})")
 
         # ── Row 3: mean R(t) with var(R) error bars ──────────────────────
-        ax = axes[2, j]
+        ax = fig.add_subplot(gs[2, j])
         ax.errorbar(n_terms_axis, a["mean_R_km_mean"],
                     yerr=a["var_R_km_mean"],
-                    fmt="o-", color="C0", capsize=3, lw=1.5, label="KMO")
+                    fmt="o-", color=C_KM, mfc=C_KM, mec=C_KM,
+                    capsize=2.5, lw=1.2, ms=4.0,
+                    label=r"KMO")
         ax.errorbar(n_terms_axis, a["mean_R_oa_mean"],
                     yerr=a["var_R_oa_mean"],
-                    fmt="s--", color="C3", capsize=3, lw=1.5, label="OA")
+                    fmt="s--", color=C_OA, mfc=C_OA, mec=C_OA,
+                    capsize=2.5, lw=1.2, ms=4.0,
+                    label=r"OA")
         if j == 0:
-            ax.set_ylabel(r"$\langle R(t)\rangle_t$  "
-                          r"(error bars: $\mathrm{Var}_t[R]$)")
-            ax.legend(loc="best", frameon=False, fontsize=9)
-        ax.set_xlabel(r"$n_\mathrm{terms}$")
+            ax.set_ylabel(r"$\langle R(t) \rangle_t$")
+            ax.legend(loc="lower right", frameon=False,
+                      handlelength=2.2, borderaxespad=0.3)
+        ax.set_xlabel(r"$n_f$")
         ax.set_ylim(0.0, 1.05)
-        ax.grid(True, alpha=0.3)
+        make_panel_label(ax, f"({label_at(2, j)})")
 
-    # x-ticks: integer n_terms values across the whole CSV
-    all_nt = sorted({nt for K in K_list for nt in agg[K].index.tolist()})
-    for ax in axes[-1, :]:
+    # Integer x-ticks for n_terms across every panel
+    all_nt = sorted({int(nt) for K in K_list for nt in agg[K].index.tolist()})
+    for ax in fig.axes:
         ax.set_xticks(all_nt)
 
-    n_trials = int(agg[K_list[0]]["n_trials"].max())
-    fig.suptitle(
-        f"K × n_terms sweep summary  (n_trials = {n_trials}"
-        + (f", {params}" if params else "")
-        + ")",
-        fontsize=11,
-    )
-
-    if savepath:
-        fig.savefig(savepath, dpi=150, bbox_inches="tight")
-        print(f"Figure saved → {savepath}")
+    fig.savefig(savepath, bbox_inches="tight")
+    print(f"Figure saved → {savepath}")
+    plt.show()
     return fig
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 def pick_K_values(df, requested):
-    """Resolve --K argument; if None, pick three roughly evenly spaced K's."""
     all_K = sorted(df["K"].unique().tolist())
     if requested:
         chosen = [K for K in requested if any(np.isclose(K, k) for k in all_K)]
@@ -179,10 +224,11 @@ def parse_args():
                    help="Path to the sweep CSV produced by "
                         "fourier_truncation_gridsearch.py")
     p.add_argument("--K", type=float, nargs="+", default=None,
-                   help="K values to use as the three columns "
+                   help="K values to use as columns "
                         "(default: three evenly spaced K's from the CSV)")
-    p.add_argument("--out", default="sweep_summary.png",
-                   help="Output figure path")
+    p.add_argument("--out", default="sweep_summary.pdf",
+                   help="Output figure path (PDF for PRX submission, "
+                        "PNG also accepted)")
     return p.parse_args()
 
 
@@ -199,15 +245,7 @@ def main():
     K_values = pick_K_values(df, args.K)
     print(f"Plotting K = {K_values}")
     agg = aggregate(df, K_values)
-
-    # Pretty parameter string for the suptitle (best-effort; CSV-dependent)
-    params = ""
-    for col, label in [("dist", "dist"), ("M", "M"),
-                       ("mu", "μ"), ("Delta", "Δ")]:
-        if col in df.columns and df[col].nunique() == 1:
-            params += f", {label}={df[col].iloc[0]}"
-
-    plot_sweep(agg, K_values, params.lstrip(", "), savepath=args.out)
+    plot_sweep(agg, K_values, params="", savepath=args.out)
 
 
 if __name__ == "__main__":
