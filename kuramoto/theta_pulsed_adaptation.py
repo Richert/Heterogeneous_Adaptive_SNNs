@@ -1,37 +1,55 @@
 """
 Theta Neuron Network: Microscopic vs. Ott-Antonsen Macroscopic Comparison
-Pulse-based plasticity rule
+Pulse-based plasticity rules
 ==========================================================================
 Microscopic model (N theta neurons):
     dθ_k/dt  = (1 - cos θ_k) + (1 + cos θ_k) * [η_k + J/N Σ_l A_kl s(n, θ_l)]
-    dA_kl/dt = μ s(n2, θ_k) s(n3, θ_l) - γ A_kl
     s(n, θ)  = c_n (1 - cos θ)^n,   c_n = 2^n (n!)^2 / (2n)!
 
-    Three separate pulse parameters:
-        n      : synaptic coupling kernel
-        n2     : pre-synaptic plasticity kernel  (multiplies θ_k, the POST-synaptic neuron)
-        n3     : post-synaptic plasticity kernel (multiplies θ_l, the PRE-synaptic neuron)
+Three selectable plasticity rules (parameter `plasticity`):
 
-OA mean-field (M populations, state [R_m, Ψ_m, A_mn]):
-    ṙ_m  = -Δ_m R_m - Δ_m(1+R_m²)/2 cos Ψ_m + (E_m-1)(1-R_m²)/2 sin Ψ_m
-    Ψ̇_m  = (E_m+1) + (E_m-1)(1+R_m²)/(2R_m) cos Ψ_m + Δ_m(1-R_m²)/(2R_m) sin Ψ_m
-    Ȧ_mn = μ S2_m S3_n - γ A_mn
+    "hebbian"
+        Ȧ_ij = μ s(n2, θ_i) s(n3, θ_j) - γ A_ij
 
-    where  E_m  = η̄_m + J/M Σ_n A_mn S_n      (synaptic drive)
-           S_n  = <s(n,  θ)>_{Z_n}              (mean coupling kernel,   pulse n)
-           S2_m = <s(n2, θ)>_{Z_m}              (mean pre-syn  kernel,   pulse n2)
-           S3_n = <s(n3, θ)>_{Z_n}              (mean post-syn kernel,   pulse n3)
+    "antihebbian"
+        Ȧ_ij = μ [s(n1, θ_j) - A_ij s(n2, θ_i) s(n3, θ_j)] - γ A_ij
 
-Derivation of the OA plasticity rule
---------------------------------------
-    Ȧ_mn = μ/d² Σ_{k∈m} Σ_{l∈n} s(n2,θ_k) s(n3,θ_l) - γ A_mn
-          = μ [1/d Σ_{k∈m} s(n2,θ_k)] [1/d Σ_{l∈n} s(n3,θ_l)] - γ A_mn
-          →  μ <s(n2,θ)>_{Z_m} <s(n3,θ)>_{Z_n} - γ A_mn     (OA manifold)
+    "oja"
+        Ȧ_ij = μ [s(n2, θ_i) s(n3, θ_j) - A_ij s(n1, θ_i)^2] - γ A_ij
 
-    The factorisation is exact because s(n2,θ_k) and s(n3,θ_l) depend on
-    different neurons (k∈m vs l∈n), so the double sum always separates.
-    Unlike cos/sin phase-difference rules, this rule is NOT antisymmetric
-    in general (unless n2 == n3).
+Microscopic excitabilities η_i are sampled from a uniform OR a Lorentzian
+distribution with parameters (eta0, Delta0).  The OA reduction partitions
+the η axis into M ensembles whose centres η̄_m follow the same distribution
+and whose widths Δ_m are chosen to match the spacing between consecutive
+centres.
+
+OA mean-field reduction
+-----------------------
+For each population m we carry the OA order parameter R_m e^{iΨ_m} and the
+coarse-grained coupling A_mn.  The dynamics read
+
+    ṙ_m  = -Δ_m R_m - Δ_m(1+R_m²)/2 cosΨ_m
+                                 + (E_m-1)(1-R_m²)/2 sinΨ_m
+    Ψ̇_m  = (E_m+1) + (E_m-1)(1+R_m²)/(2R_m) cosΨ_m
+                  + Δ_m(1-R_m²)/(2R_m) sinΨ_m
+    E_m  = η̄_m + (J/M) Σ_n A_mn S_n
+
+with the pulse averages S_q,m := <s(q, θ)>_{Z_m} = c_q Σ_p ŝ_q[p] R_m^p
+cos(p Ψ_m).  Plasticity:
+
+    hebbian      :  Ȧ_mn = μ S2_m S3_n - γ A_mn
+    antihebbian  :  Ȧ_mn = μ (S1_n - A_mn S2_m S3_n) - γ A_mn
+    oja          :  Ȧ_mn = μ (S2_m S3_n - A_mn Ŝsq_m) - γ A_mn
+
+where Ŝsq_m := <s(n1, θ)^2>_{Z_m} is the OA mean of the squared pulse and
+is computed analytically from the Fourier coefficients of (1-cosθ)^{2n1}.
+
+Derivation notes (block-averaging on the OA manifold)
+- Hebbian: <s(n2, θ_i) s(n3, θ_j)> factorises exactly because i ∈ m and
+  j ∈ n are different neurons.
+- Antihebbian decay term -A_ij s(n2, θ_i) s(n3, θ_j): using the standard
+  closure A_ij ≈ A_mn for i∈m, j∈n, the block average is -A_mn S2_m S3_n.
+- Oja decay term -A_ij s(n1, θ_i)^2: identical closure gives -A_mn Ŝsq_m.
 """
 
 import numpy as np
@@ -43,6 +61,8 @@ from config.utility_functions import uniform, lorentzian2
 
 _EPS = 1e-12
 plt.rcParams["font.size"] = 16.0
+
+PLASTICITY_RULES = ("hebbian", "antihebbian", "oja")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -86,12 +106,28 @@ def verify_fourier_coeffs(n, cn, s_hat, n_quad=10000):
 def oa_synaptic_mean(n_pulse, R, Psi, s_hat, cn):
     """
     <s(n_pulse, θ)>_Z on the OA manifold for Z = R exp(iΨ).
-    Returns real array of shape matching R.
     """
     S = np.full_like(R, s_hat[0], dtype=float)
     for p in range(1, n_pulse + 1):
         S += s_hat[p] * R ** p * np.cos(p * Psi)
     return cn * S
+
+
+def oa_pulse_squared_mean(n_pulse, R, Psi, s_hat_2n, cn):
+    """
+    <s(n_pulse, θ)^2>_Z = c_n² <(1 - cosθ)^{2 n_pulse}>_Z.
+
+    Implemented by feeding the precomputed Fourier coefficients of
+    (1 - cosθ)^{2 n_pulse} (length 2 n_pulse + 1) into the standard OA
+    moment expansion.  The factor cn = c_{n_pulse} (NOT c_{2 n_pulse})
+    is applied squared, because we are squaring the original pulse, not
+    re-normalising as a higher-order pulse.
+    """
+    two_n = 2 * n_pulse
+    S = np.full_like(R, s_hat_2n[0], dtype=float)
+    for p in range(1, two_n + 1):
+        S += s_hat_2n[p] * R ** p * np.cos(p * Psi)
+    return (cn ** 2) * S
 
 
 def s_micro(n_pulse, theta, cn):
@@ -104,6 +140,17 @@ def s_micro(n_pulse, theta, cn):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def make_initial_conditions(N, d, eta0, Delta0, dist, seed):
+    """
+    Draws microscopic excitabilities η_i and initial phases θ_i(0) for N
+    neurons partitioned into M = N/d ensembles.  Both the per-ensemble
+    centres η̄_m and the per-ensemble microscopic samples η_{i∈m} follow
+    the chosen distribution.
+
+    "uniform"      η_{i∈m} ∼ Uniform(η̄_m - Δ_m, η̄_m + Δ_m), Δ_m = Δ₀/M.
+    "lorentzian"   η_{i∈m} ∼ Cauchy(η̄_m, Δ_m), where η̄_m and Δ_m are the
+                   tangent-warped centres and half-widths so that adjacent
+                   centres are spaced by Δ_m + Δ_{m+1}.
+    """
     assert N % d == 0, "N must be divisible by d"
     M = N // d
     rng = np.random.default_rng(seed)
@@ -127,7 +174,13 @@ def make_initial_conditions(N, d, eta0, Delta0, dist, seed):
     for I in range(M):
         th = rng.uniform(-np.pi, np.pi, d)
         idx = slice(I * d, (I + 1) * d)
-        eta_micro[idx] = lorentzian2(d, eta_pop[I], delta_pop[I])
+        if dist == "uniform":
+            # Sample η_{i∈m} uniformly across the ensemble's half-width Δ_m,
+            # so that the union over m exactly tiles [η₀-Δ₀, η₀+Δ₀].
+            eta_micro[idx] = rng.uniform(eta_pop[I] - delta_pop[I],
+                                         eta_pop[I] + delta_pop[I], d)
+        else:
+            eta_micro[idx] = lorentzian2(d, eta_pop[I], delta_pop[I])
         theta0[idx] = th
         z_mean = np.mean(np.exp(1j * th))
         psi0[I] = np.angle(z_mean)
@@ -137,37 +190,60 @@ def make_initial_conditions(N, d, eta0, Delta0, dist, seed):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Microscopic theta neuron ODE — pulse plasticity
+# Microscopic theta neuron ODE — selectable plasticity rule
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def tn_ode(t, y, eta, J, mu, gamma, n_pulse, cn, n2, cn2, n3, cn3):
+def tn_ode(t, y, eta, J, mu, gamma,
+           n_pulse, cn,
+           n1, cn1,
+           n2, cn2,
+           n3, cn3,
+           plasticity):
     """
-    Theta neuron ODE with pulse-based plasticity.
+    Theta neuron ODE with one of three pulse-based plasticity rules.
 
-    dθ_k/dt  = (1-cosθ_k) + (1+cosθ_k)[η_k + J/N Σ_l A_kl s(n,θ_l)]
-    dA_kl/dt = μ s(n2,θ_k) s(n3,θ_l) - γ A_kl   (diagonal zeroed)
+    Phase dynamics (identical across rules):
+        dθ_k/dt = (1-cosθ_k) + (1+cosθ_k)[η_k + J/N Σ_l A_kl s(n, θ_l)]
 
-    Note: k is the post-synaptic (row) index, l is the pre-synaptic (col) index.
-    s(n2,θ_k) — post-synaptic factor — broadcasts over columns.
-    s(n3,θ_l) — pre-synaptic factor  — broadcasts over rows.
+    Plasticity (selected by `plasticity`):
+        hebbian      Ȧ_kl = μ s(n2, θ_k) s(n3, θ_l)              - γ A_kl
+        antihebbian  Ȧ_kl = μ [s(n1, θ_l) - A_kl s(n2,θ_k) s(n3,θ_l)] - γ A_kl
+        oja          Ȧ_kl = μ [s(n2,θ_k) s(n3,θ_l) - A_kl s(n1,θ_k)²] - γ A_kl
+
+    Convention: k = post-synaptic (row), l = pre-synaptic (column).  In the
+    antihebbian rule s(n1, θ_l) acts as a presynaptic baseline term, so it
+    broadcasts across rows.  In the oja rule s(n1, θ_k)² acts as a
+    postsynaptic normalisation, so it broadcasts across columns.
     """
     N = len(eta)
     theta = y[:N]
     A = y[N:].reshape(N, N)
 
     # Synaptic input
-    s_syn = s_micro(n_pulse, theta, cn)  # (N,)
-    I_syn = (J / N) * (A @ s_syn)  # (N,)
+    s_syn = s_micro(n_pulse, theta, cn)
+    I_syn = (J / N) * (A @ s_syn)
 
     cm = np.cos(theta)
     dtheta = (1.0 - cm) + (1.0 + cm) * (eta + I_syn)
 
-    # Pulse-based plasticity: outer product of pre- and post-synaptic kernels
-    s_post = s_micro(n2, theta, cn2)  # (N,) post-synaptic (row)
-    s_pre = s_micro(n3, theta, cn3)  # (N,) pre-synaptic  (col)
-    dA = mu * np.outer(s_post, s_pre) - gamma * A
-    np.fill_diagonal(dA, 0.0)
+    # Pre/post-synaptic plasticity kernels (always needed)
+    s_post = s_micro(n2, theta, cn2)        # s(n2, θ_k) — row-broadcast
+    s_pre  = s_micro(n3, theta, cn3)        # s(n3, θ_l) — col-broadcast
+    hebb = np.outer(s_post, s_pre)
 
+    if plasticity == "hebbian":
+        dA = mu * hebb - gamma * A
+    elif plasticity == "antihebbian":
+        s1 = s_micro(n1, theta, cn1)        # s(n1, θ_l) — col-broadcast
+        dA = mu * (s1[np.newaxis, :] - A * hebb) - gamma * A
+    elif plasticity == "oja":
+        s1_sq = s_micro(n1, theta, cn1) ** 2   # s(n1, θ_k)² — row-broadcast
+        dA = mu * (hebb - A * s1_sq[:, np.newaxis]) - gamma * A
+    else:
+        raise ValueError(f"Invalid plasticity='{plasticity}'. "
+                         f"Choose from {PLASTICITY_RULES}.")
+
+    np.fill_diagonal(dA, 0.0)
     return np.concatenate([dtheta, dA.ravel()])
 
 
@@ -186,26 +262,26 @@ def tn_coarse_grain(A_fine, d):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Macroscopic OA ODE — pulse plasticity
+# Macroscopic OA ODE — selectable plasticity rule
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def oa_ode(t, y, eta_pop, delta_pop, J, mu, gamma,
            n_pulse, s_hat, cn,
+           n1, s_hat1, cn1, s_hat1_sq,
            n2, s_hat2, cn2,
-           n3, s_hat3, cn3):
+           n3, s_hat3, cn3,
+           plasticity):
     """
-    OA mean-field ODE with pulse-based plasticity.
+    OA mean-field ODE with one of three pulse-based plasticity rules.
+    State: y = [R_0,...,R_{M-1}, Ψ_0,...,Ψ_{M-1}, A_{0,0},...,A_{M-1,M-1}].
 
-    State: y = [R_0,...,R_{M-1}, Ψ_0,...,Ψ_{M-1}, A_00,...,A_{M-1,M-1}]
+    Plasticity (selected by `plasticity`):
+        hebbian      Ȧ_mn = μ S2_m S3_n              - γ A_mn
+        antihebbian  Ȧ_mn = μ (S1_n - A_mn S2_m S3_n) - γ A_mn
+        oja          Ȧ_mn = μ (S2_m S3_n - A_mn Ŝsq_m) - γ A_mn
 
-    ṙ_m  = -Δ_m R_m - Δ_m(1+R_m²)/2 cosΨ_m + (E_m-1)(1-R_m²)/2 sinΨ_m
-    Ψ̇_m  = (E_m+1) + (E_m-1)(1+R_m²)/(2R_m) cosΨ_m + Δ_m(1-R_m²)/(2R_m) sinΨ_m
-    Ȧ_mn  = μ S2_m S3_n - γ A_mn
-
-    where:
-        E_m  = η̄_m + J/M Σ_n A_mn S_n     S_n  = <s(n,  θ)>_{Z_n}
-        S2_m = <s(n2, θ)>_{Z_m}             (post-synaptic plasticity kernel)
-        S3_n = <s(n3, θ)>_{Z_n}             (pre-synaptic  plasticity kernel)
+    where  S_q,m := <s(q, θ)>_{Z_m}  and  Ŝsq_m := <s(n1, θ)²>_{Z_m}.
+    `s_hat1_sq` carries the Fourier coefficients of (1-cosθ)^{2 n1}.
     """
     M = len(eta_pop)
     R = np.clip(y[:M], _EPS, 1.0 - _EPS)
@@ -213,13 +289,12 @@ def oa_ode(t, y, eta_pop, delta_pop, J, mu, gamma,
     A = y[2 * M:].reshape(M, M)
 
     # Mean-field synaptic input
-    S = oa_synaptic_mean(n_pulse, R, Psi, s_hat, cn)  # (M,) coupling kernel
-    E = eta_pop + (J / M) * (A @ S)  # (M,) effective drive
+    S  = oa_synaptic_mean(n_pulse, R, Psi, s_hat, cn)
+    E  = eta_pop + (J / M) * (A @ S)
 
     cos_P = np.cos(Psi)
     sin_P = np.sin(Psi)
 
-    # OA equations (corrected signs from theta-neuron derivation)
     dR = (-delta_pop * R
           - delta_pop * (1.0 + R ** 2) / 2.0 * cos_P
           + (E - 1.0) * (1.0 - R ** 2) / 2.0 * sin_P)
@@ -228,10 +303,24 @@ def oa_ode(t, y, eta_pop, delta_pop, J, mu, gamma,
             + (E - 1.0) * (1.0 + R ** 2) / (2.0 * R) * cos_P
             + delta_pop * (1.0 - R ** 2) / (2.0 * R) * sin_P)
 
-    # Pulse-based plasticity: outer product of population-averaged kernels
-    S2 = oa_synaptic_mean(n2, R, Psi, s_hat2, cn2)  # (M,) post-syn kernel
-    S3 = oa_synaptic_mean(n3, R, Psi, s_hat3, cn3)  # (M,) pre-syn  kernel
-    dA = mu * np.outer(S2, S3) - gamma * A  # (M, M)
+    # Pre/post-synaptic plasticity kernel means
+    S2 = oa_synaptic_mean(n2, R, Psi, s_hat2, cn2)
+    S3 = oa_synaptic_mean(n3, R, Psi, s_hat3, cn3)
+    hebb = np.outer(S2, S3)
+
+    if plasticity == "hebbian":
+        dA = mu * hebb - gamma * A
+    elif plasticity == "antihebbian":
+        S1 = oa_synaptic_mean(n1, R, Psi, s_hat1, cn1)        # (M,)
+        # S1_n broadcasts across rows m → np.tile(S1, (M,1)) equivalently:
+        dA = mu * (S1[np.newaxis, :] - A * hebb) - gamma * A
+    elif plasticity == "oja":
+        Ssq = oa_pulse_squared_mean(n1, R, Psi, s_hat1_sq, cn1)   # (M,)
+        # <s(n1,θ_k)²>_{Z_m} broadcasts across columns n
+        dA = mu * (hebb - A * Ssq[:, np.newaxis]) - gamma * A
+    else:
+        raise ValueError(f"Invalid plasticity='{plasticity}'. "
+                         f"Choose from {PLASTICITY_RULES}.")
 
     return np.concatenate([dR, dPsi, dA.ravel()])
 
@@ -253,9 +342,11 @@ def simulate(
         gamma=0.001,
         eta0=-0.5,
         Delta0=1.0,
-        n_pulse=1,  # synaptic coupling pulse shape
-        n2=2,  # post-synaptic plasticity pulse shape
-        n3=3,  # pre-synaptic  plasticity pulse shape
+        n_pulse=1,   # synaptic coupling pulse shape
+        n1=2,        # plasticity baseline (anti-hebbian) or normalisation (oja)
+        n2=2,        # post-synaptic plasticity pulse shape
+        n3=3,        # pre-synaptic  plasticity pulse shape
+        plasticity="hebbian",
         dist="lorentzian",
         seed=42,
         method="RK45",
@@ -263,19 +354,27 @@ def simulate(
         atol=1e-8,
 ):
     assert N % d == 0, "N must be divisible by d"
+    if plasticity not in PLASTICITY_RULES:
+        raise ValueError(f"Invalid plasticity='{plasticity}'. "
+                         f"Choose from {PLASTICITY_RULES}.")
     M = N // d
 
-    # Precompute all three sets of Fourier coefficients and norms
-    cn, s_hat = coupling_norm(n_pulse), fourier_coeffs_s(n_pulse)
-    cn2, s_hat2 = coupling_norm(n2), fourier_coeffs_s(n2)
-    cn3, s_hat3 = coupling_norm(n3), fourier_coeffs_s(n3)
+    cn,  s_hat   = coupling_norm(n_pulse), fourier_coeffs_s(n_pulse)
+    cn1, s_hat1  = coupling_norm(n1),      fourier_coeffs_s(n1)
+    cn2, s_hat2  = coupling_norm(n2),      fourier_coeffs_s(n2)
+    cn3, s_hat3  = coupling_norm(n3),      fourier_coeffs_s(n3)
+    # Coefficients of (1-cosθ)^{2 n1} for the Oja normalisation term
+    s_hat1_sq    = fourier_coeffs_s(2 * n1)
 
-    print(f"Theta neuron (pulse plasticity): N={N}, d={d}, M={M}")
-    print(f"J={J}, μ={mu}, γ={gamma}, η₀={eta0}, Δ₀={Delta0}")
-    print(f"n (synaptic)={n_pulse}, n2 (post-syn)={n2}, n3 (pre-syn)={n3}")
+    print(f"Theta neuron (pulse plasticity, rule='{plasticity}'):  "
+          f"N={N}, d={d}, M={M}")
+    print(f"J={J}, μ={mu}, γ={gamma}, η₀={eta0}, Δ₀={Delta0}, dist={dist}")
+    print(f"n (synaptic)={n_pulse}, n1={n1}, n2 (post)={n2}, n3 (pre)={n3}")
     verify_fourier_coeffs(n_pulse, cn, s_hat)
     verify_fourier_coeffs(n2, cn2, s_hat2)
     verify_fourier_coeffs(n3, cn3, s_hat3)
+    if plasticity in ("antihebbian", "oja"):
+        verify_fourier_coeffs(n1, cn1, s_hat1)
 
     eta_micro, theta0, eta_pop, delta_pop, r0, psi0 = \
         make_initial_conditions(N, d, eta0, Delta0, dist, seed)
@@ -288,7 +387,12 @@ def simulate(
     print("\nRunning TN (microscopic) simulation …")
     sol_tn = solve_ivp(
         tn_ode, (0, T), y0_tn, method=method,
-        args=(eta_micro, J, mu, gamma, n_pulse, cn, n2, cn2, n3, cn3),
+        args=(eta_micro, J, mu, gamma,
+              n_pulse, cn,
+              n1, cn1,
+              n2, cn2,
+              n3, cn3,
+              plasticity),
         rtol=rtol, atol=atol, dense_output=False,
     )
     if not sol_tn.success:
@@ -307,8 +411,10 @@ def simulate(
         oa_ode, (0, T), y0_oa, method=method,
         args=(eta_pop, delta_pop, J, mu, gamma,
               n_pulse, s_hat, cn,
+              n1, s_hat1, cn1, s_hat1_sq,
               n2, s_hat2, cn2,
-              n3, s_hat3, cn3),
+              n3, s_hat3, cn3,
+              plasticity),
         rtol=rtol, atol=atol, dense_output=False,
     )
     if not sol_oa.success:
@@ -327,7 +433,8 @@ def simulate(
         t_oa=t_oa, R_oa_m=R_oa_m, Psi_oa=Psi_oa, A_oa=A_oa, R_oa=R_oa,
         eta_pop=eta_pop, delta_pop=delta_pop,
         N=N, M=M, d=d, mu=mu, gamma=gamma, T=T,
-        n_pulse=n_pulse, n2=n2, n3=n3,
+        n_pulse=n_pulse, n1=n1, n2=n2, n3=n3,
+        plasticity=plasticity, dist=dist,
     )
 
 
@@ -338,7 +445,8 @@ def simulate(
 def plot_comparison(res):
     N, M, d = res["N"], res["M"], res["d"]
     mu, gamma = res["mu"], res["gamma"]
-    n_pulse, n2, n3 = res["n_pulse"], res["n2"], res["n3"]
+    n_pulse, n1, n2, n3 = res["n_pulse"], res["n1"], res["n2"], res["n3"]
+    rule, dist = res["plasticity"], res["dist"]
 
     t_tn, R_tn = res["t_tn"], res["R_tn"]
     t_oa, R_oa = res["t_oa"], res["R_oa"]
@@ -356,8 +464,9 @@ def plot_comparison(res):
     ax.set_ylim(0, 1.05)
     ax.axhline(1.0, color="grey", lw=0.8, ls=":")
     ax.set_title(
-        f"TN vs OA  |  N={N}, d={d}, M={M},  μ={mu}, γ={gamma}\n"
-        f"n (syn)={n_pulse}, n2 (post)={n2}, n3 (pre)={n3}"
+        f"TN vs OA  |  rule={rule},  dist={dist},  N={N}, d={d}, M={M},  "
+        f"μ={mu}, γ={gamma}\n"
+        f"n (syn)={n_pulse}, n1={n1}, n2 (post)={n2}, n3 (pre)={n3}"
     )
     ax.legend(fontsize=11)
     fig1.tight_layout()
@@ -401,7 +510,8 @@ def plot_comparison(res):
 
     fig2.suptitle(
         f"Final coupling matrices T={res['T']:.0f}  "
-        f"(μ={mu}, γ={gamma}, d={d}, n={n_pulse}, n2={n2}, n3={n3})",
+        f"(rule={rule}, dist={dist}, μ={mu}, γ={gamma}, d={d}, "
+        f"n={n_pulse}, n1={n1}, n2={n2}, n3={n3})",
         fontsize=12, fontweight="bold",
     )
     fig2.tight_layout()
@@ -413,20 +523,21 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 20
     CONFIG = dict(
-        N=10*d,
-        d=d,
-        T=200.0,
-        J=1.0,
-        mu=0.03,
+        N=500,
+        d=10,
+        T=150.0,
+        J=-2.0,
+        mu=0.01,
         gamma=0.001,
-        eta0=-1.0,
+        eta0=1.0,
         Delta0=1.0,
-        n_pulse=10,  # synaptic coupling pulse shape
-        n2=2,  # post-synaptic plasticity kernel
-        n3=2,  # pre-synaptic  plasticity kernel
-        dist="lorentzian",
+        n_pulse=10,           # synaptic coupling pulse shape
+        n1=10,                 # antihebbian / oja plasticity pulse shape
+        n2=2,                 # post-synaptic plasticity kernel
+        n3=3,                 # pre-synaptic  plasticity kernel
+        plasticity="oja", # {"hebbian", "antihebbian", "oja"}
+        dist="uniform",       # {"uniform", "lorentzian"}
         seed=42,
         method="RK45",
         rtol=1e-6,
@@ -436,8 +547,10 @@ if __name__ == "__main__":
     res = simulate(**CONFIG)
     fig1, fig2 = plot_comparison(res)
 
-    fig1.savefig("tn_pulse_plasticity_order_parameter.png", dpi=150, bbox_inches="tight")
-    fig2.savefig("tn_pulse_plasticity_coupling_matrices.png", dpi=150, bbox_inches="tight")
+    rule = CONFIG["plasticity"]
+    fig1.savefig(f"tn_pulse_plasticity_{rule}_order_parameter.png",
+                 dpi=150, bbox_inches="tight")
+    fig2.savefig(f"tn_pulse_plasticity_{rule}_coupling_matrices.png",
+                 dpi=150, bbox_inches="tight")
     print("Figures saved.")
     plt.show()
-

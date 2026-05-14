@@ -388,19 +388,18 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 50
     CONFIG = dict(
-        N          = 10 * d,
-        d          = d,
-        T          = 200.0,
-        J          = 1.0,
-        mu         = 0.1,
+        N          = 500,
+        d          = 1,
+        T          = 150.0,
+        J          = 2.0,
+        mu         = 0.02,
         gamma      = 0.001,
-        eta0       = -0.5,
+        eta0       = -0.3,
         Delta0     = 1.0,
-        n_pulse    = 1,
+        n_pulse    = 10,
         plasticity = "antihebbian",
-        dist       = "lorentzian",
+        dist       = "uniform",
         seed       = 42,
         method     = "RK45",
         rtol       = 1e-6,

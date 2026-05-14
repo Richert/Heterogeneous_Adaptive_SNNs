@@ -1,239 +1,213 @@
 """
-Visualize K-Sweep Results: KMO with |sin| Plasticity vs. OA Mean-Field
-======================================================================
-Reads in the CSV output of sweep_K_M.py (single-row schema with columns
-including trial, K, M, mu, n_terms, rmse_R, corr_A, mean_r_km, mean_r_oa)
-and produces a one-row, three-column figure:
+Plot K × n_terms Sweep Results
+================================
+Renders a 3×3 figure summarising a sweep produced by
+``fourier_truncation_gridsearch.py``.  Columns correspond to a chosen subset
+of K values; rows show
 
-  (a) Microscopic plasticity kernel |sin(φ)| vs. the truncated OA Fourier
-      expansion, evaluated as a function of the phase difference φ at three
-      representative squared phase coherences  R² = (r_m r_l)²  corresponding
-      to the minimum, median, and maximum values of K in the sweep (using
-      each K's average mean_r_km × mean_r_oa proxy).
-  (b) Pearson correlation between the coupling matrices  corr_A  vs. K,
-      with error bars (mean ± std across trials).
-  (c) RMSE between the Kuramoto order parameter trajectories  rmse_R  vs. K,
-      with error bars (mean ± std across trials).
+    Row 1 — corr_A   (Pearson correlation between coupling matrices)
+    Row 2 — rmse_sbar (RMSE between empirical s̄_ml and OA truncation)
+    Row 3 — mean phase coherence R for KMO and OA, with variance of R(t)
+            shown as error bars
+
+All curves are plotted vs. n_terms; markers indicate per-trial means and
+error bars indicate across-trial std (rows 1 & 2) or the mean temporal
+variance of R(t) reported by the sweep (row 3, per the user spec).
 
 Usage
 -----
-    python plot_K_sweep.py [--csv sweep_K_results.csv] [--out figure.pdf]
-                           [--n_terms 5]
+    python plot_sweep_results.py --csv sweep_K_nterms_results.csv
+    python plot_sweep_results.py --csv path/to/results.csv --K 1 3 5
+
+If --K is omitted, three evenly spaced K values are picked from the CSV.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRX-style figure setup (matches the manuscript figures)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── Aggregation ─────────────────────────────────────────────────────────────
 
-def set_prx_style():
-    plt.rcParams.update({
-        "font.family":        "serif",
-        "font.serif":         ["STIXGeneral", "Times New Roman", "Times"],
-        "mathtext.fontset":   "stix",
-        "font.size":          10,
-        "axes.titlesize":     10,
-        "axes.labelsize":     10,
-        "xtick.labelsize":    9,
-        "ytick.labelsize":    9,
-        "legend.fontsize":    8,
-        "axes.linewidth":     0.7,
-        "lines.linewidth":    1.4,
-        "xtick.major.width":  0.6,
-        "ytick.major.width":  0.6,
-        "xtick.major.size":   3.0,
-        "ytick.major.size":   3.0,
-        "xtick.direction":    "in",
-        "ytick.direction":    "in",
-        "savefig.dpi":        300,
-        "figure.dpi":         150,
-        "pdf.fonttype":       42,
-        "ps.fonttype":        42,
-    })
-
-
-def panel_label(ax, label, *, x=-0.20, y=1.02, fontsize=11):
-    ax.text(x, y, label, transform=ax.transAxes,
-            fontsize=fontsize, fontweight="bold",
-            ha="left", va="bottom")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Plasticity-rule plotting helpers
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def truncated_abs_sin(phi, R2, n_terms):
+def aggregate(df, K_values):
     """
-    Truncated OA expansion of the |sin| plasticity rule:
+    Returns a dict keyed by K of DataFrames indexed by n_terms with columns
+        corr_A_mean, corr_A_std,
+        rmse_sbar_mean, rmse_sbar_std,
+        mean_R_km_mean, mean_R_oa_mean,
+        var_R_km_mean,  var_R_oa_mean.
 
-        f_OA(φ, R²) = 2/π - (4/π) Σ_{n=1}^{n_terms} R²ⁿ cos(2n φ) / (4n² - 1)
-
-    where R² = (r_m r_l)² serves as the effective ensemble-product coherence.
-    Returns the same shape as the input phi.
+    Aggregation: across trials, treating each (K, n_terms) cell as a sample
+    of size n_trials.  Failed rows (status != "ok") are dropped.
     """
-    out = np.full_like(phi, 2.0 / np.pi, dtype=float)
-    for n in range(1, n_terms + 1):
-        out += (-4.0 / (np.pi * (4 * n * n - 1))) * (R2 ** n) * np.cos(2 * n * phi)
+    if "status" in df.columns:
+        df = df[df["status"] == "ok"].copy()
+    out = {}
+    for K in K_values:
+        sub = df[np.isclose(df["K"], K)]
+        if sub.empty:
+            print(f"  warning: no rows for K={K}, skipping", file=sys.stderr)
+            continue
+        agg = (sub.groupby("n_terms")
+                  .agg(corr_A_mean      = ("corr_A",     "mean"),
+                       corr_A_std       = ("corr_A",     "std"),
+                       rmse_sbar_mean   = ("rmse_sbar",  "mean"),
+                       rmse_sbar_std    = ("rmse_sbar",  "std"),
+                       mean_R_km_mean   = ("mean_R_km",  "mean"),
+                       mean_R_oa_mean   = ("mean_R_oa",  "mean"),
+                       var_R_km_mean    = ("var_R_km",   "mean"),
+                       var_R_oa_mean    = ("var_R_oa",   "mean"),
+                       n_trials         = ("trial",      "count"))
+                  .sort_index())
+        out[K] = agg
     return out
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Aggregation
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── Plotting ────────────────────────────────────────────────────────────────
 
-def aggregate(df):
-    """Average metrics across trials for each K (drop failed runs)."""
-    if "status" in df.columns:
-        df = df[df["status"] == "ok"].copy()
+def plot_sweep(agg, K_values, params, savepath=None):
+    K_list = [K for K in K_values if K in agg]
+    if not K_list:
+        raise RuntimeError("No K values to plot — check --K and the CSV.")
+    n_cols = len(K_list)
+    fig, axes = plt.subplots(3, n_cols, figsize=(4.0 * n_cols, 9.5),
+                             sharex=True, constrained_layout=True)
+    if n_cols == 1:
+        axes = axes[:, None]   # keep 2D indexing
 
-    grouped = df.groupby("K").agg(
-        rmse_R_mean    = ("rmse_R",    "mean"),
-        rmse_R_std     = ("rmse_R",    "std"),
-        corr_A_mean    = ("corr_A",    "mean"),
-        corr_A_std     = ("corr_A",    "std"),
-        mean_r_km_mean = ("mean_r_km", "mean"),
-        mean_r_oa_mean = ("mean_r_oa", "mean"),
-        n_trials       = ("rmse_R",    "count"),
-    ).reset_index()
+    # Pre-compute row-wide y-limits for rows 1 and 2 so columns are comparable
+    corr_lo = min(agg[K]["corr_A_mean"].min() - agg[K]["corr_A_std"].max()
+                  for K in K_list)
+    corr_hi = max(agg[K]["corr_A_mean"].max() + agg[K]["corr_A_std"].max()
+                  for K in K_list)
+    rmse_lo = min((agg[K]["rmse_sbar_mean"] - agg[K]["rmse_sbar_std"]).min()
+                  for K in K_list)
+    rmse_hi = max((agg[K]["rmse_sbar_mean"] + agg[K]["rmse_sbar_std"]).max()
+                  for K in K_list)
+    corr_pad = 0.03 * (corr_hi - corr_lo) if corr_hi > corr_lo else 0.02
+    rmse_pad = 0.03 * (rmse_hi - rmse_lo) if rmse_hi > rmse_lo else 0.02
 
-    return grouped
+    for j, K in enumerate(K_list):
+        a = agg[K]
+        n_terms_axis = a.index.to_numpy()
 
+        # ── Row 1: corr_A ────────────────────────────────────────────────
+        ax = axes[0, j]
+        ax.errorbar(n_terms_axis, a["corr_A_mean"], yerr=a["corr_A_std"],
+                    fmt="o-", color="C0", capsize=3, lw=1.5)
+        ax.set_title(fr"$K = {K:g}$")
+        if j == 0:
+            ax.set_ylabel(r"corr$(A^\mathrm{KMO}_\mathrm{cg}, A^\mathrm{OA})$")
+        ax.set_ylim(corr_lo - corr_pad, min(1.01, corr_hi + corr_pad))
+        ax.grid(True, alpha=0.3)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Figure
-# ═══════════════════════════════════════════════════════════════════════════════
+        # ── Row 2: rmse_sbar ─────────────────────────────────────────────
+        ax = axes[1, j]
+        ax.errorbar(n_terms_axis, a["rmse_sbar_mean"], yerr=a["rmse_sbar_std"],
+                    fmt="s-", color="C2", capsize=3, lw=1.5)
+        if j == 0:
+            ax.set_ylabel(r"RMSE$(\bar s^\mathrm{KMO}_{ml}, "
+                          r"\bar s^\mathrm{trunc}_{ml})$")
+        ax.set_ylim(max(0.0, rmse_lo - rmse_pad), rmse_hi + rmse_pad)
+        ax.grid(True, alpha=0.3)
 
-# Colours: shared blue for KMO, three discrete reds for OA at min/median/max K
-C_KM   = "#1f4e79"
-C_OA_3 = ["#f4a582", "#d6604d", "#9f1d20"]   # light → dark
+        # ── Row 3: mean R(t) with var(R) error bars ──────────────────────
+        ax = axes[2, j]
+        ax.errorbar(n_terms_axis, a["mean_R_km_mean"],
+                    yerr=a["var_R_km_mean"],
+                    fmt="o-", color="C0", capsize=3, lw=1.5, label="KMO")
+        ax.errorbar(n_terms_axis, a["mean_R_oa_mean"],
+                    yerr=a["var_R_oa_mean"],
+                    fmt="s--", color="C3", capsize=3, lw=1.5, label="OA")
+        if j == 0:
+            ax.set_ylabel(r"$\langle R(t)\rangle_t$  "
+                          r"(error bars: $\mathrm{Var}_t[R]$)")
+            ax.legend(loc="best", frameon=False, fontsize=9)
+        ax.set_xlabel(r"$n_\mathrm{terms}$")
+        ax.set_ylim(0.0, 1.05)
+        ax.grid(True, alpha=0.3)
 
+    # x-ticks: integer n_terms values across the whole CSV
+    all_nt = sorted({nt for K in K_list for nt in agg[K].index.tolist()})
+    for ax in axes[-1, :]:
+        ax.set_xticks(all_nt)
 
-def plot_figure(df_agg, n_terms, save_path):
-    set_prx_style()
-
-    fig, axes = plt.subplots(
-        1, 3, figsize=(11.0, 3.4),
-        gridspec_kw=dict(wspace=0.42, left=0.07, right=0.985,
-                         top=0.91, bottom=0.18),
+    n_trials = int(agg[K_list[0]]["n_trials"].max())
+    fig.suptitle(
+        f"K × n_terms sweep summary  (n_trials = {n_trials}"
+        + (f", {params}" if params else "")
+        + ")",
+        fontsize=11,
     )
 
-    # ── (a) Plasticity kernel: |sin| vs truncated OA ──────────────────────
-    ax = axes[0]
-    phi = np.linspace(-np.pi, np.pi, 600)
-
-    # Microscopic reference (independent of R)
-    ax.plot(phi, np.abs(np.sin(phi)),
-            color=C_KM, lw=1.6, label=r"$|\sin\varphi|$ (KMO)")
-
-    # Pick 3 representative K values: min, median, max
-    K_vals = df_agg["K"].values
-    if len(K_vals) < 3:
-        raise ValueError("Need at least 3 K values in the sweep to pick "
-                         "min / median / max.")
-    median_K = np.median(K_vals)
-    K_pick   = [K_vals.min(),
-                K_vals[np.argmin(np.abs(K_vals - median_K))],
-                K_vals.max()]
-
-    # For each picked K, compute the effective R² = (mean_r_km · mean_r_oa)
-    # as a representative scalar.  Using the geometric KMO×OA proxy keeps the
-    # comparison fair while still depending on K.
-    for K, col in zip(K_pick, C_OA_3):
-        row    = df_agg[df_agg["K"] == K].iloc[0]
-        R_eff  = np.sqrt(row["mean_r_km_mean"] * row["mean_r_oa_mean"])
-        R2_eff = R_eff ** 2
-        y_oa   = truncated_abs_sin(phi, R2_eff, n_terms)
-        ax.plot(phi, y_oa, color=col, lw=1.3, ls="--",
-                label=fr"OA, $K={K:g}$  ($R^2 \approx {R2_eff:.2f}$)")
-
-    ax.set_xlabel(r"phase difference  $\varphi$")
-    ax.set_ylabel(r"$|\sin\varphi|$  and  $f_{\rm OA}(\varphi, R^2)$")
-    ax.set_xlim(-np.pi, np.pi)
-    ax.set_xticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
-    ax.set_xticklabels([r"$-\pi$", r"$-\pi/2$", "0", r"$\pi/2$", r"$\pi$"])
-    ax.legend(loc="upper center", frameon=False, handlelength=2.2,
-              borderaxespad=0.3)
-    panel_label(ax, "(a)", x=-0.17, y=1.02)
-
-    # ── (b) corr_A vs K ───────────────────────────────────────────────────
-    ax = axes[1]
-    ax.errorbar(df_agg["K"], df_agg["corr_A_mean"],
-                yerr=df_agg["corr_A_std"],
-                color=C_KM, marker="o", ms=4.5, lw=1.3,
-                capsize=3, capthick=0.8, elinewidth=0.8,
-                label=r"corr$(A^{\rm KMO}, A^{\rm OA})$")
-    ax.set_xlabel(r"coupling strength  $K$")
-    ax.set_ylabel(r"corr$(A^{\rm KMO}, A^{\rm OA})$")
-    ax.set_ylim(-1.05, 1.05)
-    ax.axhline(0.0, color="grey", lw=0.5, ls=":")
-    ax.axhline(1.0, color="grey", lw=0.5, ls=":")
-    panel_label(ax, "(b)", x=-0.22, y=1.02)
-
-    # ── (c) rmse_R vs K ───────────────────────────────────────────────────
-    ax = axes[2]
-    ax.errorbar(df_agg["K"], df_agg["rmse_R_mean"],
-                yerr=df_agg["rmse_R_std"],
-                color=C_KM, marker="o", ms=4.5, lw=1.3,
-                capsize=3, capthick=0.8, elinewidth=0.8,
-                label=r"RMSE$(R_{\rm KMO}, R_{\rm OA})$")
-    ax.set_xlabel(r"coupling strength  $K$")
-    ax.set_ylabel(r"RMSE$_R$")
-    ax.set_ylim(bottom=0)
-    panel_label(ax, "(c)", x=-0.22, y=1.02)
-
-    fig.savefig(save_path, bbox_inches="tight")
-    print(f"Saved → {save_path}")
+    if savepath:
+        fig.savefig(savepath, dpi=150, bbox_inches="tight")
+        print(f"Figure saved → {savepath}")
     return fig
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CLI
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── CLI ─────────────────────────────────────────────────────────────────────
+
+def pick_K_values(df, requested):
+    """Resolve --K argument; if None, pick three roughly evenly spaced K's."""
+    all_K = sorted(df["K"].unique().tolist())
+    if requested:
+        chosen = [K for K in requested if any(np.isclose(K, k) for k in all_K)]
+        missing = [K for K in requested
+                   if not any(np.isclose(K, k) for k in all_K)]
+        if missing:
+            print(f"  warning: requested K values {missing} not in CSV; "
+                  f"CSV has {all_K}", file=sys.stderr)
+        return chosen or all_K[:3]
+    if len(all_K) <= 3:
+        return all_K
+    idx = np.linspace(0, len(all_K) - 1, 3).round().astype(int)
+    return [all_K[i] for i in idx]
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("--csv", required=True,
+                   help="Path to the sweep CSV produced by "
+                        "fourier_truncation_gridsearch.py")
+    p.add_argument("--K", type=float, nargs="+", default=None,
+                   help="K values to use as the three columns "
+                        "(default: three evenly spaced K's from the CSV)")
+    p.add_argument("--out", default="sweep_summary.png",
+                   help="Output figure path")
+    return p.parse_args()
+
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--csv", default="sweep_K_results.csv",
-                        help="CSV file from sweep_K_M.py")
-    parser.add_argument("--out", default="figure_K_sweep.pdf",
-                        help="Output figure path")
-    parser.add_argument("--n_terms", type=int, default=None,
-                        help="Override Fourier truncation for panel (a). "
-                             "By default reads from the CSV.")
-    args = parser.parse_args()
-
+    args = parse_args()
     df = pd.read_csv(args.csv)
-    print(f"Loaded {len(df)} rows from {args.csv}")
-    n_K = df["K"].nunique()
-    n_trials = df["trial"].nunique() if "trial" in df.columns else "?"
-    print(f"  K values: {n_K},  trials: {n_trials}")
+    if "status" in df.columns:
+        n_ok = (df["status"] == "ok").sum()
+        n_total = len(df)
+        if n_ok < n_total:
+            print(f"  {n_total - n_ok}/{n_total} rows have status != 'ok' "
+                  "and will be dropped")
 
-    # Pull n_terms from CSV unless overridden
-    if args.n_terms is None:
-        if "n_terms" not in df.columns:
-            raise ValueError("CSV has no 'n_terms' column; pass --n_terms.")
-        n_terms_vals = df["n_terms"].unique()
-        if len(n_terms_vals) != 1:
-            raise ValueError(f"CSV contains multiple n_terms values: "
-                             f"{n_terms_vals}.  Pass --n_terms to disambiguate.")
-        n_terms = int(n_terms_vals[0])
-    else:
-        n_terms = args.n_terms
-    print(f"  Fourier truncation: n_terms = {n_terms}")
+    K_values = pick_K_values(df, args.K)
+    print(f"Plotting K = {K_values}")
+    agg = aggregate(df, K_values)
 
-    df_agg = aggregate(df)
-    print("\nAggregated table:")
-    print(df_agg.to_string(index=False))
+    # Pretty parameter string for the suptitle (best-effort; CSV-dependent)
+    params = ""
+    for col, label in [("dist", "dist"), ("M", "M"),
+                       ("mu", "μ"), ("Delta", "Δ")]:
+        if col in df.columns and df[col].nunique() == 1:
+            params += f", {label}={df[col].iloc[0]}"
 
-    plot_figure(df_agg, n_terms=n_terms, save_path=args.out)
+    plot_sweep(agg, K_values, params.lstrip(", "), savepath=args.out)
 
 
 if __name__ == "__main__":
