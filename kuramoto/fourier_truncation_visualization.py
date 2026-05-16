@@ -1,18 +1,22 @@
 """
 Plot K × n_terms Sweep Results — PRX style
 ============================================
-Renders a 3×3 figure summarising a sweep produced by
-``fourier_truncation_gridsearch.py``.  Columns correspond to a chosen
-subset of K values; rows show
+Renders a 1×3 figure summarising a sweep produced by
+``fourier_truncation_gridsearch.py``.  Each panel shows a different
+quality-of-approximation metric as a function of the Fourier truncation
+order ``n_terms``, with one line per value of the coupling strength K:
 
-    Row 1 — corr_A     (Pearson correlation between coupling matrices)
-    Row 2 — rmse_sbar  (RMSE between empirical s̄_ml and OA truncation)
-    Row 3 — mean phase coherence R for KMO and OA, with the temporal
-            variance of R(t) shown as error bars
+    Col 1 — log10(corr_A)   Pearson correlation between the KMO
+                            coarse-grained coupling matrix and the OA
+                            coupling matrix (log scale for visibility).
+    Col 2 — rmse_sbar       RMSE between the empirical s̄_ml from the
+                            KMO and the OA Fourier-truncated counterpart.
+    Col 3 — nrmse_R         Normalised RMSE between the KMO and OA
+                            macroscopic phase coherence R(t).
 
-All curves are plotted vs. n_terms; markers indicate per-trial means and
-error bars indicate across-trial std (rows 1 & 2) or the mean temporal
-variance of R(t) reported by the sweep (row 3).
+Markers indicate per-K means across trials and error bars show the
+across-trial standard deviation (with the appropriate propagated
+uncertainty for column 1).
 
 The matplotlib style, figure-size convention, panel labels, and colour
 scheme match `kuramoto_ensemble_fitting.py` so this plot fits in the same
@@ -65,11 +69,10 @@ def set_prx_style():
     })
 
 
-# Match the colour palette used in kuramoto_ensemble_fitting.py
-C_KM = "#1f4e79"     # KMO  — deep blue
-C_OA = "#c44e52"     # OA   — muted red
-C_AUX = "#4c4c4c"    # grey accent (used for corr_A and rmse_sbar in this fig)
-C_AUX2 = "#3a8e7c"    # grey accent (used for corr_A and rmse_sbar in this fig)
+# Match the colour palette used in kuramoto_ensemble_fitting.py.
+# With one line per K value in every panel, we use a 3-colour palette
+# anchored at the same deep blue and muted red used throughout the manuscript.
+K_PALETTE = ["#1f4e79", "#3a8e7c", "#c44e52"]   # blue → teal → red
 
 def make_panel_label(ax, label, *, x=-0.22, y=1.04, fontsize=12):
     ax.text(x, y, label, transform=ax.transAxes,
@@ -93,12 +96,29 @@ def aggregate(df, K_values):
                        corr_A_std       = ("corr_A",     "std"),
                        rmse_sbar_mean   = ("rmse_sbar",  "mean"),
                        rmse_sbar_std    = ("rmse_sbar",  "std"),
-                       mean_R_km_mean   = ("mean_R_km",  "mean"),
-                       mean_R_oa_mean   = ("mean_R_oa",  "mean"),
-                       var_R_km_mean    = ("var_R_km",   "mean"),
-                       var_R_oa_mean    = ("var_R_oa",   "mean"),
+                       nrmse_R_mean     = ("nrmse_R",    "mean"),
+                       nrmse_R_std      = ("nrmse_R",    "std"),
                        n_trials         = ("trial",      "count"))
                   .sort_index())
+
+        # log10(corr_A): only defined for positive correlations.
+        # Standard error propagation: d(log10 x)/dx = 1/(x ln 10), so
+        # std(log10 X) ≈ std(X) / (X · ln 10) to first order.
+        pos = agg["corr_A_mean"] > 0
+        if not pos.all():
+            bad = agg.index[~pos].tolist()
+            print(f"  warning: K={K}: corr_A ≤ 0 at n_terms={bad}; "
+                  "log10(corr_A) masked to NaN there", file=sys.stderr)
+        agg["log_corr_A_mean"] = np.where(
+            pos, np.log10(agg["corr_A_mean"].where(pos)), np.nan,
+        )
+        agg["log_corr_A_std"] = np.where(
+            pos,
+            agg["corr_A_std"]
+            / (agg["corr_A_mean"].where(pos) * np.log(10.0)),
+            np.nan,
+        )
+
         out[K] = agg
     return out
 
@@ -111,85 +131,82 @@ def plot_sweep(agg, K_values, params, savepath):
     K_list = [K for K in K_values if K in agg]
     if not K_list:
         raise RuntimeError("No K values to plot — check --K and the CSV.")
-    n_cols = len(K_list)
 
-    # Two-column PRX width = 7.0 in (used by the reference figure).  For the
-    # 3×3 grid we keep that width and choose a height that gives roughly
-    # square panels.
-    fig = plt.figure(figsize=(7.0, 7.2))
+    # Map each K to a colour from the shared palette, padding/repeating if
+    # the caller passed more or fewer than three K values.
+    palette = K_PALETTE[:]
+    while len(palette) < len(K_list):
+        palette.extend(K_PALETTE)
+    K_colour = {K: palette[i] for i, K in enumerate(K_list)}
+
+    # Two-column PRX width = 7.0 in.  Single-row figure is shorter than the
+    # 3×3 layout; ~2.9 in height keeps the panels approximately square.
+    fig = plt.figure(figsize=(7.0, 2.9))
     gs = gridspec.GridSpec(
-        nrows=3, ncols=n_cols, figure=fig,
-        hspace=0.45, wspace=0.45,
-        left=0.10, right=0.97, top=0.93, bottom=0.085,
+        nrows=1, ncols=3, figure=fig,
+        wspace=0.45,
+        left=0.085, right=0.985, top=0.88, bottom=0.20,
     )
 
-    # Row-wide y-limits for rows 1 and 2 so columns are visually comparable
-    corr_lo = min(agg[K]["corr_A_mean"].min() - agg[K]["corr_A_std"].max()
-                  for K in K_list)
-    corr_hi = max(agg[K]["corr_A_mean"].max() + agg[K]["corr_A_std"].max()
-                  for K in K_list)
-    rmse_lo = min((agg[K]["rmse_sbar_mean"] - agg[K]["rmse_sbar_std"]).min()
-                  for K in K_list)
-    rmse_hi = max((agg[K]["rmse_sbar_mean"] + agg[K]["rmse_sbar_std"]).max()
-                  for K in K_list)
-    corr_pad = 0.03 * (corr_hi - corr_lo) if corr_hi > corr_lo else 0.02
-    rmse_pad = 0.03 * (rmse_hi - rmse_lo) if rmse_hi > rmse_lo else 0.02
+    ax_corr = fig.add_subplot(gs[0, 0])
+    ax_sbar = fig.add_subplot(gs[0, 1])
+    ax_R    = fig.add_subplot(gs[0, 2])
 
-    # Row-major panel labels: (a)(b)(c) on row 1, (d)(e)(f) on row 2, …
-    letters = "abcdefghijklmnop"
-    label_at = lambda row, col: letters[row * n_cols + col]
-
-    for j, K in enumerate(K_list):
+    for K in K_list:
         a = agg[K]
         n_terms_axis = a.index.to_numpy()
+        colour = K_colour[K]
+        label  = fr"$K = {K:g}$"
 
-        # ── Row 1: corr_A ────────────────────────────────────────────────
-        ax = fig.add_subplot(gs[0, j])
-        ax.errorbar(n_terms_axis, a["corr_A_mean"], yerr=a["corr_A_std"],
-                    fmt="o-", color=C_AUX, mfc=C_AUX, mec=C_AUX,
-                    capsize=2.5, lw=1.2, ms=4.0)
-        ax.set_title(fr"$K = {K:g}$")
-        if j == 0:
-            ax.set_ylabel(r"$\mathrm{corr}(A^{\mathrm{KO}},"
-                          r"\, A^{\mathrm{OA}})$")
-        ax.set_ylim(corr_lo - corr_pad, min(1.01, corr_hi + corr_pad))
-        make_panel_label(ax, f"({label_at(0, j)})")
+        # ── Col 1: log10(corr_A) ─────────────────────────────────────────
+        ax_corr.errorbar(
+            n_terms_axis, a["log_corr_A_mean"], yerr=a["log_corr_A_std"],
+            fmt="o-", color=colour, mfc=colour, mec=colour,
+            capsize=2.5, lw=1.2, ms=4.0, label=label,
+        )
 
-        # ── Row 2: rmse_sbar ─────────────────────────────────────────────
-        ax = fig.add_subplot(gs[1, j])
-        ax.errorbar(n_terms_axis, a["rmse_sbar_mean"], yerr=a["rmse_sbar_std"],
-                    fmt="s-", color=C_AUX2, mfc=C_AUX2, mec=C_AUX2,
-                    capsize=2.5, lw=1.2, ms=4.0)
-        if j == 0:
-            ax.set_ylabel(r"$\mathrm{RMSE}(\bar s^{\mathrm{KO}},\,"
-                          r"\bar s^{\mathrm{OA}})$")
-        ax.set_ylim(max(0.0, rmse_lo - rmse_pad), rmse_hi + rmse_pad)
-        make_panel_label(ax, f"({label_at(1, j)})")
+        # ── Col 2: rmse_sbar ─────────────────────────────────────────────
+        ax_sbar.errorbar(
+            n_terms_axis, a["rmse_sbar_mean"], yerr=a["rmse_sbar_std"],
+            fmt="s-", color=colour, mfc=colour, mec=colour,
+            capsize=2.5, lw=1.2, ms=4.0, label=label,
+        )
 
-        # ── Row 3: mean R(t) with var(R) error bars ──────────────────────
-        ax = fig.add_subplot(gs[2, j])
-        ax.errorbar(n_terms_axis, a["mean_R_km_mean"],
-                    yerr=a["var_R_km_mean"],
-                    fmt="o-", color=C_KM, mfc=C_KM, mec=C_KM,
-                    capsize=2.5, lw=1.2, ms=4.0,
-                    label=r"KMO")
-        ax.errorbar(n_terms_axis, a["mean_R_oa_mean"],
-                    yerr=a["var_R_oa_mean"],
-                    fmt="s--", color=C_OA, mfc=C_OA, mec=C_OA,
-                    capsize=2.5, lw=1.2, ms=4.0,
-                    label=r"OA")
-        if j == 0:
-            ax.set_ylabel(r"$\langle R(t) \rangle_t$")
-            ax.legend(loc="lower right", frameon=False,
-                      handlelength=2.2, borderaxespad=0.3)
+        # ── Col 3: nrmse_R ───────────────────────────────────────────────
+        ax_R.errorbar(
+            n_terms_axis, a["nrmse_R_mean"], yerr=a["nrmse_R_std"],
+            fmt="^-", color=colour, mfc=colour, mec=colour,
+            capsize=2.5, lw=1.2, ms=4.0, label=label,
+        )
+
+    ax_corr.set_ylabel(r"$\log_{10}\,\mathrm{corr}"
+                       r"(A^{\mathrm{KO}},\, A^{\mathrm{OA}})$")
+    ax_sbar.set_ylabel(r"$\mathrm{RMSE}(\bar s^{\mathrm{KO}},\,"
+                       r"\bar s^{\mathrm{OA}})$")
+    ax_R.set_ylabel(r"$\mathrm{NRMSE}(R^{\mathrm{KO}},\, R^{\mathrm{OA}})$")
+    for ax in (ax_corr, ax_sbar, ax_R):
         ax.set_xlabel(r"$n_f$")
-        ax.set_ylim(0.0, 1.05)
-        make_panel_label(ax, f"({label_at(2, j)})")
 
-    # Integer x-ticks for n_terms across every panel
+    # Lower bound of 0 for the (N)RMSE panels; let upper bound auto-scale.
+    for ax in (ax_sbar, ax_R):
+        lo, hi = ax.get_ylim()
+        ax.set_ylim(max(0.0, lo), hi)
+
+    # Single shared legend in the first panel.
+    ax_corr.legend(loc="lower right", frameon=False,
+                   handlelength=1.8, borderaxespad=0.3,
+                   labelspacing=0.25)
+
+    # Integer x-ticks for n_terms across every panel, with a small left/right
+    # margin so the leftmost tick label doesn't collide with the y-axis.
     all_nt = sorted({int(nt) for K in K_list for nt in agg[K].index.tolist()})
-    for ax in fig.axes:
+    for ax in (ax_corr, ax_sbar, ax_R):
         ax.set_xticks(all_nt)
+        ax.margins(x=0.05)
+
+    # Panel labels (a), (b), (c)
+    for col, ax in enumerate((ax_corr, ax_sbar, ax_R)):
+        make_panel_label(ax, f"({'abc'[col]})")
 
     fig.savefig(savepath, bbox_inches="tight")
     print(f"Figure saved → {savepath}")

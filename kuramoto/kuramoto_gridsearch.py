@@ -509,12 +509,12 @@ def parse_args():
                    default="lorentzian",
                    help="Microscopic frequency distribution")
     p.add_argument("--n_trials", type=int, default=10)
-    p.add_argument("--N", type=int, default=1000,
+    p.add_argument("--N", type=int, default=500,
                    help="Number of microscopic oscillators")
     p.add_argument("--T", type=float, default=150.0)
     p.add_argument("--K", type=float, default=2.0)
     p.add_argument("--omega0", type=float, default=1.0)
-    p.add_argument("--gamma", type=float, default=0.001)
+    p.add_argument("--gamma", type=float, default=0.0)
     p.add_argument("--plasticity", choices=["hebbian", "antihebbian"],
                    default="antihebbian")
 
@@ -523,7 +523,7 @@ def parse_args():
                    default=[0.1, 0.2, 0.4, 0.8, 1.6, 3.2],
                    help="Δ values to sweep")
     p.add_argument("--M", type=int, nargs="+",
-                   default=[5, 10, 25, 50, 100],
+                   default=[5, 10, 25, 50, 100, 250, 500],
                    help="M values to sweep")
     p.add_argument("--mu", type=float, nargs="+",
                    default=[0.0, 0.005, 0.01, 0.02, 0.04, 0.08],
