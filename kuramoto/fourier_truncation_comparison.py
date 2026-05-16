@@ -367,22 +367,22 @@ def parse_args():
     )
     p.add_argument("--dist", choices=["uniform", "lorentzian"],
                    default="uniform")
-    p.add_argument("--N", type=int, default=300)
+    p.add_argument("--N", type=int, default=500)
     p.add_argument("--M", type=int, default=50)
-    p.add_argument("--T", type=float, default=150.0)
-    p.add_argument("--omega0", type=float, default=1.0)
+    p.add_argument("--T", type=float, default=120.0)
+    p.add_argument("--omega0", type=float, default=0.0)
     p.add_argument("--Delta", type=float, default=1.0)
-    p.add_argument("--K", type=float, default=0.6)
-    p.add_argument("--mu", type=float, default=0.02)
+    p.add_argument("--K", type=float, default=1.5)
+    p.add_argument("--mu", type=float, default=0.01)
     p.add_argument("--gamma", type=float, default=0.001)
-    p.add_argument("--n_terms", type=int, default=1)
+    p.add_argument("--n_terms", type=int, default=10)
 
     p.add_argument("--method", default="RK45")
     p.add_argument("--rtol", type=float, default=1e-6)
     p.add_argument("--atol", type=float, default=1e-8)
     p.add_argument("--n_eval", type=int, default=400)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--t_cutoff", type=float, default=100.0,
+    p.add_argument("--t_cutoff", type=float, default=20.0,
                    help="discard t ≤ t_cutoff when building the "
                         "plasticity-drive scatter")
 

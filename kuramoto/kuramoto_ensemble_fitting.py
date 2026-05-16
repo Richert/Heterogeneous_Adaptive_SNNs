@@ -373,14 +373,22 @@ def plot_figure(res, savepath="figure1.pdf"):
 
     # ── Figure dimensions: two-column width, 4 rows ─────────────────────────
     # Each (M block) occupies 2 rows: top for R(t), bottom for the panels.
-    fig = plt.figure(figsize=(7.0, 9.4))
+    # Original height_ratios totaled 4.1 over height 9.4". Shrinking rows 0 and 2
+    # to 2/3 of their original height saves (2 - 4/3)/4.1 of the figure height,
+    # keeping rows 1 and 3 (and all font sizes) at their original physical size.
+    _orig_h = 9.4
+    _new_h = _orig_h * (4/3 + 1.05 + 1.05) / (1.0 + 1.05 + 1.0 + 1.05)
+    fig = plt.figure(figsize=(7.0, _new_h))
 
     gs = gridspec.GridSpec(
         nrows=4, ncols=3, figure=fig,
-        height_ratios=[1.0, 1.05, 1.0, 1.05],
+        height_ratios=[2/3, 1.05, 2/3, 1.05],
         width_ratios =[1.05, 1.0, 1.0],
         hspace=0.55, wspace=0.40,
-        left=0.085, right=0.94, top=0.965, bottom=0.055,
+        left=0.085, right=0.94,
+        # Preserve top/bottom margins in absolute inches under the shorter figure
+        top    = 1 - (1 - 0.965) * _orig_h / _new_h,
+        bottom = 0.055 * _orig_h / _new_h,
     )
 
     panel_letters = iter("abcdefghij")
@@ -437,6 +445,7 @@ def plot_figure(res, savepath="figure1.pdf"):
         ax_f.legend(loc="upper right", frameon=False, handlelength=2.0,
                     borderaxespad=0.3)
         ax_f.set_xlim(lo, hi)
+        ax_f.set_ylim(0.0, 1.0)
         make_panel_label(ax_f, f"({next(panel_letters)})", x=-0.22, y=1.02)
 
         # ── KMO coarse-grained weight matrix ─────────────────────────────────
@@ -494,18 +503,18 @@ if __name__ == "__main__":
     # Multi-modal frequency distribution: 3 Gaussian components
     GMM_PARAMS = (
         # means         sigmas       weights
-        [-0.5, -0.05, 0.4],
-        [ 0.2,  1.0,  0.4],
-        [ 0.5,  1.0,  0.6],
+        [-0.4, 0.05, 0.5],
+        [ 0.3,  0.4,  0.3],
+        [ 0.5,  1.0,  0.7],
     )
 
     CONFIG = dict(
         N          = 500,
-        M_list     = (5, 10),     # two values of M to compare
+        M_list     = (5, 30),     # two values of M to compare
         T          = 150.0,
-        K          = 2.5,
-        mu         = 0.02,
-        gamma      = 0.001,
+        K          = 1.2,
+        mu         = 0.05,
+        gamma      = 0.0,
         plasticity = "antihebbian",
         gmm_params = GMM_PARAMS,
         seed       = 42,
@@ -519,4 +528,3 @@ if __name__ == "__main__":
     fig.savefig("figure1_kmo_vs_oa_twoM.png", dpi=300, bbox_inches="tight")
     print("PNG preview → figure1_kmo_vs_oa_twoM.png")
     plt.show()
-

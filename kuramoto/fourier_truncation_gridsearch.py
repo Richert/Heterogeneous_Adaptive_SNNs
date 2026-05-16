@@ -429,15 +429,15 @@ def parse_args():
                    default="uniform")
     p.add_argument("--n_trials", type=int, default=10)
     p.add_argument("--N", type=int, default=500)
-    p.add_argument("--T", type=float, default=150.0)
-    p.add_argument("--omega0", type=float, default=1.0)
+    p.add_argument("--T", type=float, default=120.0)
+    p.add_argument("--omega0", type=float, default=0.0)
     p.add_argument("--Delta", type=float, default=1.0)
-    p.add_argument("--mu", type=float, default=0.02)
+    p.add_argument("--mu", type=float, default=0.01)
     p.add_argument("--gamma", type=float, default=0.001)
 
     # Two-dimensional sweep grid
     p.add_argument("--K", type=float, nargs="+",
-                   default=[0.3, 0.6, 1.2],
+                   default=[0.5, 1.0, 1.5],
                    help="K values to sweep")
     p.add_argument("--n_terms", type=int, nargs="+",
                    default=[1, 2, 4, 8, 16],
@@ -449,7 +449,7 @@ def parse_args():
     p.add_argument("--rtol", type=float, default=1e-6)
     p.add_argument("--atol", type=float, default=1e-8)
     p.add_argument("--n_eval", type=int, default=400)
-    p.add_argument("--t_cutoff", type=float, default=100.0,
+    p.add_argument("--t_cutoff", type=float, default=20.0,
                    help="Drop t ≤ t_cutoff when building rmse_sbar")
 
     p.add_argument("--seed_base", type=int, default=42)
