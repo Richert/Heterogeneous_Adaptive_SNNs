@@ -15,16 +15,15 @@ Metrics recorded per cell
                  connectivity (averaged over the M ensembles induced by the
                  OA frequency partitioning) and the OA connectivity.
 
-    mean_R_km    Time average of the macroscopic phase coherence R(t) for
-    var_R_km     the KMO, and its temporal variance.
-    mean_R_oa    Same for the OA model.
-    var_R_oa
+    nrmse_R      Normalised RMSE between the KMO and OA macroscopic phase
+                 coherence traces R(t), with the RMSE divided by the time
+                 mean of (R_km + R_oa)/2 so the metric is independent of the
+                 absolute coherence level.
 
-    mean_r_km    Mean within-ensemble coherence in the KMO, averaged over
-    var_r_km     ensembles and time, with the corresponding variance taken
-                 over the pooled (ensemble, time) sample.
-    mean_r_oa    Same for the OA model (r_m(t) from the reduced equations).
-    var_r_oa
+    nrmse_r      Same construction for the within-ensemble coherence r_m(t):
+                 RMSE pooled over (ensemble, time) between the KMO empirical
+                 r_m and the OA r_m, divided by the pooled mean of
+                 (r_km + r_oa)/2.
 
     rmse_sbar    RMSE between the KMO empirical ensemble-averaged plasticity
                  drive  s̄_ml(t) = (1/|N_m||N_l|) Σ_{i∈N_m, j∈N_l}
@@ -33,9 +32,6 @@ Metrics recorded per cell
                  s̄_ml^trunc(t) = 2/π - (4/π) Σ_{n=1}^{n_terms}
                                        (r_m r_l)^{2n} cos(2n(ψ_l-ψ_m))/(4n²-1),
                  pooled across t > t_cutoff and all M² ensemble pairs.
-
-    rmse_R       RMSE between the KMO and OA R(t) trajectories (kept from
-                 the original sweep as a sanity-check column).
 
 Parallelisation: tasks are independent and run in a multiprocessing.Pool.
 
@@ -312,18 +308,25 @@ def run_task(task):
             corr_A, _ = pearsonr(a_km, a_oa)
             corr_A    = float(corr_A)
 
-        # (2) Macroscopic R(t): time mean and variance
-        mean_R_km = float(np.mean(R_km))
-        var_R_km  = float(np.var(R_km))
-        mean_R_oa = float(np.mean(R_oa))
-        var_R_oa  = float(np.var(R_oa))
+        # (2) Normalised RMSE of macroscopic R(t) between KMO and OA,
+        # divided by the time-mean of (R_km + R_oa)/2 so the metric is
+        # independent of the absolute coherence level.
+        denom_R = 0.5 * float(np.mean(R_km + R_oa))
+        if denom_R < 1e-12:
+            nrmse_R = float("nan")
+        else:
+            nrmse_R = float(np.sqrt(np.mean((R_km - R_oa) ** 2)) / denom_R)
 
-        # (3) Within-ensemble coherence r_m(t): pooled mean and variance over
-        # ensembles × time.
-        mean_r_km = float(np.mean(r_km_per_ens))
-        var_r_km  = float(np.var(r_km_per_ens))
-        mean_r_oa = float(np.mean(r_grid))
-        var_r_oa  = float(np.var(r_grid))
+        # (3) Normalised RMSE of within-ensemble coherence r_m(t), pooled
+        # over (ensemble, time), normalised by the pooled mean of
+        # (r_km + r_oa)/2.
+        denom_r = 0.5 * float(np.mean(r_km_per_ens + r_grid))
+        if denom_r < 1e-12:
+            nrmse_r = float("nan")
+        else:
+            nrmse_r = float(
+                np.sqrt(np.mean((r_km_per_ens - r_grid) ** 2)) / denom_r
+            )
 
         # (4) RMSE of empirical s̄_ml vs OA truncated s̄^trunc_ml on t>t_cutoff
         if late_idx.size > 0:
@@ -331,18 +334,12 @@ def run_task(task):
         else:
             rmse_sbar = float("nan")
 
-        # Sanity check: trajectory RMSE of R(t) — kept from original sweep
-        rmse_R = float(np.sqrt(np.mean((R_km - R_oa) ** 2)))
-
         return dict(
             trial=trial, dist=dist, Delta=Delta, K=K, M=M, mu=mu_val,
             n_terms=n_terms, t_cutoff=t_cutoff,
             corr_A=corr_A,
-            mean_R_km=mean_R_km, var_R_km=var_R_km,
-            mean_R_oa=mean_R_oa, var_R_oa=var_R_oa,
-            mean_r_km=mean_r_km, var_r_km=var_r_km,
-            mean_r_oa=mean_r_oa, var_r_oa=var_r_oa,
-            rmse_sbar=rmse_sbar, rmse_R=rmse_R,
+            nrmse_R=nrmse_R, nrmse_r=nrmse_r,
+            rmse_sbar=rmse_sbar,
             n_late=int(late_idx.size),
             status="ok", error="",
         )
@@ -352,11 +349,8 @@ def run_task(task):
             trial=trial, dist=dist, Delta=Delta, K=K, M=M, mu=mu_val,
             n_terms=n_terms, t_cutoff=t_cutoff,
             corr_A=float("nan"),
-            mean_R_km=float("nan"), var_R_km=float("nan"),
-            mean_R_oa=float("nan"), var_R_oa=float("nan"),
-            mean_r_km=float("nan"), var_r_km=float("nan"),
-            mean_r_oa=float("nan"), var_r_oa=float("nan"),
-            rmse_sbar=float("nan"), rmse_R=float("nan"),
+            nrmse_R=float("nan"), nrmse_r=float("nan"),
+            rmse_sbar=float("nan"),
             n_late=0,
             status="error", error=str(e),
         )
@@ -498,9 +492,8 @@ def main():
         if len(ok) > 0:
             grouped = (ok.groupby(["K", "n_terms"])
                        [["corr_A",
-                         "mean_R_km", "var_R_km", "mean_R_oa", "var_R_oa",
-                         "mean_r_km", "var_r_km", "mean_r_oa", "var_r_oa",
-                         "rmse_sbar", "rmse_R"]]
+                         "nrmse_R", "nrmse_r",
+                         "rmse_sbar"]]
                        .mean()
                        .reset_index())
             print("\nMean metrics across trials (per K, n_terms):")
