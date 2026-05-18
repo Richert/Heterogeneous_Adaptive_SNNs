@@ -11,7 +11,7 @@ For each trial × K × n_terms cell:
 
 Metrics recorded per cell
 -------------------------
-    corr_A       Pearson correlation between the final KMO coarse-grained
+    rmse_A       RMSE between the final KMO coarse-grained
                  connectivity (averaged over the M ensembles induced by the
                  OA frequency partitioning) and the OA connectivity.
 
@@ -302,11 +302,7 @@ def run_task(task):
         # (1) Coupling-matrix correlation (KMO coarse-grained vs OA), final t
         a_km = A_km_final_cg.ravel()
         a_oa = A_oa_final.ravel()
-        if np.std(a_km) < 1e-12 or np.std(a_oa) < 1e-12:
-            corr_A = float("nan")
-        else:
-            corr_A, _ = pearsonr(a_km, a_oa)
-            corr_A    = float(corr_A)
+        rmse_A = float(np.sqrt(np.mean((a_km.flatten() - a_oa.flatten()) ** 2)))
 
         # (2) Normalised RMSE of macroscopic R(t) between KMO and OA,
         # divided by the time-mean of (R_km + R_oa)/2 so the metric is
@@ -330,14 +326,15 @@ def run_task(task):
 
         # (4) RMSE of empirical s̄_ml vs OA truncated s̄^trunc_ml on t>t_cutoff
         if late_idx.size > 0:
-            rmse_sbar = float(np.sqrt(np.mean((s_emp_late - s_oa_late) ** 2)))
+            denom_s = 0.5 * float(np.mean(s_emp_late + s_oa_late))
+            rmse_sbar = float(np.sqrt(np.mean((s_emp_late - s_oa_late) ** 2)) / denom_s)
         else:
             rmse_sbar = float("nan")
 
         return dict(
             trial=trial, dist=dist, Delta=Delta, K=K, M=M, mu=mu_val,
             n_terms=n_terms, t_cutoff=t_cutoff,
-            corr_A=corr_A,
+            rmse_A=rmse_A,
             nrmse_R=nrmse_R, nrmse_r=nrmse_r,
             rmse_sbar=rmse_sbar,
             n_late=int(late_idx.size),
@@ -348,7 +345,7 @@ def run_task(task):
         return dict(
             trial=trial, dist=dist, Delta=Delta, K=K, M=M, mu=mu_val,
             n_terms=n_terms, t_cutoff=t_cutoff,
-            corr_A=float("nan"),
+            rmse_A=float("nan"),
             nrmse_R=float("nan"), nrmse_r=float("nan"),
             rmse_sbar=float("nan"),
             n_late=0,
@@ -491,7 +488,7 @@ def main():
         ok = df[df["status"] == "ok"]
         if len(ok) > 0:
             grouped = (ok.groupby(["K", "n_terms"])
-                       [["corr_A",
+                       [["rmse_A",
                          "nrmse_R", "nrmse_r",
                          "rmse_sbar"]]
                        .mean()
