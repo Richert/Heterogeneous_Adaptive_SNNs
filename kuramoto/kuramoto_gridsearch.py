@@ -222,15 +222,16 @@ def run_km(N, T, K, mu, gamma, omega_micro, theta0, plasticity,
     A_km0 = np.ones((N, N))
     y0_km = np.concatenate([theta0, A_km0.ravel()])
 
+    # Linearly spaced sampling times on the closed interval [0, T].
     t_grid = np.linspace(0.0, T, n_eval)
     sol = solve_ivp(km_ode, (0, T), y0_km, method=method,
                     args=(K, omega_micro, mu, gamma, f),
                     rtol=rtol, atol=atol,
-                    dense_output=True)
+                    t_eval=t_grid, dense_output=False)
     if not sol.success:
         raise RuntimeError(f"KMO solve_ivp failed: {sol.message}")
 
-    y_grid = sol.sol(t_grid)
+    y_grid = sol.y
     theta_grid = y_grid[:N]
     R_km   = km_order_parameter(theta_grid)
     A_final = y_grid[N:, -1].reshape(N, N)
@@ -281,11 +282,12 @@ def run_oa_task(task):
 
         sol = solve_ivp(oa_ode, (0, T), y0_oa, method=method,
                         args=(K, omega_pop, delta_pop, mu_val, gamma, f, w_pop),
-                        rtol=rtol, atol=atol, dense_output=True)
+                        rtol=rtol, atol=atol,
+                        t_eval=t_grid, dense_output=False)
         if not sol.success:
             raise RuntimeError(f"OA solve_ivp failed: {sol.message}")
 
-        y_grid = sol.sol(t_grid)
+        y_grid = sol.y
         r_grid   = y_grid[:M]
         psi_grid = y_grid[M:2*M]
         A_oa_final = y_grid[2*M:, -1].reshape(M, M)
@@ -304,13 +306,15 @@ def run_oa_task(task):
             corr_A    = float(corr_A)
 
         return dict(
-            trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
+            trial=trial, dist=dist, plasticity=plasticity,
+            Delta=Delta, M=M, mu=mu_val,
             rmse_R=rmse_R, corr_A=corr_A, status="ok", error="",
         )
 
     except Exception as e:
         return dict(
-            trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
+            trial=trial, dist=dist, plasticity=plasticity,
+            Delta=Delta, M=M, mu=mu_val,
             rmse_R=float("nan"), corr_A=float("nan"),
             status="error", error=str(e),
         )
@@ -327,8 +331,8 @@ def run_sweep(
     Delta_values,
     M_values,
     mu_values,
+    plasticity_values,
     N, T, K, gamma, omega0,
-    plasticity,
     n_eval,
     method, rtol, atol,
     seed_base,
@@ -351,58 +355,61 @@ def run_sweep(
                 N, dist, omega0, Delta, rng
             )
 
-            # ── Run KMO once for this (trial, Δ) ─────────────────────────────
-            t0 = time.time()
-            try:
-                km_res = run_km(
-                    N=N, T=T, K=K, mu=0.0, gamma=0.0,  # KMO weights frozen here?
-                    omega_micro=omega_micro, theta0=theta0,
-                    plasticity=plasticity, n_eval=n_eval,
-                    method=method, rtol=rtol, atol=atol,
-                )
-            except Exception as e:
-                # If KMO failed, mark all (M, μ) entries as failed
+            for plasticity in plasticity_values:
+                # ── Run KMO once for this (trial, Δ, plasticity) ─────────────
+                t0 = time.time()
+                try:
+                    km_res = run_km(
+                        N=N, T=T, K=K, mu=0.0, gamma=0.0,  # KMO weights frozen here
+                        omega_micro=omega_micro, theta0=theta0,
+                        plasticity=plasticity, n_eval=n_eval,
+                        method=method, rtol=rtol, atol=atol,
+                    )
+                except Exception as e:
+                    # If KMO failed, mark all (M, μ) entries as failed
+                    for M, mu_val in product(M_values, mu_values):
+                        rows.append(dict(
+                            trial=trial, dist=dist,
+                            plasticity=plasticity,
+                            Delta=Delta, M=M, mu=mu_val,
+                            rmse_R=float("nan"), corr_A=float("nan"),
+                            status="error_km", error=str(e),
+                        ))
+                    continue
+                t_km = time.time() - t0
+                if verbose:
+                    print(f"[trial {trial+1}/{n_trials}  Δ={Delta:g}  "
+                          f"plast={plasticity}]  KMO done in {t_km:.1f}s")
+
+                # NOTE: above call used mu=0, gamma=0 so weights stay at A=1.
+                # If the comparison needs adaptive KMO weights, re-run with the
+                # appropriate μ here.  See the main() wrapper.
+
+                # ── Build all (M, μ) tasks for the OA sweep ─────────────────
+                tasks = []
                 for M, mu_val in product(M_values, mu_values):
-                    rows.append(dict(
-                        trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
-                        rmse_R=float("nan"), corr_A=float("nan"),
-                        status="error_km", error=str(e),
+                    tasks.append((
+                        trial, dist, Delta, M, mu_val,
+                        omega0, gamma, plasticity, T, K,
+                        omega_micro, theta0,
+                        km_res.A_km_final, km_res.t_grid, km_res.R_km,
+                        N, n_eval, method, rtol, atol,
                     ))
-                continue
-            t_km = time.time() - t0
-            if verbose:
-                print(f"[trial {trial+1}/{n_trials}  Δ={Delta:g}]  "
-                      f"KMO done in {t_km:.1f}s")
 
-            # NOTE: above call used mu=0, gamma=0 so weights stay at A=1.
-            # If the comparison needs adaptive KMO weights, re-run with the
-            # appropriate μ here.  See the main() wrapper.
+                t0 = time.time()
+                if n_workers > 1:
+                    with Pool(n_workers) as pool:
+                        chunk_rows = pool.map(run_oa_task, tasks)
+                else:
+                    chunk_rows = [run_oa_task(t) for t in tasks]
+                t_oa = time.time() - t0
 
-            # ── Build all (M, μ) tasks for the OA sweep ─────────────────────
-            tasks = []
-            for M, mu_val in product(M_values, mu_values):
-                tasks.append((
-                    trial, dist, Delta, M, mu_val,
-                    omega0, gamma, plasticity, T, K,
-                    omega_micro, theta0,
-                    km_res.A_km_final, km_res.t_grid, km_res.R_km,
-                    N, n_eval, method, rtol, atol,
-                ))
-
-            t0 = time.time()
-            if n_workers > 1:
-                with Pool(n_workers) as pool:
-                    chunk_rows = pool.map(run_oa_task, tasks)
-            else:
-                chunk_rows = [run_oa_task(t) for t in tasks]
-            t_oa = time.time() - t0
-
-            rows.extend(chunk_rows)
-            if verbose:
-                ok = sum(r["status"] == "ok" for r in chunk_rows)
-                print(f"   OA sweep over (M, μ) = "
-                      f"{len(tasks)} tasks done in {t_oa:.1f}s  "
-                      f"({ok}/{len(tasks)} ok)")
+                rows.extend(chunk_rows)
+                if verbose:
+                    ok = sum(r["status"] == "ok" for r in chunk_rows)
+                    print(f"   OA sweep over (M, μ) = "
+                          f"{len(tasks)} tasks done in {t_oa:.1f}s  "
+                          f"({ok}/{len(tasks)} ok)")
 
     if verbose:
         print(f"\nTotal wallclock: {time.time() - t_total:.1f}s")
@@ -427,16 +434,16 @@ def run_sweep_adaptive(
     Delta_values,
     M_values,
     mu_values,
+    plasticity_values,
     N, T, K, gamma, omega0,
-    plasticity,
     n_eval,
     method, rtol, atol,
     seed_base,
     n_workers,
     verbose=True,
 ):
-    """Same as run_sweep but runs KMO for each (trial, Δ, μ).  The (M)-sweep
-    is parallelised within each (trial, Δ, μ) block."""
+    """Same as run_sweep but runs KMO for each (trial, Δ, μ, plasticity).
+    The (M)-sweep is parallelised within each block."""
     rows = []
     t_total = time.time()
 
@@ -450,48 +457,52 @@ def run_sweep_adaptive(
                 N, dist, omega0, Delta, rng
             )
 
-            for mu_val in mu_values:
-                t0 = time.time()
-                try:
-                    km_res = run_km(
-                        N=N, T=T, K=K, mu=mu_val, gamma=gamma,
-                        omega_micro=omega_micro, theta0=theta0,
-                        plasticity=plasticity, n_eval=n_eval,
-                        method=method, rtol=rtol, atol=atol,
-                    )
-                except Exception as e:
-                    for M in M_values:
-                        rows.append(dict(
-                            trial=trial, dist=dist, Delta=Delta, M=M, mu=mu_val,
-                            rmse_R=float("nan"), corr_A=float("nan"),
-                            status="error_km", error=str(e),
-                        ))
-                    continue
-                t_km = time.time() - t0
+            for plasticity in plasticity_values:
+                for mu_val in mu_values:
+                    t0 = time.time()
+                    try:
+                        km_res = run_km(
+                            N=N, T=T, K=K, mu=mu_val, gamma=gamma,
+                            omega_micro=omega_micro, theta0=theta0,
+                            plasticity=plasticity, n_eval=n_eval,
+                            method=method, rtol=rtol, atol=atol,
+                        )
+                    except Exception as e:
+                        for M in M_values:
+                            rows.append(dict(
+                                trial=trial, dist=dist,
+                                plasticity=plasticity,
+                                Delta=Delta, M=M, mu=mu_val,
+                                rmse_R=float("nan"), corr_A=float("nan"),
+                                status="error_km", error=str(e),
+                            ))
+                        continue
+                    t_km = time.time() - t0
 
-                tasks = [
-                    (trial, dist, Delta, M, mu_val,
-                     omega0, gamma, plasticity, T, K,
-                     omega_micro, theta0,
-                     km_res.A_km_final, km_res.t_grid, km_res.R_km,
-                     N, n_eval, method, rtol, atol)
-                    for M in M_values
-                ]
+                    tasks = [
+                        (trial, dist, Delta, M, mu_val,
+                         omega0, gamma, plasticity, T, K,
+                         omega_micro, theta0,
+                         km_res.A_km_final, km_res.t_grid, km_res.R_km,
+                         N, n_eval, method, rtol, atol)
+                        for M in M_values
+                    ]
 
-                t0 = time.time()
-                if n_workers > 1:
-                    with Pool(n_workers) as pool:
-                        chunk_rows = pool.map(run_oa_task, tasks)
-                else:
-                    chunk_rows = [run_oa_task(t) for t in tasks]
-                t_oa = time.time() - t0
+                    t0 = time.time()
+                    if n_workers > 1:
+                        with Pool(n_workers) as pool:
+                            chunk_rows = pool.map(run_oa_task, tasks)
+                    else:
+                        chunk_rows = [run_oa_task(t) for t in tasks]
+                    t_oa = time.time() - t0
 
-                rows.extend(chunk_rows)
-                if verbose:
-                    ok = sum(r["status"] == "ok" for r in chunk_rows)
-                    print(f"[trial {trial+1}/{n_trials} Δ={Delta:g} μ={mu_val:g}] "
-                          f"KMO {t_km:.1f}s | OA (M-sweep, {len(tasks)} tasks) "
-                          f"{t_oa:.1f}s  [{ok}/{len(tasks)} ok]")
+                    rows.extend(chunk_rows)
+                    if verbose:
+                        ok = sum(r["status"] == "ok" for r in chunk_rows)
+                        print(f"[trial {trial+1}/{n_trials} Δ={Delta:g} "
+                              f"plast={plasticity} μ={mu_val:g}] "
+                              f"KMO {t_km:.1f}s | OA (M-sweep, {len(tasks)} tasks) "
+                              f"{t_oa:.1f}s  [{ok}/{len(tasks)} ok]")
 
     if verbose:
         print(f"\nTotal wallclock: {time.time() - t_total:.1f}s")
@@ -516,7 +527,9 @@ def parse_args():
     p.add_argument("--omega0", type=float, default=1.0)
     p.add_argument("--gamma", type=float, default=0.0)
     p.add_argument("--plasticity", choices=["hebbian", "antihebbian"],
-                   default="antihebbian")
+                   nargs="+",
+                   default=["hebbian", "antihebbian"],
+                   help="Plasticity rule(s) to sweep over")
 
     # Sweep grids
     p.add_argument("--Delta", type=float, nargs="+",
@@ -533,7 +546,7 @@ def parse_args():
     p.add_argument("--method", default="RK45")
     p.add_argument("--rtol", type=float, default=1e-6)
     p.add_argument("--atol", type=float, default=1e-8)
-    p.add_argument("--n_eval", type=int, default=400)
+    p.add_argument("--n_eval", type=int, default=1500)
 
     # Execution control
     p.add_argument("--seed_base", type=int, default=42)
@@ -551,8 +564,9 @@ def main():
     for k, v in vars(args).items():
         print(f"  {k:12s} = {v}")
     print("-" * 60)
-    n_tasks = args.n_trials * len(args.Delta) * len(args.M) * len(args.mu)
-    print(f"Total (trial, Δ, M, μ) tasks: {n_tasks}")
+    n_tasks = (args.n_trials * len(args.Delta) * len(args.M)
+               * len(args.mu) * len(args.plasticity))
+    print(f"Total (trial, Δ, M, μ, plasticity) tasks: {n_tasks}")
     print(f"Using {args.n_workers} parallel worker(s)\n")
 
     df = run_sweep_adaptive(
@@ -561,8 +575,8 @@ def main():
         Delta_values=args.Delta,
         M_values=args.M,
         mu_values=args.mu,
+        plasticity_values=args.plasticity,
         N=args.N, T=args.T, K=args.K, gamma=args.gamma, omega0=args.omega0,
-        plasticity=args.plasticity,
         n_eval=args.n_eval,
         method=args.method, rtol=args.rtol, atol=args.atol,
         seed_base=args.seed_base,
@@ -576,7 +590,7 @@ def main():
     if "status" in df.columns:
         ok = df[df["status"] == "ok"]
         if len(ok) > 0:
-            grouped = (ok.groupby(["Delta", "M", "mu"])
+            grouped = (ok.groupby(["plasticity", "Delta", "M", "mu"])
                        [["rmse_R", "corr_A"]].mean()
                        .reset_index())
             print("\nMean metrics across trials:")
@@ -585,4 +599,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

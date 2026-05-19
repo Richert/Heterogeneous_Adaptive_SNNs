@@ -4,19 +4,18 @@ Plot K × n_terms Sweep Results — PRX style
 Renders a 1×3 figure summarising a sweep produced by
 ``fourier_truncation_gridsearch.py``.  Each panel shows a different
 quality-of-approximation metric as a function of the Fourier truncation
-order ``n_terms``, with one line per value of the coupling strength K:
+order ``n_terms``, with one line per value of the coupling strength K.
+Within each panel and for each K, the RMSE curve is normalised by its
+maximum across ``n_terms`` so that the across-``n_f`` variation in each
+condition is easier to read off:
 
-    Col 1 — log10(corr_A)   Pearson correlation between the KMO
-                            coarse-grained coupling matrix and the OA
-                            coupling matrix (log scale for visibility).
-    Col 2 — rmse_sbar       RMSE between the empirical s̄_ml from the
-                            KMO and the OA Fourier-truncated counterpart.
-    Col 3 — nrmse_R         Normalised RMSE between the KMO and OA
-                            macroscopic phase coherence R(t).
+    Col 1 — rmse_A / max_{n_f} rmse_A        (per-K relative RMSE of A)
+    Col 2 — rmse_sbar / max_{n_f} rmse_sbar  (per-K relative RMSE of s̄)
+    Col 3 — nrmse_R / max_{n_f} nrmse_R      (per-K relative NRMSE of R)
 
 Markers indicate per-K means across trials and error bars show the
-across-trial standard deviation (with the appropriate propagated
-uncertainty for column 1).
+across-trial standard deviation, propagated through the per-K
+normalisation by the same maximum.
 
 The matplotlib style, figure-size convention, panel labels, and colour
 scheme match `kuramoto_ensemble_fitting.py` so this plot fits in the same
@@ -92,8 +91,8 @@ def aggregate(df, K_values):
             print(f"  warning: no rows for K={K}, skipping", file=sys.stderr)
             continue
         agg = (sub.groupby("n_terms")
-                  .agg(corr_A_mean      = ("corr_A",     "mean"),
-                       corr_A_std       = ("corr_A",     "std"),
+                  .agg(rmse_A_mean      = ("rmse_A",     "mean"),
+                       rmse_A_std       = ("rmse_A",     "std"),
                        rmse_sbar_mean   = ("rmse_sbar",  "mean"),
                        rmse_sbar_std    = ("rmse_sbar",  "std"),
                        nrmse_R_mean     = ("nrmse_R",    "mean"),
@@ -104,21 +103,6 @@ def aggregate(df, K_values):
         # log10(corr_A): only defined for positive correlations.
         # Standard error propagation: d(log10 x)/dx = 1/(x ln 10), so
         # std(log10 X) ≈ std(X) / (X · ln 10) to first order.
-        pos = agg["corr_A_mean"] > 0
-        if not pos.all():
-            bad = agg.index[~pos].tolist()
-            print(f"  warning: K={K}: corr_A ≤ 0 at n_terms={bad}; "
-                  "log10(corr_A) masked to NaN there", file=sys.stderr)
-        agg["log_corr_A_mean"] = np.where(
-            pos, np.log10(agg["corr_A_mean"].where(pos)), np.nan,
-        )
-        agg["log_corr_A_std"] = np.where(
-            pos,
-            agg["corr_A_std"]
-            / (agg["corr_A_mean"].where(pos) * np.log(10.0)),
-            np.nan,
-        )
-
         out[K] = agg
     return out
 
@@ -148,7 +132,7 @@ def plot_sweep(agg, K_values, params, savepath):
         left=0.085, right=0.985, top=0.88, bottom=0.20,
     )
 
-    ax_corr = fig.add_subplot(gs[0, 0])
+    ax_conn = fig.add_subplot(gs[0, 0])
     ax_sbar = fig.add_subplot(gs[0, 1])
     ax_R    = fig.add_subplot(gs[0, 2])
 
@@ -158,33 +142,47 @@ def plot_sweep(agg, K_values, params, savepath):
         colour = K_colour[K]
         label  = fr"$K = {K:g}$"
 
-        # ── Col 1: log10(corr_A) ─────────────────────────────────────────
-        ax_corr.errorbar(
-            n_terms_axis, a["log_corr_A_mean"], yerr=a["log_corr_A_std"],
+        # Per-K normalisation: divide each RMSE curve (and its std) by the
+        # maximum of the mean curve over n_f.  Guarded against div-by-zero
+        # in the degenerate case where every entry is zero.
+        def _norm(mean, std):
+            m = np.nanmax(mean)
+            if not np.isfinite(m) or m <= 0.0:
+                return mean, std
+            return mean / m, std / m
+
+        rmse_A_mean,    rmse_A_std    = _norm(a["rmse_A_mean"],    a["rmse_A_std"])
+        rmse_sbar_mean, rmse_sbar_std = _norm(a["rmse_sbar_mean"], a["rmse_sbar_std"])
+        nrmse_R_mean,   nrmse_R_std   = _norm(a["nrmse_R_mean"],   a["nrmse_R_std"])
+
+        # ── Col 1: rmse_A / max_{n_f} rmse_A ─────────────────────────────
+        ax_conn.errorbar(
+            n_terms_axis, rmse_A_mean, yerr=rmse_A_std,
             fmt="o-", color=colour, mfc=colour, mec=colour,
             capsize=2.5, lw=1.2, ms=4.0, label=label,
         )
 
-        # ── Col 2: rmse_sbar ─────────────────────────────────────────────
+        # ── Col 2: rmse_sbar / max_{n_f} rmse_sbar ───────────────────────
         ax_sbar.errorbar(
-            n_terms_axis, a["rmse_sbar_mean"], yerr=a["rmse_sbar_std"],
+            n_terms_axis, rmse_sbar_mean, yerr=rmse_sbar_std,
             fmt="s-", color=colour, mfc=colour, mec=colour,
             capsize=2.5, lw=1.2, ms=4.0, label=label,
         )
 
-        # ── Col 3: nrmse_R ───────────────────────────────────────────────
+        # ── Col 3: nrmse_R / max_{n_f} nrmse_R ───────────────────────────
         ax_R.errorbar(
-            n_terms_axis, a["nrmse_R_mean"], yerr=a["nrmse_R_std"],
+            n_terms_axis, nrmse_R_mean, yerr=nrmse_R_std,
             fmt="^-", color=colour, mfc=colour, mec=colour,
             capsize=2.5, lw=1.2, ms=4.0, label=label,
         )
 
-    ax_corr.set_ylabel(r"$\log_{10}\,\mathrm{corr}"
-                       r"(A^{\mathrm{KO}},\, A^{\mathrm{OA}})$")
+    ax_conn.set_ylabel(r"$\mathrm{RMSE}(A^{\mathrm{KO}},\, A^{\mathrm{OA}}) \,/\,"
+                       r"\max_{n_f}\mathrm{RMSE}$")
     ax_sbar.set_ylabel(r"$\mathrm{RMSE}(\bar s^{\mathrm{KO}},\,"
-                       r"\bar s^{\mathrm{OA}})$")
-    ax_R.set_ylabel(r"$\mathrm{NRMSE}(R^{\mathrm{KO}},\, R^{\mathrm{OA}})$")
-    for ax in (ax_corr, ax_sbar, ax_R):
+                       r"\bar s^{\mathrm{OA}}) \,/\, \max_{n_f}\mathrm{RMSE}$")
+    ax_R.set_ylabel(r"$\mathrm{NRMSE}(R^{\mathrm{KO}},\, R^{\mathrm{OA}}) \,/\,"
+                    r"\max_{n_f}\mathrm{NRMSE}$")
+    for ax in (ax_conn, ax_sbar, ax_R):
         ax.set_xlabel(r"$n_f$")
 
     # Lower bound of 0 for the (N)RMSE panels; let upper bound auto-scale.
@@ -193,19 +191,19 @@ def plot_sweep(agg, K_values, params, savepath):
         ax.set_ylim(max(0.0, lo), hi)
 
     # Single shared legend in the first panel.
-    ax_corr.legend(loc="lower right", frameon=False,
+    ax_conn.legend(loc="lower right", frameon=False,
                    handlelength=1.8, borderaxespad=0.3,
                    labelspacing=0.25)
 
     # Integer x-ticks for n_terms across every panel, with a small left/right
     # margin so the leftmost tick label doesn't collide with the y-axis.
     all_nt = sorted({int(nt) for K in K_list for nt in agg[K].index.tolist()})
-    for ax in (ax_corr, ax_sbar, ax_R):
+    for ax in (ax_conn, ax_sbar, ax_R):
         ax.set_xticks(all_nt)
         ax.margins(x=0.05)
 
     # Panel labels (a), (b), (c)
-    for col, ax in enumerate((ax_corr, ax_sbar, ax_R)):
+    for col, ax in enumerate((ax_conn, ax_sbar, ax_R)):
         make_panel_label(ax, f"({'abc'[col]})")
 
     fig.savefig(savepath, bbox_inches="tight")
