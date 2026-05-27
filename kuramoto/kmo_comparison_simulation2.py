@@ -54,6 +54,50 @@ plt.rcParams["font.size"] = 16.0
 # Shared initial-condition factory
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def sample_microscopic_frequencies(N, dist, omega0, Delta, rng, cauchy_clip=50.0):
+    if dist == "uniform":
+        return rng.uniform(omega0 - Delta, omega0 + Delta, N)
+    elif dist == "lorentzian":
+        # Truncated Cauchy: redraw any |ω - ω0| > cauchy_clip * Delta
+        omega = omega0 + Delta * rng.standard_cauchy(N)
+        bad = np.abs(omega - omega0) > cauchy_clip * Delta
+        while bad.any():
+            omega[bad] = omega0 + Delta * rng.standard_cauchy(bad.sum())
+            bad = np.abs(omega - omega0) > cauchy_clip * Delta
+        return omega
+
+def ensemble_parameters(M, dist, omega0, Delta):
+    """
+    Build the (omega_m, Delta_m, w_m) parameters for the M-ensemble OA model.
+
+    Returns
+    -------
+    omega_pop : (M,)
+    delta_pop : (M,)
+    w_pop     : (M,) ensemble weights (sum to 1)
+    """
+    if dist == "uniform":
+        # Equidistant centres in (ω0-Δ, ω0+Δ); each ensemble equally weighted.
+        # Cell centres of M equal bins.
+        edges = np.linspace(omega0 - Delta, omega0 + Delta, M + 1)
+        omega_pop = 0.5 * (edges[:-1] + edges[1:])
+        delta_pop = np.full(M, Delta / (2 * M))
+        w_pop     = np.full(M, 1.0 / M)
+        return omega_pop, delta_pop, w_pop
+
+    elif dist == "lorentzian":
+        # Gast et al. PRE 2021, Eq. 22 (renamed from η to ω here).
+        m = np.arange(1, M + 1)
+        omega_pop = omega0 + Delta * np.tan(0.5 * np.pi * (2*m - M - 1) / (M + 1))
+        delta_pop = Delta * (
+            np.tan(0.5 * np.pi * (2*m - M - 0.5) / (M + 1))
+            - np.tan(0.5 * np.pi * (2*m - M - 1.5) / (M + 1))
+        )
+        w_pop = np.full(M, 1.0 / M)
+        return omega_pop, delta_pop, w_pop
+
+    raise ValueError(f"Unknown dist={dist!r}")
+
 def make_initial_conditions(N, d, omega0, Delta0, dist, seed):
     """
     Draw shared initial conditions for N oscillators grouped into M=N//d
@@ -72,27 +116,19 @@ def make_initial_conditions(N, d, omega0, Delta0, dist, seed):
     M = N // d
     rng = np.random.default_rng(seed)
 
-    # Individual frequencies — uniform
-    if dist == "uniform":
-        omega_pop = uniform(M, omega0, Delta0)
-        delta_pop = uniform(M, Delta0/M, 0.0)
-    elif dist == "lorentzian":
-        n = np.arange(1, M+1)
-        omega_pop = omega0 + Delta0*np.tan(0.5*np.pi*(2*n-M-1)/(M+1))
-        delta_pop = Delta0*(np.tan(0.5*np.pi*(2*n-M-0.5)/(M+1))-np.tan(0.5*np.pi*(2*n-M-1.5)/(M+1)))
-    else:
-        raise ValueError(f"Invalid distribution argument (dist={dist}).")
+    # Individual frequencies
+    omega_micro = sample_microscopic_frequencies(N, dist, omega0, Delta0, rng=rng, cauchy_clip=50.0)
 
     # Population-level parameters derived from the micro sample
-    omega_micro = np.empty(N)
+    omega_pop, delta_pop, w_pop = ensemble_parameters(M, dist, omega0, Delta0)
+
+    # initial conditions
     r0 = np.empty(M)
     psi0 = np.empty(M)
     theta0 = np.empty(N)
-
     for I in range(M):
         th = rng.uniform(-np.pi, np.pi, d)
         idx = slice(I * d, (I + 1) * d)
-        omega_micro[idx] = lorentzian2(d, omega_pop[I], delta_pop[I]) #, lb=omega_pop[I]-10*delta_pop[I], ub=omega_pop[I]+10*delta_pop[I])
         theta0[idx] = th
         z_mean = np.mean(np.exp(1j * th))
         psi0[I] = np.angle(z_mean)
@@ -352,7 +388,7 @@ if __name__ == "__main__":
         d=d,  # oscillators per population  →  M = N/d = 10
         T=100.0,  # simulation time
         K=2.0,  # global coupling strength
-        mu=0.01,  # Hebbian learning rate
+        mu=0.08,  # Hebbian learning rate
         gamma=0.0,  # weight decay  →  |A*| ≤ μ/γ ≈ 2.67
         omega0=1.0,  # Lorentzian centre frequency
         Delta0=3.2,  # Lorentzian HWHM

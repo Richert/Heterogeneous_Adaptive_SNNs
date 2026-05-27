@@ -67,13 +67,17 @@ _EPS = 1e-12
 # Frequency distributions
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def sample_microscopic_frequencies(N, dist, omega0, Delta, rng):
-    """Draw N microscopic frequencies from the requested distribution."""
+def sample_microscopic_frequencies(N, dist, omega0, Delta, rng, cauchy_clip=50.0):
     if dist == "uniform":
         return rng.uniform(omega0 - Delta, omega0 + Delta, N)
     elif dist == "lorentzian":
-        return omega0 + Delta * rng.standard_cauchy(N)
-    raise ValueError(f"Unknown dist={dist!r}")
+        # Truncated Cauchy: redraw any |ω - ω0| > cauchy_clip * Delta
+        omega = omega0 + Delta * rng.standard_cauchy(N)
+        bad = np.abs(omega - omega0) > cauchy_clip * Delta
+        while bad.any():
+            omega[bad] = omega0 + Delta * rng.standard_cauchy(bad.sum())
+            bad = np.abs(omega - omega0) > cauchy_clip * Delta
+        return omega
 
 
 def ensemble_parameters(M, dist, omega0, Delta):
