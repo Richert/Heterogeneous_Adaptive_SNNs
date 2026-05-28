@@ -396,9 +396,9 @@ if __name__ == "__main__":
         plasticity="hebbian",
         dist="lorentzian",
         seed=42,
-        method="RK45",
-        rtol=1e-6,
-        atol=1e-8,
+        method="DOP853",
+        rtol=1e-5,
+        atol=1e-7,
     )
 
     res = simulate(**CONFIG)

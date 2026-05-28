@@ -67,7 +67,7 @@ _EPS = 1e-12
 # Frequency distributions
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def sample_microscopic_frequencies(N, dist, omega0, Delta, rng, cauchy_clip=50.0):
+def sample_microscopic_frequencies(N, dist, omega0, Delta, rng, cauchy_clip=20.0):
     if dist == "uniform":
         return rng.uniform(omega0 - Delta, omega0 + Delta, N)
     elif dist == "lorentzian":
@@ -547,10 +547,10 @@ def parse_args():
                    help="μ values to sweep")
 
     # Solver
-    p.add_argument("--method", default="RK45")
+    p.add_argument("--method", default="LSODA")
     p.add_argument("--rtol", type=float, default=1e-6)
     p.add_argument("--atol", type=float, default=1e-8)
-    p.add_argument("--n_eval", type=int, default=1500)
+    p.add_argument("--n_eval", type=int, default=6000)
 
     # Execution control
     p.add_argument("--seed_base", type=int, default=42)
