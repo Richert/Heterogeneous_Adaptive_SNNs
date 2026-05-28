@@ -547,9 +547,9 @@ def parse_args():
                    help="μ values to sweep")
 
     # Solver
-    p.add_argument("--method", default="DOP853")
-    p.add_argument("--rtol", type=float, default=1e-6)
-    p.add_argument("--atol", type=float, default=1e-8)
+    p.add_argument("--method", default="RK45")
+    p.add_argument("--rtol", type=float, default=1e-5)
+    p.add_argument("--atol", type=float, default=1e-7)
     p.add_argument("--n_eval", type=int, default=6000)
 
     # Execution control
