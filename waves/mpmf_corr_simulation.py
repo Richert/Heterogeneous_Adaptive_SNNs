@@ -12,29 +12,26 @@ path = "/home/rgast/data/mpmf_simulations"
 
 # read condition
 trial = 0
-syn = "inh"
+syn = "exc"
 stp = "sd"
 
 # set model parameters
 M = 50
 Delta = 2.0
 p = 1.0
-eta = 0.0
-b = 0.5
+eta = -1.2
 tau_s = 1.0
 tau_a = 40.0
 kappa = 0.0
 etas = uniform(M, eta, Delta)
 Delta2 = Delta/(2*M)
-c0 = 5.0
-c1 = 20.0
-c2 = 1.0
-c3 = -1.0
+c0 = 3.0
+c1 = 15.0
 node_vars = {"eta": etas, "Delta": Delta2}
 syn_vars = {"tau_s": tau_s, "tau_a": tau_a, "kappa": kappa}
 
 # simulation parameters
-T = 50.0
+T = 10.0
 dt = 2e-5
 dts = 1e-2
 sr = int(dts/dt)
@@ -47,10 +44,11 @@ node, node_op, syn_op = f"qif_stdp_{stp}", "qif_op", f"syn_{stp}_op"
 node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 
 # create network
-fr1 = 1.0 / (1.0 + np.exp(-c2*etas))
-fr2 = 1.0 / (1.0 + np.exp(-c3*etas))
+c = np.linspace(0.0, 1.0, num=M)
 edges = []
-W = (c0 + c1 * np.outer(fr1, fr2)) / M
+W = (c0 + c1 * np.outer(c, c)) / M
+# W = W[::-1, :]
+# W = W[:, ::-1]
 for i in range(M):
     for j in range(M):
         edges.append((f"p{j}/{syn_op}/s", f"p{i}/{node_op}/s_in", None,
@@ -63,8 +61,8 @@ net.update_var(node_vars={f"all/{syn_op}/{key}": val for key, val in syn_vars.it
 fig, ax = plt.subplots(figsize=(4, 3))
 im = ax.imshow(W, aspect="auto", interpolation="none")
 plt.colorbar(im, ax=ax, shrink=0.8)
-ax.set_xlabel("neuron")
-ax.set_ylabel("neuron")
+ax.set_xlabel("ensemble")
+ax.set_ylabel("ensemble")
 ax.set_title("Connectivity")
 plt.tight_layout()
 
@@ -107,8 +105,8 @@ labels = list(ax.get_xticklabels())
 ax = axes[1]
 im = ax.imshow(signal.T, aspect="auto", interpolation="none")
 # plt.colorbar(im, ax=ax, shrink=0.8)
-ax.set_xlabel('time (s)')
-ax.set_ylabel('neurons')
+ax.set_xlabel('time (ms)')
+ax.set_ylabel('ensembles')
 ax.set_xticks([np.argmin(np.abs(time-t)) for t in ticks], labels=labels)
 plt.tight_layout()
 

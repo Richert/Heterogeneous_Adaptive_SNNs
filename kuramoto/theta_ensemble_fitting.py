@@ -410,6 +410,7 @@ def plot_figure(res, savepath="theta_three_rules.pdf"):
     ax_f.set_xlabel(r"$\eta$")
     ax_f.set_ylabel(r"$p(\eta)$")
     ax_f.set_xlim(lo, hi)
+    ax_f.set_ylim(0.0, 2.0)
     ax_f.legend(loc="upper right", frameon=False, handlelength=2.0,
                 borderaxespad=0.3, fontsize=9)
     make_panel_label(ax_f, f"({next(panel_letters)})", x=-0.10, y=1.04)
@@ -529,4 +530,4 @@ if __name__ == "__main__":
     )
 
     res = simulate_three_rules(**CONFIG)
-    plot_figure(res, savepath="theta_three_rules.pdf")
+    plot_figure(res, savepath="theta_three_rules.svg")
