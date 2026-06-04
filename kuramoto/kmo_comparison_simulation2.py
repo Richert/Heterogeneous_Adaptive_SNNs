@@ -382,19 +382,19 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 50
+    d = 20
     CONFIG = dict(
         N=10*d,  # total oscillators  (must be divisible by d)
         d=d,  # oscillators per population  →  M = N/d = 10
         T=100.0,  # simulation time
         K=2.0,  # global coupling strength
-        mu=0.08,  # Hebbian learning rate
+        mu=0.005,  # Hebbian learning rate
         gamma=0.0,  # weight decay  →  |A*| ≤ μ/γ ≈ 2.67
         omega0=1.0,  # Lorentzian centre frequency
-        Delta0=3.2,  # Lorentzian HWHM
+        Delta0=0.8,  # Lorentzian HWHM
         #   smaller Δ → less incoherence damping → higher r
-        plasticity="hebbian",
-        dist="lorentzian",
+        plasticity="antihebbian",
+        dist="uniform",
         seed=42,
         method="DOP853",
         rtol=1e-5,

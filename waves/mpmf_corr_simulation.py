@@ -47,7 +47,7 @@ node_temp = NodeTemplate.from_yaml(f"../config/fre_equations/{node}_pop")
 c = np.linspace(0.0, 1.0, num=M)
 edges = []
 W = (c0 + c1 * np.outer(c, c)) / M
-# W = W[::-1, :]
+W = W[::-1, :]
 # W = W[:, ::-1]
 for i in range(M):
     for j in range(M):

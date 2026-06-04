@@ -44,7 +44,7 @@ from scipy.integrate import solve_ivp
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-_EPS = 1e-9   # guard against r_i → 0 in the ψ̇ equation
+_EPS = 1e-12   # guard against r_i → 0 in the ψ̇ equation
 
 
 # ── State packing / unpacking ─────────────────────────────────────────────────
@@ -166,6 +166,9 @@ def simulate(
     delta_std=0.02,
     r0_mean=0.5,
     r0_std=0.1,
+    psi_mean=0.5,
+    psi_std=0.1,
+    A0_center=1.0,
     A0_scale=1.0,
     plasticity="hebbian",
     seed=42,
@@ -211,19 +214,19 @@ def simulate(
 
     # Initial order parameters: r ∈ (0,1), ψ ∈ [−π, π]
     r0   = np.clip(rng.uniform(-r0_std, r0_std, M) + r0_mean, _EPS, 1.0 - _EPS)
-    psi0 = rng.uniform(-np.pi, np.pi, M)
+    psi0 = rng.uniform(-psi_std, psi_std, M) + psi_mean
 
     # Initial weights
     if A0_scale > 0:
-        A0 = rng.normal(0, A0_scale, (M, M))
+        A0 = rng.normal(A0_center, A0_scale, (M, M))
         A0 = (A0 + A0.T) / 2   # start symmetric
     else:
-        A0 = np.zeros((M, M))
+        A0 = np.zeros((M, M)) + A0_center
 
     y0 = pack(r0, psi0, A0)
 
     print(f"OA adaptive simulation  —  M={M} populations, T={T}")
-    print(f"  μ={mu}, γ={gamma}  →  |A*_ij| ≤ {mu/gamma:.3f}")
+    print(f"  μ={mu}, γ={gamma}")
     print(f"  Δ ∈ [{delta.min():.3f}, {delta.max():.3f}]  "
           f"ω ∈ [{omega.min():.3f}, {omega.max():.3f}]")
     print(f"  Solver: {method}  (rtol={rtol}, atol={atol})")
@@ -270,7 +273,6 @@ def plot_results(t, r, psi, A_traj, omega, delta, mu, gamma,
     # Mean coupling weight statistics (all entries including diagonal)
     mean_w  = A_traj.mean(axis=(0, 1))
     mean_aw = np.abs(A_traj).mean(axis=(0, 1))
-    theoretical_max = mu / gamma
 
     fig, axes = plt.subplots(5, 1, figsize=(11, 16), sharex=False)
     fig.suptitle(title, fontsize=13, fontweight="bold")
@@ -312,8 +314,8 @@ def plot_results(t, r, psi, A_traj, omega, delta, mu, gamma,
     ax = axes[3]
     ax.plot(t, mean_w,  lw=1.5, label=r"$\langle A_{ij} \rangle$")
     ax.plot(t, mean_aw, lw=1.5, ls="--", label=r"$\langle |A_{ij}| \rangle$")
-    ax.axhline(theoretical_max, color="grey", lw=0.8, ls=":",
-               label=rf"$\mu/\gamma = {theoretical_max:.2f}$")
+    # ax.axhline(theoretical_max, color="grey", lw=0.8, ls=":",
+    #            label=rf"$\mu/\gamma = {theoretical_max:.2f}$")
     ax.set_ylabel("Weight")
     ax.set_xlabel("Time")
     ax.set_title("Mean coupling weight over time")
@@ -340,22 +342,25 @@ def plot_results(t, r, psi, A_traj, omega, delta, mu, gamma,
 
 if __name__ == "__main__":
     CONFIG = dict(
-        M=20,           # number of populations
+        M=10,           # number of populations
         T=500.0,        # simulation duration
         K=1.0,           # global coupling strength
         mu=0.1,         # Hebbian learning rate
                         #   larger → weights grow faster toward μ/γ
-        gamma=0.01,      # weight decay rate
+        gamma=0.2,      # weight decay rate
                         #   steady-state bound: |A*_ij| ≤ μ/γ = 3.0 here
         omega_mean=0.4, # mean centre frequency
         omega_std=0.2,  # spread of centre frequencies across populations
-        delta_mean=0.005, # mean HWHM (incoherence damping within a population)
-                        #   smaller Δ → populations can reach higher r
-        delta_std=0.0, # heterogeneity in HWHM values
-        r0_mean=0.0,    # initial order-parameter magnitude (mean)
+        delta_mean=0.02,  # mean HWHM (incoherence damping within a population)
+                          #   smaller Δ → populations can reach higher r
+        delta_std=0.0,  # heterogeneity in HWHM values
+        r0_mean=0.9,    # initial order-parameter magnitude (mean)
         r0_std=0.1,     # initial order-parameter magnitude (spread)
-        A0_scale=1.0,   # initial weight noise (0 → all weights start at zero)
-        plasticity="antihebbian",
+        psi_mean=0.0,
+        psi_std=0.1,
+        A0_center=0.2,
+        A0_scale=0.1,   # initial weight noise (0 → all weights start at zero)
+        plasticity="hebbian",
         seed=42,
         method="RK45",  # "RK45" | "RK23" | "DOP853" | "Radau" | "BDF" | "LSODA"
         rtol=1e-7,
@@ -366,7 +371,7 @@ if __name__ == "__main__":
 
     fig = plot_results(
         t, r, psi, A_traj, omega, delta,
-        mu=CONFIG["mu"], gamma=CONFIG["gamma"],
+    mu=CONFIG["mu"], gamma=CONFIG["gamma"],
         title=(f"OA Adaptive Kuramoto  |  M={CONFIG['M']} populations, "
                f"T={CONFIG['T']},  μ={CONFIG['mu']}, γ={CONFIG['gamma']}"),
     )
