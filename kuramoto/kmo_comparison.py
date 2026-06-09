@@ -185,6 +185,40 @@ def population_order_parameters(theta_t, M, N):
     return np.abs(z), np.angle(z)
 
 
+# ── Right-hand side of the FULLY-microscopic, all-to-all model ────────────────
+def fully_micro_rhs(t, y, Ntot, omega_flat, K_over_Ntot, mu, gamma, hebbian):
+    """RHS of the all-to-all adaptive Kuramoto network with PER-OSCILLATOR-PAIR
+    weights — the microscopic model that does NOT take ensemble averages.
+
+    Every oscillator a couples directly to every oscillator b through its own
+    adaptive weight w_{ab}:
+
+        θ̇_a   = ω_a + (K/Ntot) Σ_b w_{ab} sin(θ_b − θ_a)
+               = ω_a + (K/Ntot) Im[ e^{-iθ_a} (W e^{iθ})_a ]
+        ẇ_{ab} = μ cos(θ_b − θ_a) − γ w_{ab}          (Hebbian)
+               (anti-Hebbian: μ |sin(θ_b − θ_a)|)
+
+    State: ``y = [θ (Ntot,), W.ravel() (Ntot²,)]``. This is the model whose
+    population/block average reduces to the mean-field ``micro_rhs``: if w_{ab} is
+    constant over each (population-i, population-j) block (= A_ij) the phase
+    coupling collapses to (K/M) Σ_j A_ij Im[z_j e^{-iθ}] exactly, and the block
+    average ⟨w⟩_ij obeys the same Hebbian ODE as A_ij. The models therefore differ
+    only through correlations between individual weight heterogeneity and phase
+    differences — i.e. whether per-synapse plasticity matters. Cost is O(Ntot²)."""
+    theta = y[:Ntot]
+    W = y[Ntot:].reshape(Ntot, Ntot)
+    e = np.exp(1j * theta)                         # (Ntot,)
+    field = W @ e                                   # (Ntot,) complex (BLAS zgemv)
+    dtheta = omega_flat + K_over_Ntot * (np.conj(e) * field).imag
+    G = np.outer(np.conj(e), e)                     # G[a,b] = e^{i(θ_b−θ_a)} (BLAS zgeru)
+    drive = G.real if hebbian else np.abs(G.imag)   # cos / |sin|
+    dW = mu * drive - gamma * W
+    out = np.empty_like(y)
+    out[:Ntot] = dtheta
+    out[Ntot:] = dW.ravel()
+    return out
+
+
 # ── Simulation ────────────────────────────────────────────────────────────────
 def simulate(
     M=5, N=1000, T=500.0,
@@ -353,6 +387,119 @@ def compare_macro_micro(seeds=(1, 2, 3, 4), M=5, N=1000, T=500.0,
     return fig
 
 
+# ── Three-model comparison (macro / mean-field micro / all-to-all micro) ──────
+def compare_three_models(seed=1, M=5, N=60, T=300.0,
+                         K=1.0, mu=0.1, gamma=0.05,
+                         omega_mean=0.4, omega_std=0.2,
+                         delta_mean=0.02, delta_std=0.0,
+                         r0_mean=0.9, r0_std=0.1, psi_mean=0.0, psi_std=0.1,
+                         A0_center=0.2, A0_scale=0.1, plasticity="hebbian",
+                         deterministic_freqs=True, trunc=50.0,
+                         method="RK45", rtol=1e-6, atol=1e-8, n_save=400,
+                         savefig="three_model_comparison.png"):
+    """Single-seed comparison of THREE models that should agree in the OA limit:
+
+      1. macro          — Ott–Antonsen mean field (M order parameters + A_ij).
+      2. micro mean-field — M×N oscillators, each coupled to the M population
+                            MEAN FIELDS via population weights A_ij (``micro_rhs``).
+      3. micro all-to-all — M×N oscillators coupled DIRECTLY to one another with
+                            per-oscillator-pair weights w_{ab} (``fully_micro_rhs``);
+                            no ensemble averaging.
+
+    The two micro models share the SAME oscillator frequencies and initial phases
+    (and block-constant initial weights = A0), so any difference between them is
+    purely the effect of individual-synapse vs population-averaged plasticity.
+
+    Produces a 2×3 figure: row 1 = phase-coherence dynamics (global R bold,
+    per-population r_i thin) for each model; row 2 = the three final coupling
+    matrices (M×M; the all-to-all one block-averaged) on a single shared colour
+    scale with one colorbar.
+    """
+    hebbian = plasticity == "hebbian"
+    omega, delta, r0, psi0, A0, rng = draw_population_params(
+        M, omega_mean, omega_std, delta_mean, delta_std,
+        r0_mean, r0_std, psi_mean, psi_std, A0_center, A0_scale, seed)
+    t_eval = np.linspace(0.0, T, n_save)
+
+    # shared oscillator-level initial conditions for the two micro models
+    omega_micro = lorentzian_frequencies(omega, delta, N, rng,
+                                          deterministic=deterministic_freqs, trunc=trunc)
+    theta0 = wrapped_cauchy_phases(psi0, r0, N, rng)
+
+    print(f"compare_three_models: seed={seed}, M={M}, N={N} (all-to-all Ntot={M*N}), "
+          f"T={T}, γ={gamma}")
+
+    # 1) MACRO (Ott–Antonsen)
+    r_mac, psi_mac, A_mac = _simulate_macro_on_grid(
+        t_eval, omega, delta, r0, psi0, A0, K, mu, gamma, plasticity, method, rtol, atol)
+    R_mac = np.abs((r_mac * np.exp(1j * psi_mac)).mean(0))
+
+    # 2) MICRO — mean-field (population weights)
+    sol = solve_ivp(micro_rhs, (0.0, T), pack(theta0.ravel(), A0), method=method,
+                    t_eval=t_eval, args=(M, N, omega_micro.ravel(), K / M, mu, gamma, hebbian),
+                    rtol=rtol, atol=atol)
+    r_mf, psi_mf = population_order_parameters(sol.y[:M * N], M, N)
+    A_mf = sol.y[M * N:, -1].reshape(M, M)
+    R_mf = np.abs((r_mf * np.exp(1j * psi_mf)).mean(0))
+
+    # 3) MICRO — all-to-all (per-oscillator-pair weights)
+    Ntot = M * N
+    W0 = np.repeat(np.repeat(A0, N, axis=0), N, axis=1)     # block-constant = A0
+    y0f = np.concatenate([theta0.ravel(), W0.ravel()])
+    solf = solve_ivp(fully_micro_rhs, (0.0, T), y0f, method=method, t_eval=t_eval,
+                     args=(Ntot, omega_micro.ravel(), K / Ntot, mu, gamma, hebbian),
+                     rtol=rtol, atol=atol)
+    zf = np.exp(1j * solf.y[:Ntot]).reshape(M, N, -1).mean(1)   # (M, steps)
+    r_aa = np.abs(zf)
+    R_aa = np.abs(zf.mean(0))
+    A_aa = solf.y[Ntot:, -1].reshape(M, N, M, N).mean(axis=(1, 3))   # block-average → M×M
+
+    # ── 2×3 figure ──────────────────────────────────────────────────────────
+    labels = ["macro (OA, N→∞)", f"micro mean-field (N={N})", f"micro all-to-all (N={N})"]
+    colors = ["navy", "darkorange", "crimson"]
+    Rs = [R_mac, R_mf, R_aa]
+    ris = [r_mac, r_mf, r_aa]
+    As = [A_mac[:, :, -1], A_mf, A_aa]    # final coupling matrices (M×M)
+
+    fig, axes = plt.subplots(2, 3, figsize=(14, 7))
+    # row 1: phase-coherence dynamics
+    for c in range(3):
+        ax = axes[0, c]
+        for i in range(M):
+            ax.plot(t_eval, ris[c][i], color="0.6", lw=0.6, alpha=0.6)
+        ax.plot(t_eval, Rs[c], color=colors[c], lw=2.2, label=r"global $R$")
+        ax.set_ylim(0, 1.05)
+        ax.set_title(labels[c])
+        ax.set_xlabel("time")
+        ax.legend(loc="lower right", fontsize=8)
+        if c == 0:
+            ax.set_ylabel("phase coherence\n" r"$R$ (bold), $r_i$ (thin)")
+
+    # row 2: final coupling matrices, shared colour scale + single colorbar
+    vmax = max(np.abs(A).max() for A in As) or 1.0
+    im = None
+    for c in range(3):
+        ax = axes[1, c]
+        im = ax.imshow(As[c], cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+                       interpolation="nearest", aspect="equal")
+        ax.set_title(r"final $A_{ij}$")
+        ax.set_xticks(range(M))
+        ax.set_yticks(range(M))
+        ax.set_xlabel("population $j$")
+        if c == 0:
+            ax.set_ylabel("population $i$")
+    fig.colorbar(im, ax=list(axes[1, :]), fraction=0.046, pad=0.04, label=r"$A_{ij}$")
+
+    fig.suptitle(f"Adaptive Kuramoto: macro vs mean-field micro vs all-to-all micro "
+                 f"(seed {seed}, M={M}, K={K}, μ={mu}, γ={gamma}, Δ={delta_mean})",
+                 fontsize=12)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    if savefig:
+        fig.savefig(savefig, dpi=130, bbox_inches="tight")
+        print(f"saved {savefig}")
+    return fig
+
+
 # ── Quick RHS benchmark (substantiates the BLAS note in the docstring) ────────
 def benchmark_rhs(M=5, N=2000, repeats=200, seed=0):
     """Time the RHS and its sub-parts to show the elementwise trig dominates and
@@ -382,12 +529,11 @@ def benchmark_rhs(M=5, N=2000, repeats=200, seed=0):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    benchmark_rhs(M=5, N=1000)
-    # qualitative micro-vs-macro comparison across several seeds
-    compare_macro_micro(
-        seeds=(1, 2, 4, 8),
-        M=5, N=1000, T=500.0,
-        K=1.0, mu=0.1, gamma=0.05,
+    # single-seed comparison of the three models (macro / mean-field micro /
+    # all-to-all micro) → 2×3 figure (coherence dynamics + final coupling matrices)
+    compare_three_models(
+        seed=42, M=5, N=100, T=500.0,
+        K=1.0, mu=0.1, gamma=0.24,
         omega_mean=0.4, omega_std=0.2, delta_mean=0.02, delta_std=0.0,
         r0_mean=0.9, r0_std=0.1, psi_mean=0.0, psi_std=0.1,
         A0_center=0.2, A0_scale=0.1, plasticity="hebbian",

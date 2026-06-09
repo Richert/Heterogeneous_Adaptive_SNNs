@@ -261,8 +261,14 @@ def simulate_two_M(
     gmm_params=None,
     seed=42,
     method="RK45", rtol=1e-7, atol=1e-9,
+    export_params=True, export_stem="oa_params",
 ):
-    """Run one KMO simulation and TWO OA simulations (one per M in M_list)."""
+    """Run one KMO simulation and TWO OA simulations (one per M in M_list).
+
+    When ``export_params`` is true, the fitted OA mean-field parameters and
+    initial conditions are written to ``<export_stem>_M<M>.npz`` (+ ``.txt``) for
+    each M, for use by the bifurcation-analysis pipeline (see
+    :func:`export_meanfield_params` / :func:`load_meanfield_params`)."""
     rng = np.random.default_rng(seed)
     means, sigmas, weights = gmm_params
 
@@ -287,6 +293,14 @@ def simulate_two_M(
         oa_res = run_oa(M, T, K, mu, gamma, w_pop, mu_pop, g_pop, r0, psi0,
                         plasticity, method, rtol, atol)
 
+        # Export the OA mean-field parameters + initial conditions for the
+        # bifurcation pipeline. A0 = ones((M, M)) is the IVP start used by run_oa
+        # (the bifurcation script settles to the steady state from here).
+        if export_params:
+            export_meanfield_params(
+                f"{export_stem}_M{M}", M, w_pop, mu_pop, g_pop,
+                r0, psi0, np.ones((M, M)), K, mu, gamma, plasticity)
+
         # Coarse-grain the final KM weight matrix using THIS M's labels
         A_km_cg = km_coarse_grain_labels(km_res["A_km"][:, :, -1], labels, M)
 
@@ -304,6 +318,81 @@ def simulate_two_M(
         plasticity=plasticity, gmm_params=gmm_params,
         **km_res,
         per_M=per_M_results,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 5b. Export / load the OA mean-field network parameters + initial conditions
+#     (handoff to the bifurcation-analysis pipeline)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def export_meanfield_params(stem, M, weights, omega, delta, r0, psi0, A0,
+                            K, mu, gamma, plasticity):
+    r"""Write the fitted OA mean-field model's parameters + initial conditions.
+
+    The mean-field model (see :func:`oa_ode`) for the M weighted-Lorentzian
+    ensembles fitted to the microscopic frequency sample is
+
+        dr_i  = -δ_i r_i + ½(1-r_i²) K Σ_j w_j A_ij r_j cos(ψ_j-ψ_i)
+        dψ_i  =  ω_i + ½(1+r_i²)/r_i K Σ_j w_j A_ij r_j sin(ψ_j-ψ_i)
+        dA_ij =  μ r_i r_j f(ψ_j-ψ_i) - γ A_ij,
+
+    with mixture weights w_j (Σ_j w_j = 1), centre frequencies ω_i, widths
+    (HWHM) δ_i, and plasticity kernel f = cos (Hebbian) or sin (anti-Hebbian).
+    Note this differs from ``kmo_macro_simulation`` in TWO ways the bifurcation
+    model must reproduce: (i) the coupling is WEIGHTED by w_j (there is no 1/M
+    normalisation), and (ii) the global/observable order parameter is the
+    weighted sum R = |Σ_i w_i r_i e^{iψ_i}|.
+
+    Writes ``<stem>.npz`` (machine-readable, for the bifurcation script via
+    :func:`load_meanfield_params`) and ``<stem>.txt`` (human-readable summary).
+    """
+    weights = np.asarray(weights, float)
+    omega = np.asarray(omega, float)
+    delta = np.asarray(delta, float)
+    r0 = np.asarray(r0, float)
+    psi0 = np.asarray(psi0, float)
+    A0 = np.asarray(A0, float)
+
+    npz_path = f"{stem}.npz"
+    np.savez(
+        npz_path,
+        M=np.int64(M),
+        weights=weights, omega=omega, delta=delta,      # network parameters
+        K=np.float64(K), mu=np.float64(mu), gamma=np.float64(gamma),
+        plasticity=str(plasticity),
+        r0=r0, psi0=psi0, A0=A0,                         # initial conditions
+    )
+
+    with open(f"{stem}.txt", "w") as fh:
+        fh.write(f"# OA mean-field network parameters + initial conditions (M={M})\n")
+        fh.write(f"# plasticity = {plasticity}   (f = "
+                 f"{'cos' if plasticity == 'hebbian' else 'sin'})\n")
+        fh.write(f"# global params:  K={K}  mu={mu}  gamma={gamma}\n")
+        fh.write(f"# global order parameter:  R = |sum_i w_i r_i exp(i psi_i)|\n")
+        fh.write("#\n# i      w_i           omega_i        delta_i        "
+                 "r0_i          psi0_i\n")
+        for I in range(M):
+            fh.write(f"{I:<4d} {weights[I]: .8e} {omega[I]: .8e} {delta[I]: .8e} "
+                     f"{r0[I]: .8e} {psi0[I]: .8e}\n")
+        fh.write("#\n# A0 (initial coupling matrix, row-major):\n")
+        for I in range(M):
+            fh.write("# " + " ".join(f"{A0[I, J]: .4e}" for J in range(M)) + "\n")
+
+    print(f"  exported mean-field params → {npz_path}  (+ {stem}.txt)")
+    return npz_path
+
+
+def load_meanfield_params(npz_path):
+    """Load parameters written by :func:`export_meanfield_params` into a dict
+    (for the bifurcation-analysis script)."""
+    d = np.load(npz_path, allow_pickle=False)
+    return dict(
+        M=int(d["M"]),
+        weights=d["weights"], omega=d["omega"], delta=d["delta"],
+        K=float(d["K"]), mu=float(d["mu"]), gamma=float(d["gamma"]),
+        plasticity=str(d["plasticity"]),
+        r0=d["r0"], psi0=d["psi0"], A0=d["A0"],
     )
 
 

@@ -59,7 +59,7 @@ C_MF  = "#c44e52"     # MPR mean-field (was C_OA)
 C_GMM = "#3a8e7c"     # Gaussian-mixture ground truth
 C_FIT = "#c44e52"     # Cauchy-mixture fit
 
-PLASTICITY_RULES = ("Hebbian", "anti-Hebbian", "Oja")
+PLASTICITY_RULES = ("Hebbian", "anti-Hebbian", "Symmetric")
 _EPS = 1e-9
 
 
@@ -298,6 +298,7 @@ def plasticity_kernel_shape(rule, dt_arr, a_minus, a_plus, tau_s=1.0, tau_x=None
         s_pre = 0.0;  B_pre = 0.0
         s_post = 0.0; B_post = 0.0
         x_pre = 0.0
+        x_post = 0.0
         y_post = 0.0
         y_pre = 0.0     # used by anti-Hebbian rule
 
@@ -327,6 +328,8 @@ def plasticity_kernel_shape(rule, dt_arr, a_minus, a_plus, tau_s=1.0, tau_x=None
                 drive = a_plus * x_pre - a_minus * y_pre * s_post
             elif rule == "Oja":
                 drive = a_plus * s_post * s_pre - a_minus * (s_post*y_post)
+            elif rule == "Symmetric":
+                drive = a_plus * x_pre * x_post - a_minus * y_pre * y_post
             else:
                 raise ValueError(f"Invalid rule: {rule}")
             cum_dA += drive * h
@@ -336,12 +339,14 @@ def plasticity_kernel_shape(rule, dt_arr, a_minus, a_plus, tau_s=1.0, tau_x=None
             dB_pre  = (-2.0 * B_pre - s_pre) * inv_ts
             ds_post = B_post * inv_ts
             dB_post = (-2.0 * B_post - s_post) * inv_ts
+            dx_post = (-x_post + s_post) * inv_tx
             dx_pre  = (-x_pre + s_pre) * inv_tx
             dy_post = (-y_post + s_post) * inv_ty
             dy_pre  = (-y_pre + s_pre) * inv_ty
 
             s_pre  += h * ds_pre;   B_pre  += h * dB_pre
             s_post += h * ds_post;  B_post += h * dB_post
+            x_post += h * dx_post
             x_pre  += h * dx_pre
             y_post += h * dy_post
             y_pre  += h * dy_pre
@@ -481,6 +486,9 @@ def simulate_qif_micro(eta_i, labels, A0_micro, T, J, a_minus, a_plus, tau_s,
                 # dA_ij = a_+ s_i s_j  -  a_- s_i^2
                 pos_drive = np.outer(s_i, s_i)                     # s_i * s_j
                 neg_drive = np.tile((s_i * y_i)[:, None], (1, N))   # s_i^2 along rows
+            elif plasticity == "Symmetric":
+                pos_drive = np.outer(x_i, x_i)  # s_i (post, rows) * x_j (pre, cols)
+                neg_drive = np.outer(y_i, y_i)  # y_i (post, rows) * s_j (pre, cols)
             else:
                 raise ValueError(f"Invalid plasticity rule: {plasticity}")
 
@@ -589,6 +597,9 @@ def mpr_ode(t, y, eta_pop, delta_pop, w_pop, J, a_minus, a_plus,
         # dA_mn = a_+ s_m s_n  -  a_- s_m^2
         pos_drive = np.outer(s, s)
         neg_drive = np.tile((s * y_post)[:, None], (1, M))
+    elif plasticity == "Symmetric":
+        pos_drive = np.outer(x_pre, x_pre)  # s_m * x_n
+        neg_drive = np.outer(y_post, y_post)  # y_m * s_n
     else:
         raise ValueError(f"Invalid plasticity rule: {plasticity}")
     dA = a_plus * pos_drive - a_minus * neg_drive
@@ -806,8 +817,10 @@ def plot_figure(res, a_minus, a_plus, savepath="qif_three_rules.svg"):
     dt_grid = np.linspace(-window, window, 81)
     rule_colors = {"Hebbian":     "#1f4e79",
                    "anti-Hebbian": "#3a8e7c",
-                   "Oja":         "#c44e52"}
-    rule_styles = {"Hebbian": "-", "anti-Hebbian": "--", "Oja": ":"}
+                   "Oja":         "#c44e52",
+                   "Symmetric":   "#c44e52",
+                   }
+    rule_styles = {"Hebbian": "-", "anti-Hebbian": "--", "Oja": ":", "Symmetric": ":"}
     for rule in rules:
         y = plasticity_kernel_shape(rule, dt_grid, a_minus=a_minus, a_plus=a_plus,
                                     tau_s=tau_s, tau_x=tau_x, tau_y=tau_y,
@@ -823,8 +836,8 @@ def plot_figure(res, a_minus, a_plus, savepath="qif_three_rules.svg"):
                      borderaxespad=0.3, fontsize=9)
     make_panel_label(ax_shape, f"({next(panel_letters)})", x=-0.10, y=1.04)
 
-    # ── Row 0, cols 6-7: mean synaptic activity s(t) for Oja rule only ───
-    d_oja = res["runs"]["anti-Hebbian"]
+    # ── Row 0, cols 6-7: mean synaptic activity s(t) for Symmetric rule only ───
+    d_oja = res["runs"]["Symmetric"]
     ax_s = fig.add_subplot(gs[0, 6:8])
     ax_s.plot(d_oja["t_qif"], d_oja["s_qif"], color=C_QIF, lw=1.4,
               label="QIF")
@@ -894,11 +907,11 @@ def plot_figure(res, a_minus, a_plus, savepath="qif_three_rules.svg"):
 # Entry point
 # ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    a_m, a_p = 0.01, 0.003
+    a_m, a_p = 0.005, 0.01
     CONFIG = dict(
-        N=200, M=12, T=500.0,
-        J=2.0, a_minus=a_m, a_plus=a_p,
-        tau_s=0.2, tau_x=0.5, tau_y=2.0,
+        N=200, M=12, T=200.0,
+        J=10.0, a_minus=a_m, a_plus=a_p,
+        tau_s=0.1, tau_x=2.0, tau_y=3.0,
         gmm_means=(-0.1, 0.0, 0.2),
         gmm_sigmas=(0.08, 0.1, 0.05),
         gmm_weights=(0.3, 0.5, 0.3),

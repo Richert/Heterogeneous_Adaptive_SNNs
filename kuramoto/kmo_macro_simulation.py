@@ -342,12 +342,12 @@ def plot_results(t, r, psi, A_traj, omega, delta, mu, gamma,
 
 if __name__ == "__main__":
     CONFIG = dict(
-        M=10,           # number of populations
-        T=500.0,        # simulation duration
+        M=5,           # number of populations
+        T=1000.0,        # simulation duration
         K=1.0,           # global coupling strength
         mu=0.1,         # Hebbian learning rate
                         #   larger → weights grow faster toward μ/γ
-        gamma=0.2,      # weight decay rate
+        gamma=0.15,      # weight decay rate
                         #   steady-state bound: |A*_ij| ≤ μ/γ = 3.0 here
         omega_mean=0.4, # mean centre frequency
         omega_std=0.2,  # spread of centre frequencies across populations
@@ -361,7 +361,7 @@ if __name__ == "__main__":
         A0_center=0.2,
         A0_scale=0.1,   # initial weight noise (0 → all weights start at zero)
         plasticity="hebbian",
-        seed=42,
+        seed=4,
         method="RK45",  # "RK45" | "RK23" | "DOP853" | "Radau" | "BDF" | "LSODA"
         rtol=1e-7,
         atol=1e-9,
