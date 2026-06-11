@@ -520,7 +520,7 @@ def plot_figure(res, savepath="theta_three_rules.pdf"):
 
 if __name__ == "__main__":
     CONFIG = dict(
-        N=500, M=20, T=150.0,
+        N=500, M=5, T=150.0,
         J=-2.0, mu=0.02, gamma=0.001,
         n_pulse=10, n1=2, n2=2, n3=3,
         gmm_means=(-0.0, 0.5, 1.0),

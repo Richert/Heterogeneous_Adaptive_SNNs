@@ -84,10 +84,9 @@ PARAMS = dict(
     #   heterogeneity).  Options: 'gaussian' | 'bimodal' | 'lorentzian'.
     dist="lorentzian",
     eta0=10.0,      # mean background drive (fixed)
-    Delta=2.0,      # spread: half-width for 'lorentzian', sigma for 'gaussian'
-    sep=4.0,        # (bimodal only) half-distance between the two modes
+    Delta=0.5,      # spread: half-width for 'lorentzian', sigma for 'gaussian'
     # --- neuron / synapse parameters (Fennelly et al. Fig. 1) ---------------
-    v_syn=-10.0,
+    v_syn=-8.0,
     tau_m=1.0,
     tau_s=1.0,
     # --- plasticity (PDDP) parameters ---------------------------------------
@@ -95,24 +94,24 @@ PARAMS = dict(
     eps=0.1,        # plasticity rate
     k0=1.0,         # initial coupling strength (all pairs / ensembles)
     # --- simulation control --------------------------------------------------
-    N=1800,         # number of neurons in the microscopic network
-    T=100.0,        # total integration time
+    N=1000,         # number of neurons in the microscopic network
+    T=120.0,        # total integration time
     dt=0.01,        # micro time step (Euler); MF uses adaptive RK45
     seed=1,         # RNG seed for the initial phases
-    t_warmup=40.0,  # time discarded before computing the RMSE mismatch
+    t_warmup=20.0,  # time discarded before computing the RMSE mismatch
 )
 
 # values of M to sweep over for the mismatch curve
-M_SWEEP = [1, 2, 4, 8, 12, 16]
+M_SWEEP = [1, 5, 10, 25, 50]
 # the two values of M whose full dynamics are shown in panels (b)-(d)
-M_SHOW = (1, 16)
+M_SHOW = (1, 50)
 # fixed fine reference resolution for the *structural* coupling metric.  The
 # block-averaged microscopic coupling matrix is computed once at this
 # resolution; the M-ensemble mean field is then scored on how well it
 # reconstructs that fixed reference.  Keeping the reference fixed (rather than
 # re-blocking at each M) means finite-N noise does not grow with M, so the
 # curve reflects genuine structural refinement.  Must exceed max(M_SWEEP).
-M_REF = 32
+M_REF = 100
 
 
 # =============================================================================

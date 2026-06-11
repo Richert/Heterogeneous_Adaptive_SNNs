@@ -46,7 +46,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy.integrate import solve_ivp
 from math import factorial, comb
-from config.utility_functions import uniform, lorentzian2
+from config.utility_functions import uniform, lorentzian
 
 _EPS = 1e-12
 plt.rcParams["font.size"] = 16.0
@@ -152,7 +152,8 @@ def make_initial_conditions(N, d, eta0, Delta0, dist, seed):
     for I in range(M):
         th = rng.uniform(-np.pi, np.pi, d)
         idx = slice(I * d, (I + 1) * d)
-        eta_micro[idx] = lorentzian2(d, eta_pop[I], delta_pop[I])
+        eta_micro[idx] = lorentzian(d, eta_pop[I], delta_pop[I],
+                                    ub=eta_pop[I]+50*delta_pop[I], lb=eta_pop[I]-50*delta_pop[I])
         theta0[idx] = th
         # Z_m^0 = (1/d) Σ_{k∈m} e^{iθ_k}  — normalised empirical order parameter
         Z0[I] = np.mean(np.exp(1j * th))
@@ -275,6 +276,7 @@ def simulate(
         eta0=-0.5,
         Delta0=0.5,
         n_pulse=2,
+        n_eval = 8000,
         plasticity="hebbian",
         dist="lorentzian",
         seed=42,
@@ -301,13 +303,15 @@ def simulate(
     A0_micro = np.ones((N, N))
     A0_oa = np.ones((M, M))
 
+    t_eval = np.linspace(0.0, T, n_eval)
+
     # ── Microscopic ──────────────────────────────────────────────────────────
     y0_tn = np.concatenate([theta0, A0_micro.ravel()])
     print("Running TN (microscopic) simulation …")
     sol_tn = solve_ivp(
         tn_ode, (0, T), y0_tn, method=method,
         args=(eta_micro, J, mu, gamma, n_pulse, cn, f),
-        rtol=rtol, atol=atol, dense_output=False,
+        rtol=rtol, atol=atol, dense_output=False, t_eval=t_eval
     )
     if not sol_tn.success:
         raise RuntimeError(f"TN failed: {sol_tn.message}")
@@ -325,7 +329,7 @@ def simulate(
     sol_oa = solve_ivp(
         oa_ode_complex, (0, T), y0_oa, method=method,
         args=(eta_pop, delta_pop, J, mu, gamma, n_pulse, s_hat, cn, f_oa),
-        rtol=rtol, atol=atol, dense_output=False,
+        rtol=rtol, atol=atol, dense_output=False, t_eval=t_eval
     )
     if not sol_oa.success:
         raise RuntimeError(f"OA failed: {sol_oa.message}")
@@ -424,18 +428,19 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 400
+    d = 20
     CONFIG = dict(
-        N=1 * d,
+        N=20 * d,
         d=d,
-        T=200.0,
-        J=2.0,
-        mu=0.0,
-        gamma=0.0,
-        eta0=-0.5,
-        Delta0=1.0,
-        n_pulse=1,
-        plasticity="hebbian",
+        T=150.0,
+        J=-8.0,
+        mu=0.02,
+        gamma=0.002,
+        eta0=5.0,
+        Delta0=2.0,
+        n_pulse=10,
+        n_eval=4500,
+        plasticity="antihebbian",
         dist="lorentzian",
         seed=42,
         method="RK45",
@@ -450,4 +455,3 @@ if __name__ == "__main__":
     fig2.savefig("tn_complexZ_coupling_matrices.png", dpi=150, bbox_inches="tight")
     print("Figures saved.")
     plt.show()
-

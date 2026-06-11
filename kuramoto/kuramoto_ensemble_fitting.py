@@ -589,25 +589,29 @@ def _set_matrix_ticks(ax, M):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    # Multi-modal frequency distribution: 3 Gaussian components
+    # Multi-modal frequency distribution: 3 Gaussian components.
+    # These are the means / sigmas / weights reconstructed from Fig. 1b of the
+    # PRL manuscript (git commit d22ff83). The published figure additionally used
+    # K=2.5, mu=0.02, gamma=0.001, plasticity="antihebbian", M_list=(5, 25),
+    # N=500, seed=42 — set those in CONFIG below to reproduce it exactly.
     GMM_PARAMS = (
         # means         sigmas       weights
-        [-0.4, 0.05, 0.5],
-        [ 0.3,  0.4,  0.3],
-        [ 0.5,  1.0,  0.7],
+        [-0.2, -0.05, 0.4],
+        [ 0.2,  0.5,  0.4],
+        [ 0.5,  1.0,  0.6],
     )
 
     CONFIG = dict(
-        N          = 500,
-        M_list     = (5, 30),     # two values of M to compare
-        T          = 150.0,
-        K          = 1.2,
+        N          = 400,
+        M_list     = (5, 20),     # two values of M to compare
+        T          = 500.0,
+        K          = 1.0,
         mu         = 0.05,
-        gamma      = 0.0,
-        plasticity = "antihebbian",
+        gamma      = 0.01,
+        plasticity = "hebbian",
         gmm_params = GMM_PARAMS,
         seed       = 42,
-        method     = "RK45",
+        method     = "DOP853",
         rtol       = 1e-6,
         atol       = 1e-8,
     )
