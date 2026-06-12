@@ -1,0 +1,74 @@
+# Shared Kuramoto / Ott–Antonsen equation templates (PRL manuscript Eqs. 1,2,6,7,9,12)
+# =====================================================================================
+# The microscopic phase oscillator and the single Ott–Antonsen ensemble are written in
+# the COMPLEX order-parameter form, so the SAME operators serve both the globally
+# coupled (non-adaptive) and the adaptively coupled networks. Only the coupling field
+# (s_in for the network, h for the mean field) is wired differently by the calling
+# script: a scalar global reduction (uniform all-to-all) vs. a per-pair adaptive edge
+# (network) or a self-coupling (mean field). e = exp(iθ) and z = R e^{iΨ}.
+
+# ── microscopic phase oscillator (Eq. 1, G=sin):  θ̇ = ω + Im(s_in · e^{-iθ}) ──────────
+kmo_op:
+  base: OperatorTemplate
+  equations:
+    - "e = exp(i*theta)"
+    - "theta' = omega + imag(s_in*conj(e))"
+  variables:
+    theta: output(0.0)
+    e: variable(complex)
+    omega: 0.0
+    s_in: input(complex)
+    i: 0.0+1.0j
+
+# ── microscopic adaptive coupling edge (Eq. 9):  Ȧ_ij = μ G_A(θ_j−θ_i) − γ A_ij ───────
+#    G_A = c_cos·cos + c_sin·sin + c_abs·|sin|  (set (1,0,0) for cos, (0,1,0) for sin,
+#    (0,0,1) for |sin|). The microscopic |sin| rule is exact — no Fourier truncation
+#    (that is only needed for its mean-field reduction). The coupling contribution is
+#    s_out = A·e_pre, so the field is s_in_i = (K/N) Σ_j A_ij e_j.
+kmo_adapt_op:
+  base: OperatorTemplate
+  equations:
+    - "gph = e_pre*conj(e_post)"
+    - "A' = mu*(c_cos*real(gph) + c_sin*imag(gph) + c_abs*absv(imag(gph))) - decay*A"
+    - "s_out = A*e_pre"
+  variables:
+    s_out: output(complex)
+    A: variable(1.0)
+    gph: variable(complex)
+    mu: 0.1
+    decay: 0.0
+    c_cos: 1.0
+    c_sin: 0.0
+    c_abs: 0.0
+    e_pre: input(complex)
+    e_post: input(complex)
+
+# ── single Ott–Antonsen ensemble (Eqs. 6,7):  ż = (iΩ−Δ)z + (h − conj(h) z²)/2 ────────
+oa_op:
+  base: OperatorTemplate
+  equations:
+    - "z' = (i*Omega - Delta)*z + (h - conj(h)*z^2)/2"
+  variables:
+    z: output(0.1+0.0j)
+    Omega: 0.0
+    Delta: 1.0
+    h: input(complex)
+    i: 0.0+1.0j
+
+# ── ensemble coupling source (static mixture weights):  zc = w_m z_m ──────────────────
+#    field h = K Σ_l w_l z_l is obtained from a scalar (weight K) reduction of zc.
+ens_coupling_op:
+  base: OperatorTemplate
+  equations:
+    - "zc = wm*z"
+  variables:
+    zc: output(complex)
+    wm: 1.0
+    z: input(complex)
+
+# NOTE: the mean-field adaptive coupling operator (Eqs. 12-14, single ensemble) is
+# built in kmo_adaptive_single_sweep.py because its right-hand side depends on the
+# rule and, for |sin|, on the Fourier truncation order:
+#   cos  : Ā̇ = μ R² − γ Ā
+#   sin  : Ā̇ = −γ Ā            (odd rule → zero self-coupling mean)
+#   |sin|: Ā̇ = μ[2/π − (4/π) Σ_{n=1}^{n_trunc} R^{4n}/(4n²−1)] − γ Ā   (App. B2)
