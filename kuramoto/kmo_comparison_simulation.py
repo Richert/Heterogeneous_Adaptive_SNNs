@@ -354,8 +354,8 @@ if __name__ == "__main__":
         K=0.5,  # global coupling strength
         mu=0.01,  # Hebbian learning rate
         gamma=0.0,  # weight decay  →  |A*| ≤ μ/γ ≈ 2.67
-        omega0=1.0,  # Lorentzian centre frequency
-        Delta0=0.8,  # Lorentzian HWHM
+        omega0=0.0,  # Lorentzian centre frequency
+        Delta0=0.3,  # Lorentzian HWHM
         #   smaller Δ → less incoherence damping → higher r
         plasticity="antihebbian",
         dist="uniform",

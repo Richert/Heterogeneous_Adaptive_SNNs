@@ -386,9 +386,9 @@ if __name__ == "__main__":
     # qualitative micro-vs-macro comparison across several seeds
     compare_macro_micro(
         seeds=(1, 2, 4, 8),
-        M=5, N=1000, T=500.0,
-        K=1.0, mu=0.1, gamma=0.05,
-        omega_mean=0.4, omega_std=0.2, delta_mean=0.02, delta_std=0.0,
+        M=1, N=500, T=100.0,
+        K=0.5, mu=0.01, gamma=0.0,
+        omega_mean=0.0, omega_std=0.2, delta_mean=0.02, delta_std=0.0,
         r0_mean=0.9, r0_std=0.1, psi_mean=0.0, psi_std=0.1,
         A0_center=0.2, A0_scale=0.1, plasticity="hebbian",
     )

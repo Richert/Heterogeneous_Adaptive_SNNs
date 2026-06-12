@@ -45,7 +45,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy.integrate import solve_ivp
-from config.utility_functions import uniform, lorentzian2, lorentzian
 _EPS = 1e-9
 plt.rcParams["font.size"] = 16.0
 
@@ -54,7 +53,7 @@ plt.rcParams["font.size"] = 16.0
 # Shared initial-condition factory
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def sample_microscopic_frequencies(N, dist, omega0, Delta, rng, cauchy_clip=50.0):
+def sample_microscopic_frequencies(N, dist, omega0, Delta, rng, cauchy_clip=20.0):
     if dist == "uniform":
         return rng.uniform(omega0 - Delta, omega0 + Delta, N)
     elif dist == "lorentzian":
@@ -382,19 +381,19 @@ def plot_comparison(res):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    d = 20
+    d = 256
     CONFIG = dict(
-        N=10*d,  # total oscillators  (must be divisible by d)
+        N=1*d,  # total oscillators  (must be divisible by d)
         d=d,  # oscillators per population  →  M = N/d = 10
-        T=100.0,  # simulation time
-        K=2.0,  # global coupling strength
-        mu=0.005,  # Hebbian learning rate
+        T=500.0,  # simulation time
+        K=1.0,  # global coupling strength
+        mu=1.0,  # Hebbian learning rate
         gamma=0.0,  # weight decay  →  |A*| ≤ μ/γ ≈ 2.67
-        omega0=1.0,  # Lorentzian centre frequency
-        Delta0=0.8,  # Lorentzian HWHM
+        omega0=0.0,  # Lorentzian centre frequency
+        Delta0=0.1,  # Lorentzian HWHM
         #   smaller Δ → less incoherence damping → higher r
-        plasticity="antihebbian",
-        dist="uniform",
+        plasticity="hebbian",
+        dist="lorentzian",
         seed=42,
         method="DOP853",
         rtol=1e-5,

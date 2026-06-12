@@ -42,19 +42,20 @@ def _op(name):
 #  configuration
 # ════════════════════════════════════════════════════════════════════════════
 CONFIG = dict(
-    N=256,                         # number of microscopic oscillators
-    K=0.25,                         # global coupling scale
+    N=500,                         # number of microscopic oscillators
+    K=1.0,                         # global coupling scale
     omega_bar=0.0,                 # Lorentzian centre (only rotates the frame)
     A0=1.0,                        # initial coupling weight (uniform A_ij(0)=A0)
     gamma=0.0,                     # weight decay (fixed to 0 for this study)
     sigma0=0.5,                    # coherent IC: θ_i(0) ~ N(0, sigma0)
     trunc=20.0,                    # Lorentzian truncated at ±trunc·Δ (tames fast tails)
     # sweep
-    Delta_sweep=[0.01, 0.03, 0.1, 0.3, 1.0],
-    mu_sweep=[0.0, 0.01, 0.1, 1.0],
-    G_A_rules=["cos", "sin"],
+    Delta_sweep=[0.1, 0.3, 0.5, 0.7, 0.9],
+    mu_sweep=[0.01, 0.1, 1.0],
+    G_A_rules=["cos", "sin", "|sin|"],
+    n_trunc=10,                     # Fourier-truncation order for the |sin| mean field (Eqs. 13/14)
     # integration (scipy solve_ivp)
-    T=40.0, dts=0.25,
+    T=500.0, dts=0.25,
     method="RK45", rtol=1e-6, atol=1e-8,
     # storage
     save_res=128,                  # block-average the final A matrix / ω axis to this size
@@ -121,16 +122,47 @@ def _block(vmap, match):
 # ════════════════════════════════════════════════════════════════════════════
 #  models (built from config/kuramoto.yaml)
 # ════════════════════════════════════════════════════════════════════════════
-def simulate_micro(theta0, A0, omega, K, mu, gamma, c_cos, c_sin, cfg):
-    """Single-population all-to-all adaptive Kuramoto: kmo_op + adaptive matrix edge."""
+def rule_coeffs(rule):
+    """(c_cos, c_sin, c_abs) selecting the microscopic adaptation rule G_A."""
+    return {"cos": (1.0, 0.0, 0.0), "sin": (0.0, 1.0, 0.0),
+            "|sin|": (0.0, 0.0, 1.0)}[rule]
+
+
+def _oa_adapt_op(rule, n_trunc):
+    """Mean-field adaptive coupling operator (single ensemble, Eqs. 12-14). The drive
+    Ā̇ = μ·F(R) − γĀ is rule-specific; |sin| uses the Fourier truncation (App. B2):
+        cos:  F = R²;  sin:  F = 0;
+        |sin|: F = 2/π − (4/π) Σ_{n=1}^{n_trunc} R^{4n}/(4n²−1)   (R⁴ⁿ = (R²)^{2n})."""
+    base = {"zc": "output(complex)", "Abar": "variable(1.0)", "z": "input(complex)",
+            "mu": 0.1, "decay": 0.0}
+    if rule == "cos":
+        eqs = ["R2 = real(z)^2 + imag(z)^2", "Abar' = mu*R2 - decay*Abar", "zc = Abar*z"]
+        base["R2"] = "variable(0.0)"
+    elif rule == "sin":
+        eqs = ["Abar' = -decay*Abar", "zc = Abar*z"]
+    elif rule == "|sin|":
+        c0, c1 = 2.0 / np.pi, 4.0 / np.pi
+        terms = " + ".join(f"R2^{2 * n}/{4 * n * n - 1}" for n in range(1, n_trunc + 1))
+        eqs = ["R2 = real(z)^2 + imag(z)^2",
+               f"Abar' = mu*({c0:.12g} - {c1:.12g}*({terms})) - decay*Abar", "zc = Abar*z"]
+        base["R2"] = "variable(0.0)"
+    else:
+        raise ValueError(f"unknown rule {rule}")
+    return OperatorTemplate(name="oa_adapt_op", equations=eqs, variables=base)
+
+
+def simulate_micro(theta0, A0, omega, K, mu, gamma, rule, cfg):
+    """Single-population all-to-all adaptive Kuramoto: kmo_op + adaptive matrix edge.
+    The |sin| rule is exact at the microscopic level (no Fourier truncation needed)."""
     global _RUN_ID
     _RUN_ID += 1
     N = omega.size
+    c_cos, c_sin, c_abs = rule_coeffs(rule)
     node = NodeTemplate(name="osc", operators=[_op("kmo_op")])
     pop = PopulationTemplate(name="osc", node=node, n=N,
                              params={"kmo_op/omega": omega, "kmo_op/theta": theta0})
     edge = EdgeTemplate(name="adapt_edge", operators=[_op("kmo_adapt_op")])
-    for var, val in dict(mu=mu, decay=gamma, c_cos=c_cos, c_sin=c_sin, A=A0).items():
+    for var, val in dict(mu=mu, decay=gamma, c_cos=c_cos, c_sin=c_sin, c_abs=c_abs, A=A0).items():
         edge.update_var("kmo_adapt_op", var, val)
     W = (K / N) * np.ones((N, N))                          # uniform connectivity; A_ij is the edge state
     conn = Connectivity("osc/kmo_op/e", "osc/kmo_op/s_in", weights=W, edge=edge,
@@ -146,16 +178,16 @@ def simulate_micro(theta0, A0, omega, K, mu, gamma, c_cos, c_sin, cfg):
     return t, R, Abar, A_final
 
 
-def simulate_mf(Delta, mu, gamma, K, omega_bar, c_cos, R0, A0, cfg):
+def simulate_mf(Delta, mu, gamma, K, omega_bar, rule, n_trunc, R0, A0, cfg):
     """Single Ott–Antonsen ensemble with mean-coupling adaptation: oa_op + oa_adapt_op."""
     global _RUN_ID
     _RUN_ID += 1
-    node = NodeTemplate(name="ens", operators=[_op("oa_op"), _op("oa_adapt_op")])
+    node = NodeTemplate(name="ens", operators=[_op("oa_op"), _oa_adapt_op(rule, n_trunc)])
     pop = PopulationTemplate(name="ens", node=node, n=1,
                              params={"oa_op/Omega": omega_bar, "oa_op/Delta": Delta,
                                      "oa_op/z": np.array([R0 + 0.0j]),
                                      "oa_adapt_op/mu": mu, "oa_adapt_op/decay": gamma,
-                                     "oa_adapt_op/c_cos": c_cos, "oa_adapt_op/Abar": np.array([float(A0)])})
+                                     "oa_adapt_op/Abar": np.array([float(A0)])})
     conn = Connectivity("ens/oa_adapt_op/zc", "ens/oa_op/h", weights=float(K))  # self: h = K Ā z
     net = CircuitTemplate(f"mf{_RUN_ID}", populations={"ens": pop}, connections=[conn])
     t, Y, vmap = _run(net, cfg, f"mf{_RUN_ID}")
@@ -192,13 +224,13 @@ def main(cfg=CONFIG):
             rows.append({**base(), "quantity": "omega", "Delta": Delta, "idx": k, "value": float(om)})
 
     for rule in cfg["G_A_rules"]:
-        c_cos, c_sin = (1.0, 0.0) if rule == "cos" else (0.0, 1.0)
         for Delta in cfg["Delta_sweep"]:
             omega = lorentzian_truncated(N, ob, Delta, cfg["trunc"])
             for mu in cfg["mu_sweep"]:
                 t_m, R_m, Ab_m, A_fin = simulate_micro(theta0, A0, omega, K, mu, gamma,
-                                                       c_cos, c_sin, cfg)
-                t_f, R_f, Ab_f = simulate_mf(Delta, mu, gamma, K, ob, c_cos, R0, A0, cfg)
+                                                       rule, cfg)
+                t_f, R_f, Ab_f = simulate_mf(Delta, mu, gamma, K, ob, rule, cfg["n_trunc"],
+                                             R0, A0, cfg)
                 print(f"  G_A={rule}  Δ={Delta:<4}  μ={mu:<5} -> "
                       f"R_mic(end)={R_m[-1]:.3f}/R_mf={R_f[-1]:.3f}  "
                       f"Ā_mic(end)={Ab_m[-1]:.3f}/Ā_mf={Ab_f[-1]:.3f}")
