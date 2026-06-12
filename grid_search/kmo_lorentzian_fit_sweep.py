@@ -46,6 +46,11 @@ from pyrates import OperatorTemplate, NodeTemplate, CircuitTemplate, clear, Popu
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "theory")))
 import theory.lorentzian_mixture as LM
 
+# shared Kuramoto / OA equation templates (config/kuramoto.yaml)
+_KY = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config", "kuramoto"))
+def _op(name):
+    return OperatorTemplate.from_yaml(f"{_KY}/{name}")
+
 
 # ════════════════════════════════════════════════════════════════════════════
 #  configuration
@@ -119,45 +124,34 @@ def _run(net, name, cfg, precision):
 
 
 def simulate_micro(omega, K, theta0, cfg, tag="micro"):
-    """Globally coupled Kuramoto network (vector-based PyRates) -> (t, R(t))."""
+    """Globally coupled Kuramoto network: shared kmo_op + scalar mean-field reduction."""
     N = omega.size
-    phase_op = OperatorTemplate(name="phase_op", equations=[
-        "co = cos(theta)",
-        "si = sin(theta)",
-        "theta' = omega + K*(s_sin*cos(theta) - s_cos*sin(theta))"],
-        variables={"theta": "output(0.0)", "co": "variable(0.0)", "si": "variable(0.0)",
-                   "omega": "0.0", "K": K, "s_cos": "input(0.0)", "s_sin": "input(0.0)"})
-    node = NodeTemplate(name="osc", operators=[phase_op])
+    node = NodeTemplate(name="osc", operators=[_op("kmo_op")])
     pop = PopulationTemplate(name="osc", node=node, n=N,
-                             params={"phase_op/omega": omega, "phase_op/theta": theta0})
-    # scalar (1/N) Connectivity -> PyRates emits  s = (1/N) * vsum(source)  (no N×N matrix)
-    conns = [Connectivity("osc/phase_op/co", "osc/phase_op/s_cos", weights=1.0 / N),
-             Connectivity("osc/phase_op/si", "osc/phase_op/s_sin", weights=1.0 / N)]
-    net = CircuitTemplate("kmo_micro", populations={"osc": pop}, connections=conns)
-    t, Y, vmap = _run(net, f"{tag}_vf", cfg, "float64")
-    theta = Y[_var_slice(vmap, "phase_op/theta")]     # (N, T)
+                             params={"kmo_op/omega": omega, "kmo_op/theta": theta0})
+    # scalar (K/N) Connectivity on e -> s_in = (K/N) vsum(e) = K·Z (no N×N matrix)
+    conn = Connectivity("osc/kmo_op/e", "osc/kmo_op/s_in", weights=K / N)
+    net = CircuitTemplate("kmo_micro", populations={"osc": pop}, connections=[conn])
+    t, Y, vmap = _run(net, f"{tag}_vf", cfg, "complex128")
+    theta = np.real(Y[_var_slice(vmap, "kmo_op/theta")])   # (N, T)
     R = np.abs(np.exp(1j * theta).mean(axis=0))
     clear(net)
     return t, R
 
 
 def simulate_ensemble(w, Omega, Delta, K, R0, cfg, tag="ens"):
-    """Ensemble Ott–Antonsen mean field (vector-based PyRates) -> (t, R(t))."""
+    """Ensemble Ott–Antonsen mean field: shared oa_op + ens_coupling_op (zc = w_m z_m)."""
     M = w.size
-    oa_op = OperatorTemplate(name="oa_op", equations=[
-        "zw = wm*z",
-        "z' = (i*Omega - Delta)*z + (h - conj(h)*z^2)/2"],
-        variables={"z": "output(0.1+0.0j)", "zw": "variable(complex)", "h": "input(complex)",
-                   "wm": "1.0", "Omega": "0.0", "Delta": "0.1", "i": 0.0 + 1.0j})
-    node = NodeTemplate(name="ens", operators=[oa_op])
+    node = NodeTemplate(name="ens", operators=[_op("oa_op"), _op("ens_coupling_op")])
     pop = PopulationTemplate(name="ens", node=node, n=M,
-                             params={"oa_op/wm": w, "oa_op/Omega": Omega, "oa_op/Delta": Delta,
-                                     "oa_op/z": np.full(M, R0 + 0.0j)})
-    # scalar (K) Connectivity over the weighted source  ->  h = K * vsum(w_m z_m)
-    conn = Connectivity("ens/oa_op/zw", "ens/oa_op/h", weights=float(K))
+                             params={"oa_op/Omega": Omega, "oa_op/Delta": Delta,
+                                     "oa_op/z": np.full(M, R0 + 0.0j),
+                                     "ens_coupling_op/wm": w})
+    # scalar (K) Connectivity over zc = w_m z_m  ->  h = K Σ_l w_l z_l
+    conn = Connectivity("ens/ens_coupling_op/zc", "ens/oa_op/h", weights=float(K))
     net = CircuitTemplate("kmo_ens", populations={"ens": pop}, connections=[conn])
     t, Y, vmap = _run(net, f"{tag}_vf", cfg, "complex128")
-    z = Y[_var_slice(vmap, "oa_op/z")]                # (M, T) complex
+    z = Y[_var_slice(vmap, "oa_op/z")]                     # (M, T) complex
     R = np.abs(w @ z)
     clear(net)
     return t, R

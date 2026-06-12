@@ -32,7 +32,7 @@ OUT = "/home/rgast/data/mpmf_simulations/kmo_lorentzian_fit_figure"
 C_MICRO = "0.2"
 C_MF = "#c1121f"
 C_COMP = "#2e6f95"
-
+HEATMAP_CMAP = "Reds"     # colormap for the spectral-RMSE heatmap
 
 # ════════════════════════════════════════════════════════════════════════════
 #  PRL single-column style
@@ -96,7 +96,7 @@ def plot_distribution(ax, omega, p, gx):
     comps = lorentzian_pdf(gx, p["w"], p["Omega"], p["Delta"])
     for k in range(p["Mstar"]):
         ax.plot(gx, comps[:, k], lw=0.6, color=C_COMP, alpha=0.7, zorder=2)
-    ax.plot(gx, comps.sum(axis=1), lw=1.3, color=C_MF, label="MF mixture", zorder=3)
+    ax.plot(gx, comps.sum(axis=1), lw=1.0, color=C_MF, label="MF mixture", zorder=3)
     ax.set_xlim(gx[0], gx[-1])
     ax.set_yticks([])
     ax.set_xlabel(r"$\omega$", labelpad=1)
@@ -138,14 +138,19 @@ def main():
 
     # ── figure: 4×2, single column ──────────────────────────────────────────
     set_prl_style()
-    fig = plt.figure(figsize=(7.0, 3.4), layout="constrained")   # PRL double column
+    # Double-column; height reduced (the old bottom legend strip is gone). The
+    # shared legend now lives in a strip below the heatmap within column 1, so the
+    # example columns (distribution + dynamics) keep their full, unchanged height.
+    fig = plt.figure(figsize=(7.0, 2.0), layout="constrained")   # PRL double column
     # minimal but non-overlapping whitespace (pads in inches, *space as fractions)
     fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.04, hspace=0.06)
     gs = fig.add_gridspec(2, 4)
 
-    # block 1 (rows 1-2, col 1): spectral-RMSE heatmap
-    axh = fig.add_subplot(gs[0:2, 0])
-    im = axh.imshow(RMSE, origin="lower", aspect="auto", cmap="magma")
+    # column 1: heatmap on top, shared legend in the freed strip beneath it
+    col1 = gs[0:2, 0].subgridspec(2, 1, height_ratios=[6, 1], hspace=0.04)
+    axh = fig.add_subplot(col1[0])
+    ax_leg = fig.add_subplot(col1[1]); ax_leg.axis("off")
+    im = axh.imshow(RMSE, origin="lower", aspect="auto", cmap=HEATMAP_CMAP)
     axh.set_xticks(range(len(lams)))
     axh.set_xticklabels([f"$10^{{{int(round(np.log10(l)))}}}$" for l in lams])
     axh.set_yticks(range(len(Mmaxs)))
@@ -158,9 +163,8 @@ def main():
         for j in range(len(lams)):
             axh.text(j, i, f"{Mstar[i, j]}", ha="center", va="center",
                      fontsize=6, color="white", path_effects=_stroke)
-    cb = fig.colorbar(im, ax=axh, fraction=0.05, pad=0.04)
-    cb.ax.tick_params(labelsize=5.5)
-    cb.set_label("RMSE", fontsize=6, labelpad=2)
+    cb = fig.colorbar(im, ax=axh, fraction=0.045, pad=0.012)
+    cb.ax.tick_params(labelsize=5.5, pad=1.0)
 
     # mark the three chosen points on the heatmap (offset to the cell corner so
     # they don't sit on the M* annotation)
@@ -183,15 +187,16 @@ def main():
         ax_d.set_title(f"({lab}) {tag}: $M^*={p['Mstar']}$, $\\lambda=10^{{{exp}}}$\n"
                        f"RMSE$={rm:.3f}$", fontsize=6.0, pad=2)
 
-    # one shared legend (distribution + dynamics) at the bottom
+    # one shared legend (distribution + dynamics) in the strip below the heatmap
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
     handles = [Patch(fc="0.82", label="micro $\\rho(\\omega)$"),
                Line2D([0], [0], color=C_MF, lw=1.3, label="MF mixture"),
                Line2D([0], [0], color=C_MICRO, lw=0.9, label="micro $R(t)$"),
                Line2D([0], [0], color=C_MF, lw=0.9, ls="--", label="MF $R(t)$")]
-    # 'outside' loc lets constrained_layout reserve a compact strip for the legend
-    fig.legend(handles=handles, loc="outside lower center", ncol=2, fontsize=5.5)
+    ax_leg.legend(handles=handles, loc="center", ncol=2, fontsize=5.5,
+                  handlelength=1.4, columnspacing=1.0, handletextpad=0.4,
+                  borderaxespad=0.0)
 
     fig.savefig(OUT + ".pdf")
     fig.savefig(OUT + ".png", dpi=300)
