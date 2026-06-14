@@ -26,6 +26,7 @@ Run in the ``pycobi`` (or ``allen``) conda env with Auto-07p / meson on PATH:
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python allen_qif_bifurcation.py
 """
 import os
+import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -47,7 +48,10 @@ M_FOLD, M_HOPF = "o", "s"
 #  configuration
 # ═════════════════════════════════════════════════════════════════════════════
 CONFIG = dict(
-    fit_npz=os.path.join(_HERE, "..", "data_fitting", "allen_lorentzian_pyramidal_L23.npz"),
+    # which Allen fit to analyse: selects ../data_fitting/allen_lorentzian_<tag>.npz and names
+    # the output figure allen_qif_bifurcation_<tag>.{png,pdf} (same tag scheme as the fits)
+    cell_class="Pyramidal",      # "Pyramidal" | "PV+ interneuron" | "SOM interneuron"
+    layer="L2/3",                # "L2/3" | "L5/6"
     v_r=-70.0,
     tau_s=10.0,
     J0=100.0,                # coupling for the 1-parameter I-continuation (large ⇒ folds: a
@@ -58,6 +62,9 @@ CONFIG = dict(
     r0=0.05,                 # IVP initial firing rate per ensemble (low-activity guess)
     T_settle=2000.0,
 )
+# CLI args override the cell class / layer -> `python allen_qif_bifurcation.py "Pyramidal" "L5/6"`
+if len(sys.argv) > 2:
+    CONFIG["cell_class"], CONFIG["layer"] = sys.argv[1], sys.argv[2]
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -102,6 +109,12 @@ def build_circuit(M, vthbar, delta, weights, v_r, tau_s, J0, I0, r0, v0, name="q
 # ═════════════════════════════════════════════════════════════════════════════
 #  helpers
 # ═════════════════════════════════════════════════════════════════════════════
+def _tag(cell_class, layer):
+    """Filename tag matching data_fitting/allen_lorentzian_fit.py (e.g. 'pyramidal_L23')."""
+    c = cell_class.split("+")[0].split()[0].lower()       # Pyramidal→pyramidal, PV+ int→pv
+    return f"{c}_{layer.replace('/', '').replace(' ', '')}"
+
+
 def load_fit(path):
     d = np.load(path, allow_pickle=False)
     w = np.asarray(d["weights"], float)
@@ -115,6 +128,32 @@ def _pcol(df, name):
         if (head == name or (isinstance(head, str) and head.endswith("/" + name))) and sub in ("", 0):
             return c
     raise KeyError(name)
+
+
+def save_bif_data(out_npz, eq_sols, codim2, cfg, M):
+    """Extract the arrays the summary figure needs into a self-contained .npz (so the plotting
+    script needs neither pycobi nor Auto): the 1-D branch (Iext, s, stability), the LP/HB marker
+    coordinates, and each codim-2 curve in the (Iext, J) plane."""
+    I = eq_sols[_pcol(eq_sols, "Iext")].to_numpy(float)
+    s = eq_sols[_pcol(eq_sols, "s")].to_numpy(float)
+    stab = (eq_sols[("stability", "")].to_numpy(bool) if ("stability", "") in eq_sols.columns
+            else np.ones(I.size, bool))
+    bif = eq_sols[("bifurcation", "")].to_numpy()
+    data = dict(cell_class=cfg["cell_class"], layer=cfg["layer"], M=np.int64(M),
+                J0=float(cfg["J0"]), I_min=float(cfg["I_min"]), I_max=float(cfg["I_max"]),
+                J_min=float(cfg["J_min"]), J_max=float(cfg["J_max"]),
+                branch_I=I, branch_s=s, branch_stab=stab,
+                lp_I=I[bif == "LP"], lp_s=s[bif == "LP"],
+                hb_I=I[bif == "HB"], hb_s=s[bif == "HB"],
+                n_codim2=np.int64(len(codim2)))
+    kinds = []
+    for k, (_nm, kind, df) in enumerate(codim2):
+        data[f"c2_{k}_I"] = df[_pcol(df, "Iext")].to_numpy(float)
+        data[f"c2_{k}_J"] = df[_pcol(df, "J")].to_numpy(float)
+        kinds.append(kind)
+    data["c2_kinds"] = np.array(kinds if kinds else [""], dtype="<U8")
+    np.savez(out_npz, **data)
+    print(f"[saved] {os.path.basename(out_npz)}")
 
 
 def _bif_vals(sols, label, pname):
@@ -139,11 +178,15 @@ def add_markers(ax, sols, label, marker, xname, yname, color):
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
     cfg = CONFIG
-    w, Omega, Delta, M = load_fit(cfg["fit_npz"])
+    tag = _tag(cfg["cell_class"], cfg["layer"])
+    fit_npz = os.path.join(_HERE, "..", "data_fitting", f"allen_lorentzian_{tag}.npz")
+    out_stem = os.path.join(_HERE, f"allen_qif_bifurcation_{tag}")
+    w, Omega, Delta, M = load_fit(fit_npz)
     v_r = cfg["v_r"]
     vthbar = v_r + Omega
     DIM = 2 * M + 2
-    print(f"Allen-QIF mean-field bifurcation — M={M} (dim {DIM})")
+    print(f"Allen-QIF mean-field bifurcation — {cfg['cell_class']} {cfg['layer']} "
+          f"(M={M}, dim {DIM})")
     print(f"  v̄_θ,m = {np.round(vthbar, 2)}   Δ_m = {np.round(Delta, 3)}   w_m = {np.round(w, 3)}")
     print(f"  J0={cfg['J0']}, settle at I={cfg['I0']}")
 
@@ -208,7 +251,7 @@ def main():
             print(f"  {nm}: FAILED ({type(e).__name__}: {e})")
 
     # ── figure ──────────────────────────────────────────────────────────────
-    print("\n[plot] writing allen_qif_bifurcation.png")
+    print(f"\n[plot] writing {os.path.basename(out_stem)}.png")
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6))
 
     # (a) 1-parameter branch: synaptic activation s (= total rate at equilibrium) vs I
@@ -220,7 +263,7 @@ def main():
     add_markers(ax1, eq_sols, "HB", M_HOPF, "Iext", "s", C_HOPF)
     ax1.set_xlabel(r"external input $I$")
     ax1.set_ylabel(r"synaptic activation $s$  ($=\sum_m w_m r_m$ at equilibrium)")
-    ax1.set_title(f"(a)  equilibrium branch  (J={cfg['J0']:g}, M={M})")
+    ax1.set_title(f"(a)  {cfg['cell_class']}, {cfg['layer']}  (J={cfg['J0']:g}, M={M})")
     ax1.legend(handles=[
         Line2D([0], [0], color=C_EQ, lw=2, label="equilibrium (solid=stable, dashed=unstable)"),
         Line2D([0], [0], marker=M_FOLD, color=C_FOLD, lw=0, markerfacecolor="none", label="fold (LP)"),
@@ -245,9 +288,17 @@ def main():
     ], loc="best", fontsize=8)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(_HERE, "allen_qif_bifurcation.png"), dpi=140, bbox_inches="tight")
-    plt.savefig(os.path.join(_HERE, "allen_qif_bifurcation.pdf"), bbox_inches="tight")
-    print("  saved allen_qif_bifurcation.{png,pdf}")
+    plt.savefig(out_stem + ".png", dpi=140, bbox_inches="tight")
+    plt.savefig(out_stem + ".pdf", bbox_inches="tight")
+    print(f"  saved {os.path.basename(out_stem)}.{{png,pdf}}")
+
+    # ── persist results: self-contained .npz for the summary figure + full pycobi session ──
+    save_bif_data(out_stem + ".npz", eq_sols, codim2, cfg, M)
+    try:
+        ode.to_file(out_stem + ".pkl", results_only=True)
+        print(f"[saved] {os.path.basename(out_stem)}.pkl (pycobi session)")
+    except Exception as e:
+        print(f"  (ode.to_file skipped: {type(e).__name__}: {e})")
 
     ode.close_session(clear_files=True)
     clear(circuit)

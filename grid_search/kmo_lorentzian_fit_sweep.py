@@ -25,13 +25,15 @@ Ensemble mean field (Eqs. 6–7 with Ā_ml=1), Cartesian z_m = R_m e^{iΨ_m}:
 realized with a scalar Connectivity (weight K) over the weighted source w_m z_m, so
 h = K·vsum(w_m z_m). (w_m, Ω_m, Δ_m) come from LorentzianMixture.fit on the ω samples.
 
-2-D sweep over the fit meta-parameters λ (lambda_M) × M_max, written to one tidy CSV
-(discriminated by the `quantity` column):
+2-D sweep over the fit meta-parameters λ (per-ensemble penalty) × M_max at FIXED α,
+written to one tidy CSV (discriminated by the `quantity` column):
     omega   : micro oscillator frequencies          (idx, value=ω_i)
     R_micro : micro average phase coherence          (time, value=R)
-    R_mf    : ensemble-MF coherence per sweep point  (lambda, M_max, M_star, time, value=R)
+    R_mf    : ensemble-MF coherence per sweep point  (lambda, M_max, M_star, pvalue, time, value=R)
     mixture : fitted Lorentzian params per sweep pt  (lambda, M_max, M_star, idx, w, Omega, Delta)
-plus constant columns K, N and the Δ-bounds.
+plus constant columns K, N, the Δ-bounds and the fixed α. M is chosen by the greedy penalized
+CvM search: accept at the smallest M with 1−p < α, else return argmin_M [D(M)+λ·M] (greedy with
+patience). Each fit is pruned to its non-degenerate effective order. LARGER λ => fewer ensembles.
 
 Run in the ``pycobi`` conda env (dev PyRates 1.2.2: PopulationTemplate/Connectivity +
 the scalar-weight global-coupling reduction; scipy + pandas):
@@ -44,7 +46,7 @@ import pandas as pd
 from scipy.integrate import solve_ivp
 from pyrates import OperatorTemplate, NodeTemplate, CircuitTemplate, clear, PopulationTemplate, Connectivity
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "theory")))
-import theory.lorentzian_mixture as LM
+import lorentzian_mixture as LM
 
 # shared Kuramoto / OA equation templates (config/kuramoto.yaml)
 _KY = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config", "kuramoto"))
@@ -71,12 +73,19 @@ CONFIG = dict(
     dts=0.1,                      # sampling step for R(t)
     rtol=1e-6, atol=1e-8,
     # Lorentzian-mixture fit
-    delta_bounds=(0.05, 2.0),     # hard bounds on every ensemble width
-    n_restarts=4,
+    delta_bounds=(1e-4, 1e2),     # hard bounds on every ensemble width
+    n_restarts=10,                # restarts per fixed-M fit; too few may leave higher-M
+                                  # fits stuck at lower-M local minima (zero relative improvement),
+                                  # which spuriously trips the greedy β stop early
     loss="cvm",
-    # meta-parameter sweep
-    lambda_sweep=[1e-6, 1e-5, 1e-4, 1e-3],
-    M_max_sweep=[1, 3, 5, 7, 9, 12],
+    method="slsqp",               # constraint handling: "slsqp" (natural params + Σw=1) or "softmax"
+    # fixed GoF acceptance level (kept strict so the λ penalty is what selects M)
+    alpha=1e-2,
+    # meta-parameter sweep over λ: the per-ensemble penalty in M* = argmin[D(M)+λ·M]
+    # (D is the CvM loss). LARGER λ => FEWER ensembles.
+    lambda_sweep=[1e-5, 1e-4, 1e-3],
+    patience=3,                   # stop after this many non-improving steps in D+λM, return argmin
+    M_max_sweep=[1, 2, 4, 8, 16],
     # misc
     seed=1,
     out_csv="/home/rgast/data/mpmf_simulations/kmo_lorentzian_sweep.csv",
@@ -179,7 +188,7 @@ def main(cfg=CONFIG):
     dmin, dmax = cfg["delta_bounds"]
 
     def base():                                    # constant columns on every row
-        return dict(K=Kc, N=Nc, delta_min=dmin, delta_max=dmax)
+        return dict(K=Kc, N=Nc, delta_min=dmin, delta_max=dmax, alpha=cfg["alpha"])
 
     # micro frequencies
     for i, om in enumerate(omega):
@@ -188,23 +197,25 @@ def main(cfg=CONFIG):
     for t, R in zip(t_mic, R_mic):
         rows.append({**base(), "quantity": "R_micro", "time": float(t), "value": float(R)})
 
-    # 2-D meta-parameter sweep over (lambda, M_max)
+    # 2-D meta-parameter sweep over (lambda, M_max)  [alpha fixed = cfg["alpha"]]
     si = 0
     for M_max in cfg["M_max_sweep"]:
         for lam in cfg["lambda_sweep"]:
-            res = LM.fit(omega, cfg["delta_bounds"], M_max=M_max, lambda_M=lam,
-                         loss=cfg["loss"], n_restarts=cfg["n_restarts"], seed=cfg["seed"])
+            res = LM.fit(omega, cfg["delta_bounds"], M_max=M_max, alpha=cfg["alpha"],
+                         lambda_M=lam, patience=cfg["patience"], loss=cfg["loss"],
+                         n_restarts=cfg["n_restarts"], seed=cfg["seed"], method=cfg["method"])
             m = res["model"]
             M_star = res["M"]
             t_mf, R_mf = simulate_ensemble(m.w, m.Omega, m.Delta, cfg["K"], R0, cfg,
                                            tag=f"ens{si}")
             si += 1
-            print(f"  λ={lam:.0e}  M_max={M_max:2d} -> M*={M_star}  "
+            print(f"  λ={lam:<8g} M_max={M_max:2d} -> M*={M_star}  p={res['pvalue']:.3f}  "
                   f"R_mf(end)={R_mf[-1]:.3f}  (data_loss={res['data_loss']:.2e})")
             # ensemble-MF coherence
             for t, R in zip(t_mf, R_mf):
                 rows.append({**base(), "quantity": "R_mf", "lambda": lam, "M_max": M_max,
-                             "M_star": M_star, "time": float(t), "value": float(R)})
+                             "M_star": M_star, "pvalue": float(res["pvalue"]),
+                             "time": float(t), "value": float(R)})
             # fitted Lorentzian mixture parameters
             for k in range(M_star):
                 rows.append({**base(), "quantity": "mixture", "lambda": lam, "M_max": M_max,
@@ -212,8 +223,8 @@ def main(cfg=CONFIG):
                              "Omega": float(m.Omega[k]), "Delta": float(m.Delta[k])})
 
     df = pd.DataFrame(rows).reindex(columns=[
-        "quantity", "lambda", "M_max", "M_star", "time", "idx", "value",
-        "w", "Omega", "Delta", "K", "N", "delta_min", "delta_max"])
+        "quantity", "lambda", "M_max", "M_star", "pvalue", "time", "idx", "value",
+        "w", "Omega", "Delta", "K", "N", "delta_min", "delta_max", "alpha"])
     os.makedirs(os.path.dirname(cfg["out_csv"]) or ".", exist_ok=True)
     df.to_csv(cfg["out_csv"], index=False)
     print(f"[saved] {cfg['out_csv']}  ({len(df)} rows)")

@@ -42,17 +42,23 @@ import lorentzian_mixture as LM
 # ════════════════════════════════════════════════════════════════════════════
 SPECIES = CellTypesApi.MOUSE          # or CellTypesApi.HUMAN
 CELL_CLASS = "Pyramidal"              # "Pyramidal" | "PV+ interneuron" | "SOM interneuron"
-LAYER = "L2/3"                        # "L2/3" | "L5/6"
+LAYER = "L5/6"                        # "L2/3" | "L5/6"
 THRESH_FEATURE = "threshold_v_long_square"
 
 # Lorentzian-mixture fit
-M_MAX = 8
-LAMBDA_M = 1e-4                       # per-ensemble penalty (model selection); the CvM
-                                      # loss is ~1e-3 here, so 1e-3 forces M=1, 1e-4 gives
-                                      # a few ensembles, 1e-5 keeps adding components
+M_MAX = 10
+ALPHA = 0.001                          # GoF acceptance level for greedy model selection: stop at
+                                      # the smallest M with 1−p < ALPHA (CvM p-value p > 1−ALPHA,
+                                      # T=N·W²). SMALLER ALPHA ⇒ better fit ⇒ more ensembles.
+LAMBDA_M = 1e-5                       # per-ensemble complexity penalty: M* = argmin[D(M)+λ·M]
+                                      # (D ~ 1e-4…1e-3 here). LARGER ⇒ fewer ensembles.
+PATIENCE = 2                          # stop once the penalized loss D+λM has not improved for
+                                      # PATIENCE consecutive M, then return the argmin (lowest total).
 DELTA_BOUNDS = None                   # (Δ_min, Δ_max) in mV; None → derived from the data spread
-N_RESTARTS = 8
-SEED = 0
+N_RESTARTS = 10
+SEED = 1
+FIT_METHOD = "slsqp"                  # constraint handling: "slsqp" (natural params, box bounds
+                                      # + Σw=1 equality) or "softmax" (reparam + L-BFGS-B)
 EMP_BINS = 20                         # bins for the saved empirical (normalized-histogram) distribution
 
 MANIFEST = os.path.join(_HERE, "cell_types", "manifest.json")
@@ -158,10 +164,12 @@ def main():
           f"v_θ−v_r mean={samples.mean():.2f} mV, std={std:.2f} mV, "
           f"Δ-bounds={tuple(round(b, 3) for b in dbounds)}")
 
-    res = LM.fit(samples, dbounds, M_max=M_MAX, lambda_M=LAMBDA_M, loss="cvm",
-                 n_restarts=N_RESTARTS, seed=SEED, verbose=True)
+    res = LM.fit(samples, dbounds, M_max=M_MAX, alpha=ALPHA, lambda_M=LAMBDA_M, patience=PATIENCE,
+                 loss="cvm", n_restarts=N_RESTARTS, seed=SEED, method=FIT_METHOD, verbose=True)
     m = res["model"]
-    print(f"selected M={m.M}, CvM data-loss D={res['data_loss']:.4e}")
+    print(f"selected M={m.M} (GoF α={ALPHA}, λ={LAMBDA_M}, patience={PATIENCE}): "
+          f"CvM D={res['data_loss']:.4e}, total={res['total_loss']:.4e}, "
+          f"T=N·W²={res['T']:.4f}, p-value={res['pvalue']:.3f}")
     for k in range(m.M):
         print(f"  comp {k}: w={m.w[k]:.3f}  Ω={m.Omega[k]:+.3f} mV  Δ={m.Delta[k]:.3f} mV")
 
@@ -180,11 +188,15 @@ def main():
              cell_class=CELL_CLASS, layer=LAYER,
              n_samples=np.int64(samples.size), data_loss=float(res["data_loss"]),
              delta_min=float(dbounds[0]), delta_max=float(dbounds[1]),
-             lambda_M=float(LAMBDA_M), feature=THRESH_FEATURE)
+             alpha=float(ALPHA), lambda_M=float(LAMBDA_M), patience=np.int64(PATIENCE),
+             T=float(res["T"]), pvalue=float(res["pvalue"]),
+             total_loss=float(res["total_loss"]), feature=THRESH_FEATURE)
     with open(stem + ".txt", "w") as f:
         f.write(f"# Lorentzian-mixture fit of v_theta - v_r  ({CELL_CLASS}, {LAYER})\n")
         f.write(f"# n_samples={samples.size}  M={m.M}  CvM_loss={res['data_loss']:.6e}\n")
-        f.write(f"# delta_bounds=({dbounds[0]:.4f},{dbounds[1]:.4f}) mV  lambda_M={LAMBDA_M}\n")
+        f.write(f"# GoF: alpha={ALPHA}  lambda_M={LAMBDA_M}  patience={PATIENCE}  "
+                f"T=N*W^2={res['T']:.6f}  p-value={res['pvalue']:.6f}\n")
+        f.write(f"# delta_bounds=({dbounds[0]:.4f},{dbounds[1]:.4f}) mV\n")
         f.write("# columns: weight  Omega_mV  Delta_mV\n")
         for k in range(m.M):
             f.write(f"{m.w[k]:.6f}  {m.Omega[k]:+.6f}  {m.Delta[k]:.6f}\n")

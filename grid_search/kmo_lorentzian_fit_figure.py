@@ -64,10 +64,10 @@ def load(csv):
 
     mf, mix = df[df.quantity == "R_mf"], df[df.quantity == "mixture"]
     points = {}
-    for (lam, Mmax), g in mf.groupby(["lambda", "M_max"]):
+    for (lm, Mmax), g in mf.groupby(["lambda", "M_max"]):
         g = g.sort_values("time")
-        mg = mix[(np.isclose(mix["lambda"], lam)) & (mix["M_max"] == Mmax)].sort_values("idx")
-        points[(float(lam), int(Mmax))] = dict(
+        mg = mix[(np.isclose(mix["lambda"], lm)) & (mix["M_max"] == Mmax)].sort_values("idx")
+        points[(float(lm), int(Mmax))] = dict(
             t=g["time"].to_numpy(), R=g["value"].to_numpy(),
             Mstar=int(g["M_star"].iloc[0]),
             w=mg["w"].to_numpy(), Omega=mg["Omega"].to_numpy(), Delta=mg["Delta"].to_numpy())
@@ -124,9 +124,9 @@ def main():
     RMSE = np.full((len(Mmaxs), len(lams)), np.nan)
     Mstar = np.zeros_like(RMSE, dtype=int)
     rmse_pt = {}
-    for (lam, Mmax), p in points.items():
-        i, j = Mmaxs.index(Mmax), lams.index(lam)
-        RMSE[i, j] = rmse_pt[(lam, Mmax)] = spectral_rmse(R_mic, p["R"])
+    for (lm, Mmax), p in points.items():
+        i, j = Mmaxs.index(Mmax), lams.index(lm)
+        RMSE[i, j] = rmse_pt[(lm, Mmax)] = spectral_rmse(R_mic, p["R"])
         Mstar[i, j] = p["Mstar"]
 
     # three representative sweep points: best / median / worst spectral RMSE
@@ -152,39 +152,44 @@ def main():
     ax_leg = fig.add_subplot(col1[1]); ax_leg.axis("off")
     im = axh.imshow(RMSE, origin="lower", aspect="auto", cmap=HEATMAP_CMAP)
     axh.set_xticks(range(len(lams)))
-    axh.set_xticklabels([f"$10^{{{int(round(np.log10(l)))}}}$" for l in lams])
+    axh.set_xticklabels([f"{b:g}" for b in lams])
     axh.set_yticks(range(len(Mmaxs)))
     axh.set_yticklabels([str(m) for m in Mmaxs])
     axh.set_xlabel(r"penalty $\lambda$", labelpad=1)
     axh.set_ylabel(r"max. ensembles $M_{\max}$", labelpad=2)
     axh.set_title("(a) spectral RMSE", fontsize=7, pad=3)
     _stroke = [pe.withStroke(linewidth=1.0, foreground="black")]
+    # M* per cell: plain fill (no stroke), black on light cells / white on dark cells,
+    # chosen from the cell's background luminance.
     for i in range(len(Mmaxs)):
         for j in range(len(lams)):
+            if np.isnan(RMSE[i, j]):
+                continue
+            r, g, b, _ = im.cmap(im.norm(RMSE[i, j]))
+            lum = 0.299 * r + 0.587 * g + 0.114 * b      # perceived luminance
             axh.text(j, i, f"{Mstar[i, j]}", ha="center", va="center",
-                     fontsize=6, color="white", path_effects=_stroke)
+                     fontsize=6, color="black" if lum > 0.5 else "white")
     cb = fig.colorbar(im, ax=axh, fraction=0.045, pad=0.012)
     cb.ax.tick_params(labelsize=5.5, pad=1.0)
 
     # mark the three chosen points on the heatmap (offset to the cell corner so
     # they don't sit on the M* annotation)
-    for (lam, Mmax), lab in zip(chosen, "bcd"):
-        i, j = Mmaxs.index(Mmax), lams.index(lam)
+    for (lm, Mmax), lab in zip(chosen, "bcd"):
+        i, j = Mmaxs.index(Mmax), lams.index(lm)
         axh.text(j + 0.30, i + 0.30, lab, ha="center", va="center", fontsize=6.5,
                  fontweight="bold", color="white", path_effects=_stroke,
                  bbox=dict(boxstyle="circle,pad=0.05", fc="0.1", ec="white", lw=0.7))
 
     # remaining three columns: representative examples (dist on top, R(t) below)
     block_cells = [(gs[0, 1], gs[1, 1]), (gs[0, 2], gs[1, 2]), (gs[0, 3], gs[1, 3])]
-    for (lam, Mmax), (top_gs, bot_gs), lab, tag in zip(chosen, block_cells, "bcd", labels):
-        p = points[(lam, Mmax)]
-        rm = rmse_pt[(lam, Mmax)]
+    for (lm, Mmax), (top_gs, bot_gs), lab, tag in zip(chosen, block_cells, "bcd", labels):
+        p = points[(lm, Mmax)]
+        rm = rmse_pt[(lm, Mmax)]
         ax_d = fig.add_subplot(top_gs)
         ax_t = fig.add_subplot(bot_gs)
         plot_distribution(ax_d, omega, p, gx)
         plot_dynamics(ax_t, t_mic, R_mic, p)
-        exp = int(round(np.log10(lam)))
-        ax_d.set_title(f"({lab}) {tag}: $M^*={p['Mstar']}$, $\\lambda=10^{{{exp}}}$\n"
+        ax_d.set_title(f"({lab}) {tag}: $M^*={p['Mstar']}$, $\\lambda={lm:g}$\n"
                        f"RMSE$={rm:.3f}$", fontsize=6.0, pad=2)
 
     # one shared legend (distribution + dynamics) in the strip below the heatmap

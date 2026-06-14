@@ -42,6 +42,7 @@ Run in the ``allen`` conda env (PyRates 1.2.3 PopulationTemplate/Connectivity + 
     PATH="$HOME/conda/envs/allen/bin:$PATH" python allen_qif_meanfield.py
 """
 import os
+import sys
 from time import perf_counter
 
 import numpy as np
@@ -58,8 +59,18 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # ════════════════════════════════════════════════════════════════════════════
 #  configuration
 # ════════════════════════════════════════════════════════════════════════════
-FIT_NPZ = os.path.join(_HERE, "..", "data_fitting", "allen_lorentzian_pyramidal_L23.npz")
-OUT = os.path.join(_HERE, "allen_qif_meanfield")
+def _tag(cell_class, layer):
+    """Filename tag matching data_fitting/allen_lorentzian_fit.py (e.g. 'pyramidal_L23')."""
+    c = cell_class.split("+")[0].split()[0].lower()       # Pyramidal→pyramidal, PV+ int→pv
+    return f"{c}_{layer.replace('/', '').replace(' ', '')}"
+
+
+# cell class / layer: CLI args override the defaults -> `python allen_qif_meanfield.py "Pyramidal" "L5/6"`
+CELL_CLASS = sys.argv[1] if len(sys.argv) > 1 else "Pyramidal"   # | "PV+ interneuron" | "SOM interneuron"
+LAYER = sys.argv[2] if len(sys.argv) > 2 else "L2/3"             # "L2/3" | "L5/6"
+_TAG = _tag(CELL_CLASS, LAYER)
+FIT_NPZ = os.path.join(_HERE, "..", "data_fitting", f"allen_lorentzian_{_TAG}.npz")
+OUT = os.path.join(_HERE, f"allen_qif_meanfield_{_TAG}")
 
 P = dict(
     v_r=-70.0,            # resting potential (one root of the quadratic), fixed
@@ -344,6 +355,18 @@ def main():
     print("[mean field] M-ensemble Ott–Antonsen ...")
     tf, rf, sf, vf = run_mf(P, w, vth_bar, Delta)
     print(f"   done in {perf_counter()-t0:.1f}s")
+
+    # ── save the rate dynamics for the summary figure (bifurcation_analysis/allen_qif_figure.py) ──
+    Iarr = np.array([make_input(P)(t) for t in tf])
+    np.savez(OUT + ".npz",
+             cell_class=CELL_CLASS, layer=LAYER,
+             t_micro=tm, r_micro=rm,                       # spiking net, fitted-Lorentzian thresholds
+             t_micro_emp=te, r_micro_emp=re,               # spiking net, empirical-distribution thresholds
+             t_mf=tf, r_mf=rf, s_mf=sf, v_mf=vf,           # mean field
+             t_input=tf, input=Iarr,
+             I0=float(P["I0"]), I1=float(P["I1"]),
+             t_on=float(P["t_on"]), t_off=float(P["t_off"]), J=float(P["J"]))
+    print(f"[saved] {OUT}.npz")
 
     # ── figure ────────────────────────────────────────────────────────────────
     set_prl_style()
