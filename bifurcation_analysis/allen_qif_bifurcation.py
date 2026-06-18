@@ -50,15 +50,15 @@ M_FOLD, M_HOPF = "o", "s"
 CONFIG = dict(
     # which Allen fit to analyse: selects ../data_fitting/allen_lorentzian_<tag>.npz and names
     # the output figure allen_qif_bifurcation_<tag>.{png,pdf} (same tag scheme as the fits)
-    cell_class="Pyramidal",      # "Pyramidal" | "PV+ interneuron" | "SOM interneuron"
+    cell_class="PV+ Interneuron",      # "Pyramidal" | "PV+ interneuron" | "SOM interneuron"
     layer="L2/3",                # "L2/3" | "L5/6"
     v_r=-70.0,
-    tau_s=10.0,
-    J0=100.0,                # coupling for the 1-parameter I-continuation (large ⇒ folds: a
+    tau_s=8.0,
+    J0=-100.0,                # coupling for the 1-parameter I-continuation (large ⇒ folds: a
                              # bistable region with two LPs / a cusp; none survive below J≈50)
-    I0=300.0,                # input at which to settle the IVP onto a stable equilibrium
-    I_min=-200.0, I_max=700.0,   # I-continuation bounds
-    J_min=0.0, J_max=200.0,      # J bounds for the codim-2 (J–I) continuation
+    I0=0.0,                # input at which to settle the IVP onto a stable equilibrium
+    I_min=-100.0, I_max=2000.0,   # I-continuation bounds
+    J_min=-200.0, J_max=0.0,      # J bounds for the codim-2 (J–I) continuation
     r0=0.05,                 # IVP initial firing rate per ensemble (low-activity guess)
     T_settle=2000.0,
 )
@@ -74,24 +74,35 @@ def state_var_order(M):
     return [f"r_{i}" for i in range(M)] + [f"v_{i}" for i in range(M)] + ["a", "s"]
 
 
-def build_equations(M, vthbar, delta, weights, v_r, tau_s):
+def build_equations(M, omega, delta, weights, v_r, tau_s, combined=False):
+    """Mean-field equations with GLOBAL heterogeneity knobs (= 1 at the data fit).
+      two-knob (default): hD width scaling Δ_m = hD·Δ_m^0;  hC centre-spread
+                          Ω_m = Ω̄ + hC·(Ω_m^0 − Ω̄),  Ω̄ = Σ w_m Ω_m^0  (weighted mean).
+      combined=True: a SINGLE knob `h` drives BOTH (hD = hC = h), so h→0 collapses the mixture
+                     to one delta at Ω̄ (homogeneous), h=1 = data, h>1 = more heterogeneous.
+    v̄_θ,m = v_r + Ω_m. The knob(s) are Auto-continuable parameters (alongside Iext, J)."""
     PI = repr(float(np.pi))
     vr = repr(float(v_r))
     ts = repr(float(tau_s))
+    Ombar = repr(float(np.asarray(weights, float) @ np.asarray(omega, float)))
     rtot = "(" + " + ".join(f"{float(weights[j])}*r_{j}" for j in range(M)) + ")"
+    hw, hc = ("h", "h") if combined else ("hD", "hC")            # width / centre-spread knob names
     eqs = []
     for i in range(M):
-        d, vt = repr(float(delta[i])), repr(float(vthbar[i]))
-        eqs.append(f"d/dt * r_{i} = {d}/{PI}*(v_{i} - {vr}) + r_{i}*(2*v_{i} - {vr} - {vt})")
+        d0, om0 = repr(float(delta[i])), repr(float(omega[i]))
+        de = f"({hw}*{d0})"                                          # effective Δ_m
+        vt = f"({vr} + {Ombar} + {hc}*({om0} - {Ombar}))"          # effective v̄_θ,m
+        eqs.append(f"d/dt * r_{i} = {de}/{PI}*(v_{i} - {vr}) + r_{i}*(2*v_{i} - {vr} - {vt})")
         eqs.append(f"d/dt * v_{i} = (v_{i} - {vr})*(v_{i} - {vt}) - ({PI}*r_{i})^2 "
-                   f"- {PI}*{d}*r_{i} + Iext + J*s")
+                   f"- {PI}*{de}*r_{i} + Iext + J*s")
     eqs.append(f"d/dt * a = ({rtot} - a)/{ts}")
     eqs.append(f"d/dt * s = (a - s)/{ts}")
     return eqs
 
 
-def build_circuit(M, vthbar, delta, weights, v_r, tau_s, J0, I0, r0, v0, name="qif_ens"):
-    eqs = build_equations(M, vthbar, delta, weights, v_r, tau_s)
+def build_circuit(M, omega, delta, weights, v_r, tau_s, J0, I0, r0, v0,
+                  hD0=1.0, hC0=1.0, combined=False, h0=1.0, name="qif_ens"):
+    eqs = build_equations(M, omega, delta, weights, v_r, tau_s, combined=combined)
     variables = {"r_0": f"output({float(r0[0])})"}
     for i in range(1, M):
         variables[f"r_{i}"] = f"variable({float(r0[i])})"
@@ -101,6 +112,11 @@ def build_circuit(M, vthbar, delta, weights, v_r, tau_s, J0, I0, r0, v0, name="q
     variables["s"] = f"variable({float(r0.mean())})"
     variables["Iext"] = float(I0)
     variables["J"] = float(J0)
+    if combined:
+        variables["h"] = float(h0)
+    else:
+        variables["hD"] = float(hD0)
+        variables["hC"] = float(hC0)
     op = OperatorTemplate(name=f"{name}_op", equations=eqs, variables=variables)
     node = NodeTemplate(name=f"{name}_node", operators=[op])
     return CircuitTemplate(name=name, nodes={"p": node})
@@ -130,10 +146,65 @@ def _pcol(df, name):
     raise KeyError(name)
 
 
+def _model_rhs(M, omega, delta, weights, v_r, tau_s, J, hD=1.0, hC=1.0):
+    """Plain-numpy right-hand side of the mean field (state y=[r_0..,v_0..,a,s]) for a given
+    external input I and coupling J — used only to recompute equilibrium stability robustly.
+    hD/hC are the heterogeneity knobs (see build_equations)."""
+    PI = np.pi
+    omega = np.asarray(omega, float); delta = np.asarray(delta, float); weights = np.asarray(weights, float)
+    Ombar = weights @ omega
+    vthbar = v_r + Ombar + hC * (omega - Ombar)
+    De = hD * delta
+
+    def rhs(y, I):
+        r, v, a, s = y[:M], y[M:2 * M], y[2 * M], y[2 * M + 1]
+        dr = De / PI * (v - v_r) + r * (2 * v - v_r - vthbar)
+        dv = (v - v_r) * (v - vthbar) - (PI * r) ** 2 - PI * De * r + I + J * s
+        return np.concatenate([dr, dv, [(weights @ r - a) / tau_s, (a - s) / tau_s]])
+    return rhs
+
+
+def recompute_stability(eq_sols, M, omega, delta, weights, v_r, tau_s, J, hD=1.0, hC=1.0, tol=1e-6):
+    """Overwrite the branch 'stability' column from the eigenvalues of the analytical-ish
+    (finite-difference) Jacobian at each equilibrium: stable iff max Re(eig) < tol. PyCoBi's
+    parsed stability is unreliable for this system (eigenvalues with large imaginary parts),
+    flagging a settings-dependent spurious instability; the eigenvalue recompute is robust."""
+    rhs = _model_rhs(M, omega, delta, weights, v_r, tau_s, J, hD, hC)
+    Ic = _pcol(eq_sols, "Iext")
+    cols = [_pcol(eq_sols, n) for n in state_var_order(M)]
+    stab = np.empty(len(eq_sols), bool)
+    for k in range(len(eq_sols)):
+        I = float(eq_sols[Ic].iloc[k])
+        y = np.array([float(eq_sols[c].iloc[k]) for c in cols])
+        f0 = rhs(y, I); n = y.size; Jm = np.empty((n, n))
+        for j in range(n):
+            h = 1e-6 * (1.0 + abs(y[j])); yp = y.copy(); yp[j] += h
+            Jm[:, j] = (rhs(yp, I) - f0) / h
+        stab[k] = bool(np.max(np.linalg.eigvals(Jm).real) < tol)
+    eq_sols[("stability", "")] = stab
+    return eq_sols
+
+
+def _plot_branch(ax, I, s, stab, color, lw=2.0):
+    """Draw branch coloured by `color`, solid where stable / dashed where unstable. Each
+    contiguous-stability run is one polyline (so dashes render), bridged at folds, broken at jumps."""
+    stab = np.asarray(stab, bool)
+    step = np.hypot(np.diff(I), np.diff(s))
+    thr = 6 * np.median(step[step > 0]) if np.any(step > 0) else np.inf
+    flips = list(np.where(np.diff(stab.astype(int)) != 0)[0] + 1)
+    for a, b in zip([0] + flips, flips + [stab.size]):
+        e = min(b + 1, stab.size)
+        y = s[a:e].astype(float).copy()
+        for L in np.where(step[a:e - 1] > thr)[0]:
+            y[L + 1] = np.nan
+        ax.plot(I[a:e], y, color=color, lw=lw, ls="-" if stab[a] else "--", zorder=2)
+
+
 def save_bif_data(out_npz, eq_sols, codim2, cfg, M):
     """Extract the arrays the summary figure needs into a self-contained .npz (so the plotting
     script needs neither pycobi nor Auto): the 1-D branch (Iext, s, stability), the LP/HB marker
-    coordinates, and each codim-2 curve in the (Iext, J) plane."""
+    coordinates, and each codim-2 curve in the (Iext, J) plane. NB at the equilibrium the synaptic
+    activation equals the population mean rate (s = a = Σ_m w_m r_m), so the figure relabels s as r."""
     I = eq_sols[_pcol(eq_sols, "Iext")].to_numpy(float)
     s = eq_sols[_pcol(eq_sols, "s")].to_numpy(float)
     stab = (eq_sols[("stability", "")].to_numpy(bool) if ("stability", "") in eq_sols.columns
@@ -192,7 +263,7 @@ def main():
 
     r0 = np.full(M, cfg["r0"])
     v0 = np.full(M, v_r)
-    circuit = build_circuit(M, vthbar, Delta, w, v_r, cfg["tau_s"], cfg["J0"], cfg["I0"], r0, v0)
+    circuit = build_circuit(M, Omega, Delta, w, v_r, cfg["tau_s"], cfg["J0"], cfg["I0"], r0, v0)
     ode = ODESystem.from_template(circuit, auto_dir=AUTO_DIR, init_cont=False,
                                   analytical_jacobian=True, auto_constants=("ivp", "eq"))
 
@@ -210,9 +281,11 @@ def main():
         IPS=1, ILP=1, ISP=2, ISW=1, NMX=50000, NPR=50,
         DS=1e-2, DSMIN=1e-8, DSMAX=0.1, EPSL=1e-7, EPSU=1e-7, EPSS=1e-5,
         get_stability=True)
-    # NB: get_stability relies on the analytical Jacobian (analytical_jacobian=True in
-    # from_template) + DENSE output (small NPR / DSMAX) so Auto emits an eigenvalue line
-    # at (almost) every point — otherwise the saddle branch between the folds is mislabeled.
+    # NB: PyCoBi's parsed get_stability is UNRELIABLE for this system (eigenvalues with large
+    # imaginary parts → a spurious, settings-dependent stability flip; see recompute_stability).
+    # Auto's bifurcation DETECTION (ISP=2 Hopf / ILP=1 fold) is correct; we only recompute the
+    # stability colouring directly from the Jacobian eigenvalues at each equilibrium.
+    recompute_stability(eq_sols, M, Omega, Delta, w, v_r, cfg["tau_s"], cfg["J0"])
     print(f"  branch points: {len(eq_sols)}")
     print("  bifurcations:", dict(eq_sols["bifurcation"].value_counts()))
     folds = _bif_vals(eq_sols, "LP", "Iext")
@@ -254,11 +327,13 @@ def main():
     print(f"\n[plot] writing {os.path.basename(out_stem)}.png")
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.6))
 
-    # (a) 1-parameter branch: synaptic activation s (= total rate at equilibrium) vs I
-    ode.plot_continuation("Iext", "s", cont="eq_I", ax=ax1,
-                          line_color_stable=C_EQ, line_color_unstable=C_EQ,
-                          line_style_stable="solid", line_style_unstable="dashed",
-                          ignore=["UZ", "BP", "EP"], bifurcation_legend=False, linewidths=2.0)
+    # (a) 1-parameter branch: synaptic activation s (= total rate at equilibrium) vs I.
+    #     Plotted manually from the recomputed (Jacobian-eigenvalue) stability — NOT
+    #     plot_continuation, which would re-use PyCoBi's unreliable parsed stability.
+    _plot_branch(ax1,
+                 eq_sols[_pcol(eq_sols, "Iext")].to_numpy(float),
+                 eq_sols[_pcol(eq_sols, "s")].to_numpy(float),
+                 eq_sols[("stability", "")].to_numpy(bool), C_EQ)
     add_markers(ax1, eq_sols, "LP", M_FOLD, "Iext", "s", C_FOLD)
     add_markers(ax1, eq_sols, "HB", M_HOPF, "Iext", "s", C_HOPF)
     ax1.set_xlabel(r"external input $I$")

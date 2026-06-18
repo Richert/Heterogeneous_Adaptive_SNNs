@@ -112,6 +112,12 @@ def plot_dynamics(ax, t_mic, R_mic, p):
     ax.set_ylabel(r"$R(t)$", labelpad=2)
 
 
+def _panel_label(ax, letter):
+    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner."""
+    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(-14, 4),
+                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  main
 # ════════════════════════════════════════════════════════════════════════════
@@ -157,7 +163,8 @@ def main():
     axh.set_yticklabels([str(m) for m in Mmaxs])
     axh.set_xlabel(r"penalty $\lambda$", labelpad=1)
     axh.set_ylabel(r"max. ensembles $M_{\max}$", labelpad=2)
-    axh.set_title("(a) spectral RMSE", fontsize=7, pad=3)
+    axh.set_title("spectral RMSE", fontsize=7, pad=3)
+    _panel_label(axh, "a")
     _stroke = [pe.withStroke(linewidth=1.0, foreground="black")]
     # M* per cell: plain fill (no stroke), black on light cells / white on dark cells,
     # chosen from the cell's background luminance.
@@ -189,8 +196,9 @@ def main():
         ax_t = fig.add_subplot(bot_gs)
         plot_distribution(ax_d, omega, p, gx)
         plot_dynamics(ax_t, t_mic, R_mic, p)
-        ax_d.set_title(f"({lab}) {tag}: $M^*={p['Mstar']}$, $\\lambda={lm:g}$\n"
+        ax_d.set_title(f"{tag}: $M^*={p['Mstar']}$, $\\lambda={lm:g}$\n"
                        f"RMSE$={rm:.3f}$", fontsize=6.0, pad=2)
+        _panel_label(ax_d, lab)
 
     # one shared legend (distribution + dynamics) in the strip below the heatmap
     from matplotlib.lines import Line2D
@@ -203,9 +211,9 @@ def main():
                   handlelength=1.4, columnspacing=1.0, handletextpad=0.4,
                   borderaxespad=0.0)
 
-    fig.savefig(OUT + ".pdf")
-    fig.savefig(OUT + ".png", dpi=300)
-    print(f"[saved] {OUT}.pdf / .png")
+    fig.savefig(OUT + ".svg", bbox_inches="tight")
+    fig.savefig(OUT + ".png", dpi=300, bbox_inches="tight")
+    print(f"[saved] {OUT}.svg / .png")
     print("chosen examples (λ, M_max) -> RMSE:",
           [(c, round(rmse_pt[c], 4)) for c in chosen])
 

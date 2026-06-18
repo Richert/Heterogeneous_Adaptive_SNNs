@@ -68,16 +68,18 @@ def _tag(cell_class, layer):
 # cell class / layer: CLI args override the defaults -> `python allen_qif_meanfield.py "Pyramidal" "L5/6"`
 CELL_CLASS = sys.argv[1] if len(sys.argv) > 1 else "Pyramidal"   # | "PV+ interneuron" | "SOM interneuron"
 LAYER = sys.argv[2] if len(sys.argv) > 2 else "L2/3"             # "L2/3" | "L5/6"
+I0 = float(sys.argv[3]) if len(sys.argv) > 3 else 200.0
+I1 = float(sys.argv[4]) if len(sys.argv) > 4 else 400.0
 _TAG = _tag(CELL_CLASS, LAYER)
 FIT_NPZ = os.path.join(_HERE, "..", "data_fitting", f"allen_lorentzian_{_TAG}.npz")
 OUT = os.path.join(_HERE, f"allen_qif_meanfield_{_TAG}")
 
 P = dict(
     v_r=-70.0,            # resting potential (one root of the quadratic), fixed
-    J=100.0,                # global recurrent coupling constant
-    tau_s=2.0,           # alpha-synapse time constant
+    J=-200.0,                # global recurrent coupling constant
+    tau_s=10.0,           # alpha-synapse time constant
     # global input I(t): baseline I0, rectangular pulse to I1 on [t_on, t_off]
-    I0=200.0, I1=400.0, t_on=150.0, t_off=450.0,
+    t_on=150.0, t_off=450.0,
     # simulation
     T=700.0,
     dt=2e-4,              # forward-Euler step (micro). MUST be small: Euler overshoots the
@@ -88,12 +90,13 @@ P = dict(
     dts=0.5,              # recording step
     # spiking network
     N=10000,              # number of QIF neurons
-    v_peak=430.0,         # spike detection threshold (≈ +∞)
-    v_reset=-570.0,       # reset potential (≈ −∞)
+    v_peak=400.0,         # spike detection threshold (≈ +∞)
+    v_reset=-600.0,       # reset potential (≈ −∞)
     theta_clip=50.0,     # clip Lorentzian-sampled x_i to ±clip (numerical safety on heavy tails)
     seed=0,
 )
-
+P["I0"] = I0
+P["I1"] = I1
 
 # ════════════════════════════════════════════════════════════════════════════
 #  PRL figure style
