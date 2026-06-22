@@ -180,8 +180,8 @@ def plot_rate(ax, sim_by_layer):
             continue
         col = C_LAYER[layer]; t_step = float(sim["t_step"]); hd1 = float(sim["hd1"])
         t0, t1 = t_step - 0.4 * RATE_WIN, t_step + RATE_WIN        # zoom: resolve the ~305 Hz cycles
-        ax.plot(sim["t_mf"], sim["s_mf"], color=col, lw=0.9, ls="-", zorder=3)
-        ax.plot(sim["t_micro"], sim["s_micro"], color=col, lw=0.7, ls=":", alpha=0.85, zorder=2)
+        ax.plot(sim["t_mf"], sim["s_mf"], color=col, lw=0.9, ls="-", alpha=0.7, zorder=2)
+        ax.plot(sim["t_micro"], sim["s_micro"], color=col, lw=0.7, ls=":", zorder=3)
         for t, s in [(sim["t_mf"], sim["s_mf"]), (sim["t_micro"], sim["s_micro"])]:
             w = (t >= t0) & (t <= t1)
             lo = min(lo, float(np.nanmin(s[w]))); hi = max(hi, float(np.nanmax(s[w])))

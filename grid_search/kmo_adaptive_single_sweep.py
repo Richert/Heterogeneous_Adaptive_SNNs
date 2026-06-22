@@ -51,16 +51,18 @@ CONFIG = dict(
     trunc=20.0,                    # Lorentzian truncated at ±trunc·Δ (tames fast tails)
     # sweep
     Delta_sweep=[0.1, 0.3, 0.5, 0.7, 0.9],
-    mu_sweep=[0.01, 0.1, 1.0],
+    mu_sweep=[0.0, 0.01, 0.1, 1.0],
     G_A_rules=["cos", "sin", "|sin|"],
     n_trunc=10,                     # Fourier-truncation order for the |sin| mean field (Eqs. 13/14)
     # integration (scipy solve_ivp)
     T=500.0, dts=0.25,
     method="RK45", rtol=1e-6, atol=1e-8,
+    # trials (independent random phase ICs; sweep is otherwise deterministic)
+    n_trials=10,
     # storage
-    save_res=128,                  # block-average the final A matrix / ω axis to this size
+    save_res=100,                  # block-average the final A matrix / ω axis to this size
     seed=1,
-    out_csv="/home/rgast/data/qif_plasticity/kmo_adaptive_single_sweep.csv",
+    out_csv="/home/rgast/data/mpmf_simulations/kmo_adaptive_single_sweep.csv",
 )
 
 
@@ -205,53 +207,58 @@ def main(cfg=CONFIG):
     rng = np.random.default_rng(cfg["seed"])
     N, K, ob, A0 = cfg["N"], cfg["K"], cfg["omega_bar"], cfg["A0"]
     gamma, res = cfg["gamma"], cfg["save_res"]
+    n_trials = cfg["n_trials"]
 
-    theta0 = rng.normal(0.0, cfg["sigma0"], N)
-    R0 = float(np.abs(np.exp(1j * theta0).mean()))
+    # independent coherent phase ICs, one per trial (drawn up front for reproducibility)
+    theta0s = [rng.normal(0.0, cfg["sigma0"], N) for _ in range(n_trials)]
+    R0s = [float(np.abs(np.exp(1j * th).mean())) for th in theta0s]
 
     print(f"adaptive Kuramoto sweep (PyRates+solve_ivp) — N={N}, K={K}, γ={gamma}, "
-          f"R(0)={R0:.3f}, Ā(0)={A0}")
+          f"n_trials={n_trials}, R(0)∈[{min(R0s):.3f},{max(R0s):.3f}], Ā(0)={A0}")
 
     rows = []
 
     def base():
         return dict(K=K, N=N, gamma=gamma, omega_bar=ob, A0=A0)
 
-    # frequency axis per Δ (block-averaged), shared across μ and rule
+    # frequency axis per Δ (block-averaged), shared across trials/μ/rule
     for Delta in cfg["Delta_sweep"]:
         omega = lorentzian_truncated(N, ob, Delta, cfg["trunc"])
         for k, om in enumerate(block_average_1d(omega, res)):
             rows.append({**base(), "quantity": "omega", "Delta": Delta, "idx": k, "value": float(om)})
 
-    for rule in cfg["G_A_rules"]:
-        for Delta in cfg["Delta_sweep"]:
-            omega = lorentzian_truncated(N, ob, Delta, cfg["trunc"])
-            for mu in cfg["mu_sweep"]:
-                t_m, R_m, Ab_m, A_fin = simulate_micro(theta0, A0, omega, K, mu, gamma,
-                                                       rule, cfg)
-                t_f, R_f, Ab_f = simulate_mf(Delta, mu, gamma, K, ob, rule, cfg["n_trunc"],
-                                             R0, A0, cfg)
-                print(f"  G_A={rule}  Δ={Delta:<4}  μ={mu:<5} -> "
-                      f"R_mic(end)={R_m[-1]:.3f}/R_mf={R_f[-1]:.3f}  "
-                      f"Ā_mic(end)={Ab_m[-1]:.3f}/Ā_mf={Ab_f[-1]:.3f}")
+    for trial in range(n_trials):
+        theta0, R0 = theta0s[trial], R0s[trial]
+        print(f"--- trial {trial + 1}/{n_trials}  R(0)={R0:.3f} ---")
+        for rule in cfg["G_A_rules"]:
+            for Delta in cfg["Delta_sweep"]:
+                omega = lorentzian_truncated(N, ob, Delta, cfg["trunc"])
+                for mu in cfg["mu_sweep"]:
+                    t_m, R_m, Ab_m, A_fin = simulate_micro(theta0, A0, omega, K, mu, gamma,
+                                                           rule, cfg)
+                    t_f, R_f, Ab_f = simulate_mf(Delta, mu, gamma, K, ob, rule, cfg["n_trunc"],
+                                                 R0, A0, cfg)
+                    print(f"  [t{trial}] G_A={rule}  Δ={Delta:<4}  μ={mu:<5} -> "
+                          f"R_mic(end)={R_m[-1]:.3f}/R_mf={R_f[-1]:.3f}  "
+                          f"Ā_mic(end)={Ab_m[-1]:.3f}/Ā_mf={Ab_f[-1]:.3f}")
 
-                meta = {**base(), "G_A": rule, "Delta": Delta, "mu": mu}
-                for t, v in zip(t_m, R_m):
-                    rows.append({**meta, "quantity": "R_micro", "time": float(t), "value": float(v)})
-                for t, v in zip(t_m, Ab_m):
-                    rows.append({**meta, "quantity": "Abar_micro", "time": float(t), "value": float(v)})
-                for t, v in zip(t_f, R_f):
-                    rows.append({**meta, "quantity": "R_mf", "time": float(t), "value": float(v)})
-                for t, v in zip(t_f, Ab_f):
-                    rows.append({**meta, "quantity": "Abar_mf", "time": float(t), "value": float(v)})
-                Ab = block_average(A_fin, res)
-                for i in range(Ab.shape[0]):
-                    for j in range(Ab.shape[1]):
-                        rows.append({**meta, "quantity": "A_final", "row": i, "col": j,
-                                     "value": float(Ab[i, j])})
+                    meta = {**base(), "G_A": rule, "Delta": Delta, "mu": mu, "trial": trial}
+                    for t, v in zip(t_m, R_m):
+                        rows.append({**meta, "quantity": "R_micro", "time": float(t), "value": float(v)})
+                    for t, v in zip(t_m, Ab_m):
+                        rows.append({**meta, "quantity": "Abar_micro", "time": float(t), "value": float(v)})
+                    for t, v in zip(t_f, R_f):
+                        rows.append({**meta, "quantity": "R_mf", "time": float(t), "value": float(v)})
+                    for t, v in zip(t_f, Ab_f):
+                        rows.append({**meta, "quantity": "Abar_mf", "time": float(t), "value": float(v)})
+                    Ab = block_average(A_fin, res)
+                    for i in range(Ab.shape[0]):
+                        for j in range(Ab.shape[1]):
+                            rows.append({**meta, "quantity": "A_final", "row": i, "col": j,
+                                         "value": float(Ab[i, j])})
 
     df = pd.DataFrame(rows).reindex(columns=[
-        "quantity", "G_A", "Delta", "mu", "time", "idx", "row", "col", "value",
+        "quantity", "G_A", "Delta", "mu", "trial", "time", "idx", "row", "col", "value",
         "K", "N", "gamma", "omega_bar", "A0"])
     os.makedirs(os.path.dirname(cfg["out_csv"]) or ".", exist_ok=True)
     df.to_csv(cfg["out_csv"], index=False)

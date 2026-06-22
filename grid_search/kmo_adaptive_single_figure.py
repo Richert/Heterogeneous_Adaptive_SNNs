@@ -64,41 +64,64 @@ def load(csv):
     rules = list(df["G_A"].dropna().unique())
     Deltas = sorted(df["Delta"].dropna().unique())
     mus = sorted(df["mu"].dropna().unique())
+    if "trial" not in df.columns:                       # back-compat with single-trial CSVs
+        df["trial"] = 0
+    trials = sorted(int(t) for t in df["trial"].dropna().unique())
 
     traces = {}
     for q in ("R_micro", "R_mf", "Abar_micro", "Abar_mf"):
-        for (rule, D, mu), g in df[df.quantity == q].groupby(["G_A", "Delta", "mu"]):
+        for (rule, D, mu, tr), g in df[df.quantity == q].groupby(["G_A", "Delta", "mu", "trial"]):
             g = g.sort_values("time")
-            traces[(q, rule, float(D), float(mu))] = (g["time"].to_numpy(), g["value"].to_numpy())
+            traces[(q, rule, float(D), float(mu), int(tr))] = (g["time"].to_numpy(), g["value"].to_numpy())
 
     mats = {}
-    for (rule, D, mu), g in df[df.quantity == "A_final"].groupby(["G_A", "Delta", "mu"]):
+    for (rule, D, mu, tr), g in df[df.quantity == "A_final"].groupby(["G_A", "Delta", "mu", "trial"]):
         nr, nc = int(g["row"].max()) + 1, int(g["col"].max()) + 1
         M = np.full((nr, nc), np.nan)
         M[g["row"].astype(int), g["col"].astype(int)] = g["value"].to_numpy()
-        mats[(rule, float(D), float(mu))] = M
-    return rules, Deltas, mus, traces, mats
+        mats[(rule, float(D), float(mu), int(tr))] = M
+    return rules, Deltas, mus, trials, traces, mats
 
 
-def rmse_R_dynamics(traces, rule, D, mu):
-    """RMSE over time between micro and MF phase coherence R(t)."""
-    _, rm = traces[("R_micro", rule, D, mu)]
-    _, rf = traces[("R_mf", rule, D, mu)]
+def rel_rmse_R_dynamics(traces, rule, D, mu, tr):
+    """RMSE over time between micro and MF coherence R(t), relative to the time-averaged
+    MF prediction <R_MF>_t (so the error is reported as a fraction of the predicted level)."""
+    _, rm = traces[("R_micro", rule, D, mu, tr)]
+    _, rf = traces[("R_mf", rule, D, mu, tr)]
     n = min(len(rm), len(rf))
-    return float(np.sqrt(np.mean((rm[:n] - rf[:n]) ** 2)))
+    rmse = float(np.sqrt(np.mean((rm[:n] - rf[:n]) ** 2)))
+    denom = float(np.mean(np.abs(rf[:n])))
+    return rmse / (denom + 1e-12)
 
 
-def rmse_final_weights(traces, mats, rule, D, mu):
-    """RMSE of the final microscopic weights A_ij from the MF's final mean coupling Ā."""
-    A = mats[(rule, D, mu)]
-    _, af = traces[("Abar_mf", rule, D, mu)]
-    return float(np.sqrt(np.nanmean((A - af[-1]) ** 2)))
+def rel_rmse_final_weights(traces, mats, rule, D, mu, tr):
+    """RMSE of the final micro weights A_ij from the MF's final mean coupling Ā, relative to
+    that final Ā_MF (error as a fraction of the predicted mean coupling)."""
+    A = mats[(rule, D, mu, tr)]
+    _, af = traces[("Abar_mf", rule, D, mu, tr)]
+    rmse = float(np.sqrt(np.nanmean((A - af[-1]) ** 2)))
+    return rmse / (abs(float(af[-1])) + 1e-12)
+
+
+def _trial_stats(fn, trials):
+    """Mean and std (across trials) of a per-trial relative-RMSE callable fn(tr)."""
+    vals = np.array([fn(tr) for tr in trials], float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return np.nan, np.nan
+    return float(vals.mean()), float(vals.std())
+
+
+def representative_trial(traces, rule, D, mu, trials):
+    """The trial whose coherence-dynamics relative RMSE is the median across trials."""
+    order = sorted(trials, key=lambda tr: rel_rmse_R_dynamics(traces, rule, D, mu, tr))
+    return order[len(order) // 2]
 
 
 # ════════════════════════════════════════════════════════════════════════════
 #  figure 1 — summary lineplots (single column)
 # ════════════════════════════════════════════════════════════════════════════
-def make_summary(rules, Deltas, mus, traces, mats):
+def make_summary(rules, Deltas, mus, trials, traces, mats):
     cmap = plt.get_cmap(MU_CMAP)
     colors = [cmap(0.12 + 0.76 * i / max(1, len(mus) - 1)) for i in range(len(mus))]
 
@@ -111,14 +134,20 @@ def make_summary(rules, Deltas, mus, traces, mats):
         axR = fig.add_subplot(gs[r, 0])
         axA = fig.add_subplot(gs[r, 1])
         for mi, mu in enumerate(mus):
-            yR = [rmse_R_dynamics(traces, rule, D, mu) for D in Deltas]
-            yA = [rmse_final_weights(traces, mats, rule, D, mu) for D in Deltas]
-            axR.plot(Dx, yR, color=colors[mi], marker="o", ms=2.2, lw=0.9, label=f"{mu:g}")
-            axA.plot(Dx, yA, color=colors[mi], marker="o", ms=2.2, lw=0.9)
+            statsR = [_trial_stats(lambda tr: rel_rmse_R_dynamics(traces, rule, D, mu, tr), trials)
+                      for D in Deltas]
+            statsA = [_trial_stats(lambda tr: rel_rmse_final_weights(traces, mats, rule, D, mu, tr), trials)
+                      for D in Deltas]
+            mR, sR = np.array(statsR).T
+            mA, sA = np.array(statsA).T
+            axR.errorbar(Dx, mR, yerr=sR, color=colors[mi], marker="o", ms=2.2, lw=0.9,
+                         capsize=1.5, elinewidth=0.6, label=f"{mu:g}")
+            axA.errorbar(Dx, mA, yerr=sA, color=colors[mi], marker="o", ms=2.2, lw=0.9,
+                         capsize=1.5, elinewidth=0.6)
         for ax in (axR, axA):
             ax.set_xscale("log")
-        axR.set_ylabel(rf"$G_A={rule}$" + "\n" + r"$R(t)$ RMSE", labelpad=2)
-        axA.set_ylabel(r"$A_{ij}{-}\bar A_{\rm MF}$ RMSE", labelpad=2)
+        axR.set_ylabel(rf"$G_A={rule}$" + "\n" + r"$R(t)$ rel. RMSE", labelpad=2)
+        axA.set_ylabel(r"$A_{ij}{-}\bar A_{\rm MF}$ rel. RMSE", labelpad=2)
         if r == 0:
             axR.set_title("coherence dynamics", fontsize=6.5, pad=3)
             axA.set_title("final weights", fontsize=6.5, pad=3)
@@ -137,7 +166,7 @@ def make_summary(rules, Deltas, mus, traces, mats):
 # ════════════════════════════════════════════════════════════════════════════
 #  figure 2 — per-rule examples (double column)
 # ════════════════════════════════════════════════════════════════════════════
-def make_rule_figure(rule, Deltas, mus_plot, traces, mats):
+def make_rule_figure(rule, Deltas, mus_plot, trials, traces, mats):
     Dsel = [Deltas[0], Deltas[len(Deltas) // 2], Deltas[-1]]    # min / median / max Δ
     nmu = len(mus_plot)
 
@@ -153,8 +182,9 @@ def make_rule_figure(rule, Deltas, mus_plot, traces, mats):
             b = 3 * di
             ax_dyn = fig.add_subplot(gs[mi, b:b + 2])
             ax_mat = fig.add_subplot(gs[mi, b + 2])
-            t, Rm = traces[("R_micro", rule, D, mu)]
-            _, Rf = traces[("R_mf", rule, D, mu)]
+            tr = representative_trial(traces, rule, D, mu, trials)   # median-RMSE example trial
+            t, Rm = traces[("R_micro", rule, D, mu, tr)]
+            _, Rf = traces[("R_mf", rule, D, mu, tr)]
             ax_dyn.plot(t, Rm, color=C_MICRO, lw=0.9, label="micro")
             ax_dyn.plot(t, Rf, color=C_MF, lw=0.9, ls="--", label="MF")
             ax_dyn.set_xlim(t[0], t[-1]); ax_dyn.set_ylim(-0.02, 1.02)
@@ -170,7 +200,7 @@ def make_rule_figure(rule, Deltas, mus_plot, traces, mats):
             else:
                 ax_dyn.set_yticklabels([])
 
-            M = mats[(rule, D, mu)]
+            M = mats[(rule, D, mu, tr)]
             im = ax_mat.imshow(M, origin="lower", aspect="equal", cmap=MATRIX_CMAP,
                                vmin=np.nanmin(M), vmax=np.nanmax(M), interpolation="nearest")
             ax_mat.set_xticks([]); ax_mat.set_yticks([])
@@ -183,7 +213,7 @@ def make_rule_figure(rule, Deltas, mus_plot, traces, mats):
     handles = [Line2D([0], [0], color=C_MICRO, lw=0.9, label="micro"),
                Line2D([0], [0], color=C_MF, lw=0.9, ls="--", label="mean field")]
     fig.legend(handles=handles, loc="outside upper right", ncol=2, fontsize=6)
-    fig.suptitle(rf"$G_A = {rule}$", fontsize=8, x=0.01, ha="left")
+    fig.suptitle(rf"$G_A = {rule}$ (representative trial)", fontsize=8, x=0.01, ha="left")
 
     out = OUT_RULE.format(tag=_TAG.get(rule, rule))
     fig.savefig(out + ".pdf")
@@ -196,13 +226,13 @@ def make_rule_figure(rule, Deltas, mus_plot, traces, mats):
 #  main
 # ════════════════════════════════════════════════════════════════════════════
 def main():
-    rules, Deltas, mus, traces, mats = load(CSV)
+    rules, Deltas, mus, trials, traces, mats = load(CSV)
     mus_plot = mus if MU_PLOT is None else [m for m in mus if m in MU_PLOT]
 
     set_prl_style()
-    make_summary(rules, Deltas, mus, traces, mats)
+    make_summary(rules, Deltas, mus, trials, traces, mats)
     for rule in rules:
-        make_rule_figure(rule, Deltas, mus_plot, traces, mats)
+        make_rule_figure(rule, Deltas, mus_plot, trials, traces, mats)
 
 
 if __name__ == "__main__":
