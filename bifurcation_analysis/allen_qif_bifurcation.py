@@ -83,7 +83,6 @@ def build_equations(M, omega, delta, weights, v_r, tau_s, combined=False):
     v̄_θ,m = v_r + Ω_m. The knob(s) are Auto-continuable parameters (alongside Iext, J)."""
     PI = repr(float(np.pi))
     vr = repr(float(v_r))
-    ts = repr(float(tau_s))
     Ombar = repr(float(np.asarray(weights, float) @ np.asarray(omega, float)))
     rtot = "(" + " + ".join(f"{float(weights[j])}*r_{j}" for j in range(M)) + ")"
     hw, hc = ("h", "h") if combined else ("hD", "hC")            # width / centre-spread knob names
@@ -95,8 +94,8 @@ def build_equations(M, omega, delta, weights, v_r, tau_s, combined=False):
         eqs.append(f"d/dt * r_{i} = {de}/{PI}*(v_{i} - {vr}) + r_{i}*(2*v_{i} - {vr} - {vt})")
         eqs.append(f"d/dt * v_{i} = (v_{i} - {vr})*(v_{i} - {vt}) - ({PI}*r_{i})^2 "
                    f"- {PI}*{de}*r_{i} + Iext + J*s")
-    eqs.append(f"d/dt * a = ({rtot} - a)/{ts}")
-    eqs.append(f"d/dt * s = (a - s)/{ts}")
+    eqs.append(f"d/dt * a = ({rtot} - a)/tau_s")               # tau_s is an Auto-continuable parameter
+    eqs.append(f"d/dt * s = (a - s)/tau_s")
     return eqs
 
 
@@ -112,6 +111,7 @@ def build_circuit(M, omega, delta, weights, v_r, tau_s, J0, I0, r0, v0,
     variables["s"] = f"variable({float(r0.mean())})"
     variables["Iext"] = float(I0)
     variables["J"] = float(J0)
+    variables["tau_s"] = float(tau_s)
     if combined:
         variables["h"] = float(h0)
     else:

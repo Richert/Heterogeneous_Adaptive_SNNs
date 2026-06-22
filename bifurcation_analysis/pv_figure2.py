@@ -36,9 +36,10 @@ LAYERS = ["L2/3", "L5/6"]
 C_LAYER = {"L2/3": "#1f77b4", "L5/6": "#e8702a"}
 C_HIST = "0.85"
 M_HOPF, M_PD = "o", "p"          # filled circle = Hopf, filled pentagon = period-doubling
-LIM_1D = dict(hd_min=0.0, hd_max=0.30)                             # zoom on the Hopf onset
-LIM_2D = dict(he_min=0.0, he_max=0.10, hd_min=0.0, hd_max=0.23)    # (h_eta, h_Delta) plane
-RATE_WIN = 60.0                                                    # zoom window after the step (time units)
+I_OP = 430.0                     # common operating-point input (marked in the (I,h) panel)
+LIM_1D = dict(h_min=0.0, h_max=0.30)                              # 1-D bif in the single knob h
+LIM_2D = dict(I_min=250.0, I_max=600.0, h_min=0.0, h_max=0.30)    # (I, h) Hopf-locus plane
+RATE_WIN = 35.0                                                   # zoom window after the step (time units)
 
 
 def _tag(cell_class, layer):
@@ -114,62 +115,59 @@ def plot_1d(ax, bif_by_layer, lim):
         col = C_LAYER[layer]
         eq = d["eq"]
         _plot_branch(ax, eq["x"], eq["ymax"], eq["stab"], col)
-        m = eq["x"] <= lim["hd_max"]
+        m = eq["x"] <= lim["h_max"]
         vlo = min(vlo, np.nanmin(eq["ymax"][m])); vhi = max(vhi, np.nanmax(eq["ymax"][m]))
-        # Hopf marker on the equilibrium branch
-        hb = eq["bif"] == "HB"
+        hb = eq["bif"] == "HB"                                       # Hopf marker
         ax.scatter(eq["x"][hb], eq["ymax"][hb], marker=M_HOPF, s=18, facecolors=col,
                    edgecolors=col, linewidths=0.6, zorder=6)
-        # limit-cycle envelope (min/max of the synaptic activation s over the cycle)
-        for lc in d["lc"]:
+        for lc in d["lc"]:                                           # limit-cycle envelope of s
+            mlc = lc["x"] <= lim["h_max"]
             ax.fill_between(lc["x"], lc["ymin"], lc["ymax"], color=col, alpha=0.16, lw=0, zorder=2)
             ax.plot(lc["x"], lc["ymin"], color=col, lw=0.8, zorder=4)
             ax.plot(lc["x"], lc["ymax"], color=col, lw=0.8, zorder=4)
-            vlo = min(vlo, np.nanmin(lc["ymin"])); vhi = max(vhi, np.nanmax(lc["ymax"]))
+            vlo = min(vlo, np.nanmin(lc["ymin"][mlc])); vhi = max(vhi, np.nanmax(lc["ymax"][mlc]))
             pd = lc["bif"] == "PD"
             ax.scatter(lc["x"][pd], lc["ymax"][pd], marker=M_PD, s=20, facecolors=col,
                        edgecolors=col, linewidths=0.6, zorder=6)
     pad = 0.10 * (vhi - vlo)
-    ax.set_xlim(lim["hd_min"], lim["hd_max"])
-    ax.set_ylim(vlo - pad, vhi + 1.6 * pad)
-    ax.annotate(r"$h_\Delta\!=\!1$ (data) $\rightarrow$", xy=(0.98, 0.34), xycoords="axes fraction",
-                ha="right", va="bottom", color="0.45", fontsize=5.5)
-    ax.set_xlabel(r"width scaling $h_\Delta$", labelpad=1)
+    ax.set_xlim(lim["h_min"], lim["h_max"])
+    ax.set_ylim(vlo - pad, vhi + 1.7 * pad)
+    ax.annotate(r"$h\!=\!1$ (data) $\rightarrow$", xy=(0.98, 0.50), xycoords="axes fraction",
+                ha="right", va="center", color="0.45", fontsize=5.5)
+    ax.set_xlabel(r"heterogeneity $h$", labelpad=1)
     ax.set_ylabel(r"mean-field drive $s$", labelpad=2)
     ax.legend(handles=[
         Line2D([0], [0], color="0.4", ls="-", lw=1.0, label="stable"),
         Line2D([0], [0], color="0.4", ls="--", lw=1.0, label="unstable"),
         Line2D([0], [0], marker=M_HOPF, color="0.3", lw=0, markerfacecolor="0.3", markersize=4.3, label="Hopf"),
-        Line2D([0], [0], marker=M_PD, color="0.3", lw=0, markerfacecolor="0.3", markersize=4.5, label="period-doubl."),
-    ], loc="lower right", fontsize=5.0, handlelength=1.4, borderaxespad=0.4, ncol=2, columnspacing=0.8)
+    ], loc="lower right", fontsize=5.0, handlelength=1.4, borderaxespad=0.6, ncol=1)
 
 
-def plot_2d(ax, bif_by_layer, lim):
+def plot_ih(ax, bif_by_layer, lim):
+    """2-D Hopf locus in the (input I, heterogeneity h) plane; oscillatory region shaded below."""
     for layer in LAYERS:
         d = bif_by_layer.get(layer)
         if d is None:
             continue
         col = C_LAYER[layer]
-        h = d["hopf"]
-        if h is not None:
-            he, hd = h["ymax"], h["x"]                       # x=h_eta (the 2nd-param col), y=h_Delta
-            o = np.argsort(he)
-            ax.fill_between(he[o], 0.0, hd[o], color=col, alpha=0.12, lw=0, zorder=1)  # oscillatory wedge
-            ax.plot(he, hd, color=col, lw=1.4, ls="-", zorder=3)
-        p = d["pd"]
-        if p is not None:
-            ax.plot(p["ymax"], p["x"], color=col, lw=1.0, ls="--", zorder=3)
-    ax.text(0.16, 0.30, "oscillatory", transform=ax.transAxes, ha="center", va="center",
+        loc = d.get("loci", {}).get("Iext_h")
+        if loc is None:
+            continue
+        x = np.asarray(loc["x"], float); y = np.asarray(loc["y"], float)
+        m = np.isfinite(x) & np.isfinite(y) & (y >= -2e-3)          # physical branch (drop runaways)
+        xs, ys = x[m], np.clip(y[m], 0.0, lim["h_max"])
+        o = np.argsort(xs)
+        ax.fill_between(xs[o], 0.0, ys[o], color=col, alpha=0.13, lw=0, zorder=1)
+        yl = y.copy(); yl[(y < -2e-3) | (y > 1.04 * lim["h_max"])] = np.nan
+        ax.plot(x, yl, color=col, lw=1.4, zorder=3)
+    ax.axvline(I_OP, color="0.6", ls=":", lw=0.8, zorder=1)         # operating-point input
+    ax.text(0.50, 0.18, "oscillatory", transform=ax.transAxes, ha="center", va="center",
             color="0.35", fontsize=6)
-    ax.annotate(r"data fit $(1,1)\,\nearrow$", xy=(0.97, 0.52), xycoords="axes fraction",
-                ha="right", va="center", color="0.45", fontsize=5.5)
-    ax.set_xlim(lim["he_min"], lim["he_max"])
-    ax.set_ylim(lim["hd_min"], lim["hd_max"])
-    ax.set_xlabel(r"centre scaling $h_\eta$", labelpad=1)
-    ax.set_ylabel(r"width scaling $h_\Delta$", labelpad=2)
+    ax.set_xlim(lim["I_min"], lim["I_max"]); ax.set_ylim(lim["h_min"], lim["h_max"])
+    ax.set_xlabel(r"input $I$", labelpad=1)
+    ax.set_ylabel(r"heterogeneity $h$", labelpad=2)
     ax.legend(handles=[Line2D([0], [0], color=C_LAYER[ly], lw=1.4, label=ly) for ly in LAYERS]
-              + [Line2D([0], [0], color="0.4", ls="-", lw=1.2, label="Hopf"),
-                 Line2D([0], [0], color="0.4", ls="--", lw=1.0, label="period-doubling")],
+              + [Line2D([0], [0], color="0.6", ls=":", lw=0.8, label="operating point")],
               loc="upper right", fontsize=5.0, handlelength=1.4, borderaxespad=0.4)
 
 
@@ -193,10 +191,10 @@ def plot_rate(ax, sim_by_layer):
     ax.axvline(t_step, color="0.5", ls=":", lw=0.8, zorder=1)
     pad = 0.08 * (hi - lo)
     ax.set_xlim(t0, t1); ax.set_ylim(lo - pad, hi + 1.7 * pad)
-    ax.text(0.5 * (t0 + t_step), 0.5, r"data ($h{=}1$)", transform=ax.get_xaxis_transform(),
+    ax.text(0.5 * (t0 + t_step), 0.28, r"data ($h{=}1$)", transform=ax.get_xaxis_transform(),
             ha="center", va="center", color="0.4", fontsize=6)
-    ax.text(0.5 * (t_step + t1), 0.5, rf"$h_\eta{{=}}0,\ h_\Delta{{=}}{hd1:g}$",
-            transform=ax.get_xaxis_transform(), ha="center", va="center", color="0.4", fontsize=6)
+    ax.text(0.5 * (t_step + t1), 0.045, rf"$h{{=}}{hd1:g}$",
+            transform=ax.get_xaxis_transform(), ha="center", va="bottom", color="0.4", fontsize=6)
     ax.set_xlabel(r"time $t$", labelpad=1)
     ax.set_ylabel(r"mean-field drive $s$", labelpad=2)
     ax.legend(handles=[Line2D([0], [0], color=C_LAYER[ly], lw=1.2, label=ly) for ly in LAYERS]
@@ -231,9 +229,9 @@ def main():
             ax.set_ylabel(r"$\rho(\eta)$", labelpad=2)
         panels.append(ax)
 
-    # row 2: 1-D bifurcation (overlaid) | 2-D heterogeneity-plane loci (overlaid)
+    # row 2: 1-D bifurcation s(h) (overlaid) | 2-D Hopf locus in the (I, h) plane (overlaid)
     ax1d = fig.add_subplot(gs[1, 0]); plot_1d(ax1d, bif_by_layer, LIM_1D)
-    ax2d = fig.add_subplot(gs[1, 1]); plot_2d(ax2d, bif_by_layer, LIM_2D)
+    ax2d = fig.add_subplot(gs[1, 1]); plot_ih(ax2d, bif_by_layer, LIM_2D)
     panels += [ax1d, ax2d]
 
     # row 3: rate dynamics under the heterogeneity step, all series in one spanning axis
