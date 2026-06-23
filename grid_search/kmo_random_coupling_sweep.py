@@ -177,8 +177,8 @@ def main(cfg=CONFIG):
                            lambda_M=cfg["fit_lambda"], patience=3, loss=cfg["fit_loss"],
                            n_restarts=cfg["fit_restarts"], seed=cfg["seed"] + trial,
                            method=cfg["fit_method"])["model"]
-        t_mean, R_mean = KFS.simulate_ensemble(model.w, model.Omega, model.Delta, mu, R0, cfg,
-                                               tag=f"mf{trial}")
+        t_mean, R_mean = KFS.simulate_ensemble(model.w, model.Omega, model.Delta, K * mu, R0, cfg,
+                                               tag=f"mf{trial}")     # h = Kμ Σ_l w_l z_l
         print(f"--- trial {trial + 1}/{cfg['n_trials']}  R(0)={R0:.3f}  M={model.M}  "
               f"R_mean(end)={R_mean[-1]:.3f} ---")
 
@@ -195,7 +195,7 @@ def main(cfg=CONFIG):
                 A = build_coupling(k, sigma, rng)         # A_ij = k_i k_j + N(0, σ)
                 t_m, R_m = simulate_micro(omega, A, theta0, cfg)
                 a_m, b_m = ensemble_strengths(A, omega, model, mu)   # corr.-aware ensemble strengths
-                t_c, R_c = simulate_ensemble_corr(model, a_m, b_m, R0, cfg)
+                t_c, R_c = simulate_ensemble_corr(model, K * a_m, b_m, R0, cfg)   # forcing K·a_m·z_out
                 c_real = _pearson(A.sum(axis=1), omega)   # realised strength↔frequency correlation
                 print(f"  [t{trial}] σ={sigma:<4} c={c:<5}({c_real:+.2f}) -> R_mic={R_m[-1]:.3f} "
                       f"mean={R_mean[-1]:.3f} corr={R_c[-1]:.3f}")
@@ -216,7 +216,7 @@ def main(cfg=CONFIG):
 
     df = pd.DataFrame(rows).reindex(columns=[
         "quantity", "model", "sigma", "c", "trial", "time", "idx", "row", "col", "value",
-        "c_real", "w", "Omega", "Delta", "N", "omega_max"])
+        "c_real", "w", "Omega", "Delta", "N", "K", "omega_max"])
     os.makedirs(os.path.dirname(cfg["out_csv"]) or ".", exist_ok=True)
     df.to_csv(cfg["out_csv"], index=False)
     print(f"[saved] {cfg['out_csv']}  ({len(df)} rows)")
