@@ -83,28 +83,23 @@ def load(csv):
     return rules, Deltas, mus, trials, traces, mats
 
 
-def rel_rmse_R_dynamics(traces, rule, D, mu, tr):
-    """RMSE over time between micro and MF coherence R(t), relative to the time-averaged
-    MF prediction <R_MF>_t (so the error is reported as a fraction of the predicted level)."""
+def rmse_R_dynamics(traces, rule, D, mu, tr):
+    """RMSE over time between the micro and MF coherence dynamics R(t)."""
     _, rm = traces[("R_micro", rule, D, mu, tr)]
     _, rf = traces[("R_mf", rule, D, mu, tr)]
     n = min(len(rm), len(rf))
-    rmse = float(np.sqrt(np.mean((rm[:n] - rf[:n]) ** 2)))
-    denom = float(np.mean(np.abs(rf[:n])))
-    return rmse / (denom + 1e-12)
+    return float(np.sqrt(np.mean((rm[:n] - rf[:n]) ** 2)))
 
 
-def rel_rmse_final_weights(traces, mats, rule, D, mu, tr):
-    """RMSE of the final micro weights A_ij from the MF's final mean coupling Ā, relative to
-    that final Ā_MF (error as a fraction of the predicted mean coupling)."""
+def rmse_final_weights(traces, mats, rule, D, mu, tr):
+    """RMSE of the final micro weights A_ij from the MF's final mean coupling Ā_MF."""
     A = mats[(rule, D, mu, tr)]
     _, af = traces[("Abar_mf", rule, D, mu, tr)]
-    rmse = float(np.sqrt(np.nanmean((A - af[-1]) ** 2)))
-    return rmse / (abs(float(af[-1])) + 1e-12)
+    return float(np.sqrt(np.nanmean((A - af[-1]) ** 2)))
 
 
 def _trial_stats(fn, trials):
-    """Mean and std (across trials) of a per-trial relative-RMSE callable fn(tr)."""
+    """Mean and std (across trials) of a per-trial RMSE callable fn(tr)."""
     vals = np.array([fn(tr) for tr in trials], float)
     vals = vals[np.isfinite(vals)]
     if vals.size == 0:
@@ -113,8 +108,8 @@ def _trial_stats(fn, trials):
 
 
 def representative_trial(traces, rule, D, mu, trials):
-    """The trial whose coherence-dynamics relative RMSE is the median across trials."""
-    order = sorted(trials, key=lambda tr: rel_rmse_R_dynamics(traces, rule, D, mu, tr))
+    """The trial whose coherence-dynamics RMSE is the median across trials."""
+    order = sorted(trials, key=lambda tr: rmse_R_dynamics(traces, rule, D, mu, tr))
     return order[len(order) // 2]
 
 
@@ -134,9 +129,9 @@ def make_summary(rules, Deltas, mus, trials, traces, mats):
         axR = fig.add_subplot(gs[r, 0])
         axA = fig.add_subplot(gs[r, 1])
         for mi, mu in enumerate(mus):
-            statsR = [_trial_stats(lambda tr: rel_rmse_R_dynamics(traces, rule, D, mu, tr), trials)
+            statsR = [_trial_stats(lambda tr: rmse_R_dynamics(traces, rule, D, mu, tr), trials)
                       for D in Deltas]
-            statsA = [_trial_stats(lambda tr: rel_rmse_final_weights(traces, mats, rule, D, mu, tr), trials)
+            statsA = [_trial_stats(lambda tr: rmse_final_weights(traces, mats, rule, D, mu, tr), trials)
                       for D in Deltas]
             mR, sR = np.array(statsR).T
             mA, sA = np.array(statsA).T
@@ -146,8 +141,8 @@ def make_summary(rules, Deltas, mus, trials, traces, mats):
                          capsize=1.5, elinewidth=0.6)
         for ax in (axR, axA):
             ax.set_xscale("log")
-        axR.set_ylabel(rf"$G_A={rule}$" + "\n" + r"$R(t)$ rel. RMSE", labelpad=2)
-        axA.set_ylabel(r"$A_{ij}{-}\bar A_{\rm MF}$ rel. RMSE", labelpad=2)
+        axR.set_ylabel(rf"$G_A={rule}$" + "\n" + r"$R(t)$ RMSE", labelpad=2)
+        axA.set_ylabel(r"$A_{ij}{-}\bar A_{\rm MF}$ RMSE", labelpad=2)
         if r == 0:
             axR.set_title("coherence dynamics", fontsize=6.5, pad=3)
             axA.set_title("final weights", fontsize=6.5, pad=3)

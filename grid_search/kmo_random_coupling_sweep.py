@@ -3,25 +3,27 @@ Kuramoto with structured coupling vs. mean-only & correlation-aware LMMF
 =======================================================================
 
 A globally connected Kuramoto network with a UNIFORM natural-frequency distribution and
-structured coupling is compared to TWO Lorentzian-mixture mean fields (LMMF) that SHARE one
-mixture fit of the frequency distribution:
-  * mean-only LMMF       — knows only the mean coupling μ;
-  * correlation-aware LMMF — additionally uses the per-ensemble in/out coupling strengths.
+frequency-assortative coupling is compared to TWO Lorentzian-mixture mean fields (LMMF) that
+SHARE one mixture fit of the frequency distribution:
+  * mean-only LMMF       — knows only the mean coupling μ (= 1);
+  * correlation-aware LMMF — uses the ANALYTICAL inter-ensemble coupling A_ml = 1 + c²μ_mμ_l.
 
-Coupling construction:
-  * each oscillator i (sorted by its frequency ω_i) gets a scalar strength k_i = 1 + c·p_i,
-    p_i ∈ [−1, 1] linear in the frequency-sorted index, so MEDIAN k = 1 and the slope c is swept;
-  * A_ij = k_i · k_j + N(0, σ)   (rank-1 structure + additive per-edge Gaussian noise).
-    ⟨A_ij⟩ = ⟨k⟩² = 1, so the effective global coupling is K·μ = K; the in/out strength Σ_j A_ij ∝ k_i
-    is linear in ω-rank, so c sets the strength–frequency correlation and σ the disorder.  Since
-    A ≈ k_i k_j is exactly the separable form the correlation-aware reduction assumes, that MF is
-    near-exact.
+Coupling construction (frequency-assortative, rank-1 + uniform baseline):
+  * A_ij = c²·(ω_i − ω̄)(ω_j − ω̄) + N(1, σ)   (= 1 + c²(ω_i−ω̄)(ω_j−ω̄) + N(0, σ)), ω̄ = mean ω.
+    The baseline 1 is a uniform all-to-all term; the rank-1 part couples like-offset oscillators
+    positively.  ⟨A_ij⟩ = 1 (the rank-1 part has zero mean since Σ_j(ω_j−ω̄)=0), so μ = 1 and the
+    effective global coupling is K·μ = K.  NOTE the row-sum Σ_j A_ij ≈ N is ω-INDEPENDENT here
+    (Σ_j(ω_j−ω̄)=0), so the structure is NOT a strength–frequency correlation but a frequency
+    GRADING of the field.  c enters as c², so the sign of c is immaterial (sweep c ≥ 0).
 
 Models (all integrated with scipy.integrate.solve_ivp), with a global coupling strength K:
   * micro:  θ̇_i = ω_i + (K/N) Σ_j A_ij sin(θ_j − θ_i)  — the FULL structured matrix (numpy RHS).
   * mean-only LMMF: ż_m = (iΩ_m−Δ_m) z_m + ½(h − h* z_m²), h = Kμ Σ_l w_l z_l (KFS.simulate_ensemble, K=Kμ).
-  * corr.-aware LMMF: ż_m = (iΩ_m−Δ_m) z_m + (K a_m/2)(z_out − z_out* z_m²), z_out = Σ_l w_l b_l z_l,
-    with a_m, b_m the responsibility-weighted ensemble in/out strengths of the realised A.
+  * corr.-aware LMMF (ANALYTIC): the responsibility-weighted block average of A is, in closed form,
+    A_ml = 1 + c²μ_mμ_l with μ_m = Ω_m − ω̄ (the fitted Lorentzian centre, offset by the mixture mean).
+    The field then closes on TWO collective modes Z0 = Σ_l w_l z_l (baseline) and Z1 = Σ_l w_l μ_l z_l
+    (frequency-graded):  ż_m = (iΩ_m−Δ_m) z_m + ½(H_m − H_m* z_m²),  H_m = K(Z0 + c²μ_m Z1).
+    (No realised matrix is used — μ_m comes straight from the shared LMMF fit.)
 
 Sweep: σ × c, n_trials independent trials — each draws a fresh UNIFORM ω-sample
 (ω_i ~ U[−omega_max, omega_max]), refits the (shared) LMMF mixture, and uses a fresh coherent
@@ -47,9 +49,10 @@ CONFIG = dict(
     omega_max=1.0,                  # uniform ω ∈ [-omega_max, omega_max]
     K=1.2,                          # global coupling strength (effective coupling = K·⟨A⟩ = K·μ = K;
                                     #   uniform ω ⇒ K_c = 2/(π g(0)) = 4·omega_max/π ≈ 1.27)
-    # sweep: additive-noise std σ × strength-slope c   (k_i = 1 + c·p_i, p_i∈[-1,1])
-    sigma_sweep=[0.0, 1.0, 5.0],
-    c_sweep=[-1.0, -0.5, 0.0, 0.5, 1.0],
+    # sweep: additive-noise std σ × coupling coefficient c   (A_ij = c²(ω_i−ω̄)(ω_j−ω̄) + N(1,σ))
+    #   structured part ≤ c²·omega_max² ≈ c², baseline = 1, so keep σ ≲ O(1); c enters as c² (c ≥ 0)
+    sigma_sweep=[0.0, 0.1, 0.5],
+    c_sweep=[0.0, 0.25, 0.5, 0.75, 1.0],
     n_trials=10,
     # coherent initial condition: θ_i(0) ~ N(0, sigma0);  LMMF z_m(0)=R(0)
     sigma0=0.5,
@@ -57,7 +60,7 @@ CONFIG = dict(
     delta_bounds=(0.01, 1.0), fit_M_max=20, fit_lambda=1e-6, fit_alpha=1e-3,
     fit_restarts=10, fit_loss="cvm", fit_method="slsqp",
     # integration (solve_ivp / RK45) — keys reused by KFS.simulate_ensemble
-    T=50.0, dt=1e-2, dts=0.1, rtol=1e-6, atol=1e-8,
+    T=100.0, dt=1e-2, dts=0.1, rtol=1e-6, atol=1e-8,
     # storage
     save_res=50,                    # block-average the (example) coupling matrix to this size
     seed=1,
@@ -91,16 +94,12 @@ def _pearson(x, y):
     return float((xm * ym).sum() / d) if d > 0 else 0.0
 
 
-def build_strengths(N, slope):
-    """Per-oscillator coupling strength k_i = 1 + slope·p_i, with p_i ∈ [−1, 1] linear in the
-    frequency-sorted index (so MEDIAN k = 1).  `slope` (= c) is the swept parameter."""
-    return 1.0 + slope * np.linspace(-1.0, 1.0, N)
-
-
-def build_coupling(k, sigma, rng):
-    """Structured coupling A_ij = k_i k_j + N(0, σ) (rank-1 strength structure + edge noise)."""
-    N = k.size
-    return np.outer(k, k) + sigma * rng.standard_normal((N, N))
+def build_coupling(omega, c, sigma, rng):
+    """Frequency-assortative coupling A_ij = c²(ω_i−ω̄)(ω_j−ω̄) + N(1, σ)
+    (= 1 + c²(ω_i−ω̄)(ω_j−ω̄) + N(0, σ)): uniform baseline + rank-1 frequency-product structure."""
+    N = omega.size
+    om = omega - omega.mean()
+    return 1.0 + (c ** 2) * np.outer(om, om) + sigma * rng.standard_normal((N, N))
 
 
 def simulate_micro(omega, A, theta0, cfg):
@@ -120,31 +119,26 @@ def simulate_micro(omega, A, theta0, cfg):
     return t_eval, R
 
 
-# ── correlation-aware LMMF (knows the frequency–coupling correlation) ─────────────────────────
-#   Annealed reduction A_ij ≈ s_i^in s_j^out / s_total ⇒  θ̇_i = ω_i + a_i Im[e^{-iθ_i} z_out],
-#   a_i = (Σ_j A_ij)/N (normalised in-strength, mean μ),  z_out = ⟨b e^{iθ}⟩ = Σ_l w_l b_l z_l,
-#   b_i = (Σ_i A_ij)/(Nμ) (normalised out-strength, mean 1).  Per Lorentzian ensemble m:
-#       ż_m = (iΩ_m − Δ_m) z_m + (a_m/2)(z_out − z_out* z_m²),
-#   with a_m, b_m the responsibility-weighted ensemble strengths of the REALISED matrix A.
-#   a_m→μ, b_m→1 (no correlation) recovers the mean-only LMMF exactly.
-def ensemble_strengths(A, omega, model, mu):
-    """Responsibility-weighted normalised in-/out-strength (a_m, b_m) per Lorentzian ensemble."""
-    N = omega.size
-    a_i = A.sum(axis=1) / N                 # in-strength  Σ_j A_ij / N        (mean μ)
-    b_i = A.sum(axis=0) / (N * mu)          # out-strength Σ_i A_ij / (Nμ)     (mean 1)
-    comp = model.w[None, :] * KFS.LM._comp_pdf(omega, model.Omega, model.Delta)   # (N, M)
-    r = comp / np.where(comp.sum(axis=1, keepdims=True) > 0, comp.sum(axis=1, keepdims=True), 1.0)
-    wsum = np.where(r.sum(axis=0) > 0, r.sum(axis=0), 1.0)
-    return (r * a_i[:, None]).sum(axis=0) / wsum, (r * b_i[:, None]).sum(axis=0) / wsum
-
-
-def simulate_ensemble_corr(model, a, b, R0, cfg):
-    """Correlation-aware ensemble OA mean field (numpy solve_ivp, complex). Returns t, R(t)."""
-    w, coef, wb = model.w, 1j * model.Omega - model.Delta, model.w * b
+# ── correlation-aware LMMF (ANALYTIC inter-ensemble coupling) ─────────────────────────────────
+#   The responsibility-weighted block average of A_ij = c²(ω_i−ω̄)(ω_j−ω̄) + N(1,σ) is, in closed
+#   form, A_ml = 1 + c² μ_m μ_l with μ_m = ⟨ω−ω̄⟩_m ≈ Ω_m − ω̄ (the fitted Lorentzian centre).
+#   The micro field (K/N) Σ_j A_ij e^{iθ_j} then averages to H_m = K Σ_l w_l A_ml z_l, which closes
+#   on TWO collective modes:  Z0 = Σ_l w_l z_l (uniform baseline) and Z1 = Σ_l w_l μ_l z_l
+#   (frequency-graded),  H_m = K(Z0 + c² μ_m Z1).  Per Lorentzian ensemble m:
+#       ż_m = (iΩ_m − Δ_m) z_m + ½(H_m − H_m* z_m²).
+#   c → 0 (H_m → K Z0) recovers the mean-only LMMF exactly.  No realised matrix is used.
+def simulate_ensemble_analytic(model, mu_m, K, c, R0, cfg):
+    """Analytic correlation-aware ensemble OA mean field for A_ml = 1 + c²μ_mμ_l (numpy solve_ivp,
+    complex). Two-mode forcing H_m = K(Z0 + c²μ_m Z1). Returns t, R(t)."""
+    w, coef = model.w, 1j * model.Omega - model.Delta
+    wmu = w * mu_m                           # weights for the frequency-graded mode Z1
+    g = (c ** 2) * mu_m                       # per-ensemble grading factor c²μ_m
 
     def f(t, z):
-        z_out = wb @ z                       # out-strength-weighted field Σ_l w_l b_l z_l
-        return coef * z + 0.5 * a * (z_out - np.conj(z_out) * z * z)
+        Z0 = w @ z                            # baseline order parameter Σ_l w_l z_l
+        Z1 = wmu @ z                          # frequency-graded order parameter Σ_l w_l μ_l z_l
+        H = K * (Z0 + g * Z1)                 # H_m = K(Z0 + c²μ_m Z1)   (vector over ensembles)
+        return coef * z + 0.5 * (H - np.conj(H) * z * z)
 
     t_eval = np.arange(0.0, cfg["T"], cfg["dts"])
     sol = solve_ivp(f, (0.0, cfg["T"]), np.full(w.size, R0 + 0.0j), method="RK45", t_eval=t_eval,
@@ -158,9 +152,9 @@ def simulate_ensemble_corr(model, a, b, R0, cfg):
 def main(cfg=CONFIG):
     rng = np.random.default_rng(cfg["seed"])
     N, res, K = cfg["N"], cfg["save_res"], cfg["K"]
-    mu = 1.0                       # ⟨A⟩ = ⟨k⟩² = 1 (median/mean k = 1); effective coupling = K·μ = K
+    mu = 1.0                       # ⟨A⟩ = 1 (rank-1 part has zero mean); effective coupling = K·μ = K
 
-    print(f"structured-coupling sweep — N={N}, K={K}, ω∈[±{cfg['omega_max']}] "
+    print(f"frequency-assortative coupling sweep — N={N}, K={K}, ω∈[±{cfg['omega_max']}] "
           f"(resampled + refit per trial), n_trials={cfg['n_trials']}")
 
     rows = []
@@ -179,6 +173,8 @@ def main(cfg=CONFIG):
                            method=cfg["fit_method"])["model"]
         t_mean, R_mean = KFS.simulate_ensemble(model.w, model.Omega, model.Delta, K * mu, R0, cfg,
                                                tag=f"mf{trial}")     # h = Kμ Σ_l w_l z_l
+        wbar = float(omega.mean())                 # ω̄ used in the coupling (and to offset μ_m)
+        mu_m = model.Omega - wbar                  # ensemble frequency offsets μ_m = Ω_m − ω̄
         print(f"--- trial {trial + 1}/{cfg['n_trials']}  R(0)={R0:.3f}  M={model.M}  "
               f"R_mean(end)={R_mean[-1]:.3f} ---")
 
@@ -191,12 +187,11 @@ def main(cfg=CONFIG):
 
         for sigma in cfg["sigma_sweep"]:
             for c in cfg["c_sweep"]:
-                k = build_strengths(N, c)                 # k_i = 1 + c·p_i  (frequency-sorted index)
-                A = build_coupling(k, sigma, rng)         # A_ij = k_i k_j + N(0, σ)
+                A = build_coupling(omega, c, sigma, rng)  # A_ij = c²(ω_i−ω̄)(ω_j−ω̄) + N(1, σ)
                 t_m, R_m = simulate_micro(omega, A, theta0, cfg)
-                a_m, b_m = ensemble_strengths(A, omega, model, mu)   # corr.-aware ensemble strengths
-                t_c, R_c = simulate_ensemble_corr(model, K * a_m, b_m, R0, cfg)   # forcing K·a_m·z_out
-                c_real = _pearson(A.sum(axis=1), omega)   # realised strength↔frequency correlation
+                t_c, R_c = simulate_ensemble_analytic(model, mu_m, K, c, R0, cfg)   # H_m=K(Z0+c²μ_m Z1)
+                om = omega - wbar                         # realised structure↔coupling correlation:
+                c_real = _pearson(A.ravel(), np.outer(om, om).ravel())  # Pearson(A_ij, (ω_i−ω̄)(ω_j−ω̄))
                 print(f"  [t{trial}] σ={sigma:<4} c={c:<5}({c_real:+.2f}) -> R_mic={R_m[-1]:.3f} "
                       f"mean={R_mean[-1]:.3f} corr={R_c[-1]:.3f}")
 

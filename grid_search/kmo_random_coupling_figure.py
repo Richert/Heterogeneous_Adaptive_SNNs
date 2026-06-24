@@ -1,17 +1,19 @@
 r"""
-Kuramoto structured coupling vs. mean-only & correlation-aware LMMF — figures
-=============================================================================
+Kuramoto structured coupling vs. mean-only & correlation-aware LMMF — journal figure
+====================================================================================
 
 Loads the sweep written by ``kmo_random_coupling_sweep.py`` (coupling A_ij = k_i k_j + N(0,σ),
 k_i = 1 + c·p_i linear in the ω-sorted index) and compares the micro network against TWO
 mean-field models that share one Lorentzian-mixture fit:
     mean — mean-only global LMMF (knows only μ);    corr — correlation-aware LMMF.
 
-1. SUMMARY: time-domain RMSE between R_micro(t) and each MF R(t) as a function of the strength
-   slope c — a line plot with one line per σ (mean ± std over trials).  One panel per MF model.
-
-2. EXAMPLES: for representative (σ, c), the shared Lorentzian-mixture fit (top), plus the micro &
-   both MF R(t) and the coupling matrix A_ij for a representative (median-RMSE) trial.
+ONE single-column PRL figure:
+  * row 1, left   — RMSE(R_micro, R_mf) vs strength slope c, BOTH MF models in one axis
+                    (colour = model, line transparency = noise σ: σ=0 opaque → more σ more transparent);
+  * row 1, right  — a representative shared Lorentzian-mixture fit over its empirical ω-sample
+                    (skardal_benchmark_figure.py style: histogram + components + sum + uniform box);
+  * rows 2–4      — three sweep examples at one intermediate σ and three equidistant c, each row a
+                    micro-vs-MF R(t) panel + the (square) microscopic coupling matrix A_ij.
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_random_coupling_figure.py
 """
@@ -19,10 +21,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+from kmo_lorentzian_fit_figure import spectral_rmse   # Fourier-amplitude RMSE (robust to phase shifts)
 
 CSV = "/home/rgast/data/mpmf_simulations/kmo_random_coupling_sweep.csv"
-OUT_SUMMARY = "/home/rgast/data/mpmf_simulations/kmo_random_coupling_summary"
-OUT_EXAMPLES = "/home/rgast/data/mpmf_simulations/kmo_random_coupling_examples"
+OUT = "/home/rgast/data/mpmf_simulations/kmo_random_coupling"
 
 C_MICRO = "0.2"
 MODELS = ["mean", "corr"]
@@ -30,11 +34,10 @@ MODEL_STYLE = {                                   # (colour, linestyle, label)
     "mean": ("#c1121f", "--", "mean-only LMMF"),
     "corr": ("#1f77b4", ":",  "corr.-aware LMMF"),
 }
-SIGMA_CMAP = "viridis"           # encodes σ in the summary line plots
+ALPHA_MIN = 0.4                  # most-noisy σ → this transparency (σ=0 → 1.0)
 MATRIX_CMAP = "magma"
-MIX_TRIAL = 0                    # which trial's (shared) mixture fit to show in the examples
-SIGMA_PLOT = None                # σ rows for the examples figure (None = all σ)
-C_PLOT = None                    # c columns for the examples (None = min / median / max c)
+MIX_TRIAL = 0                    # which trial's (shared) mixture fit + ω-sample to show in row 1
+EXAMPLES = None                  # list of (σ, c) example rows; None = auto (see _example_pairs)
 
 
 def set_prl_style():
@@ -53,6 +56,17 @@ def set_prl_style():
     })
 
 
+def _panel_label(ax, letter, dx=-20, dy=4):
+    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner."""
+    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(dx, dy),
+                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+
+
+def _alpha_for_sigma(i, n):
+    """σ=0 (i=0) opaque; larger σ more transparent, floored at ALPHA_MIN."""
+    return 1.0 - (1.0 - ALPHA_MIN) * (i / max(1, n - 1))
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  load + metrics
 # ════════════════════════════════════════════════════════════════════════════
@@ -64,12 +78,14 @@ def load(csv):
     models = [m for m in MODELS if m in set(df["model"].dropna().unique())]
     omega_max = float(df["omega_max"].dropna().iloc[0])
 
-    # shared LMMF mixture, refit per trial → show one trial's fit (MIX_TRIAL)
+    # shared LMMF mixture + empirical ω-sample, refit per trial → show one trial's fit (MIX_TRIAL)
     mix_all = df[df.quantity == "mixture"]
     mt = MIX_TRIAL if (mix_all["trial"] == MIX_TRIAL).any() else int(mix_all["trial"].dropna().min())
     g = mix_all[mix_all["trial"] == mt].sort_values("Omega")
     mixture = (g["w"].to_numpy(), g["Omega"].to_numpy(), g["Delta"].to_numpy())
     M = len(g)
+    om = df[df.quantity == "omega"]
+    omega_samp = om[om["trial"] == mt].sort_values("idx")["value"].to_numpy()
 
     R_mf = {}
     for (mo, s, c, tr), gg in df[df.quantity == "R_mf"].groupby(["model", "sigma", "c", "trial"]):
@@ -87,15 +103,15 @@ def load(csv):
         Mx = np.full((nr, nc), np.nan)
         Mx[gg["row"].astype(int), gg["col"].astype(int)] = gg["value"].to_numpy()
         mats[(float(s), float(c), int(tr))] = Mx
-    return sigmas, cs, trials, models, mixture, M, mt, omega_max, R_mic, R_mf, mats, corr
+    return sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_max, R_mic, R_mf, mats, corr
 
 
 def rmse(R_mic, R_mf, model, s, c, tr):
-    """Time-domain RMSE between micro and a given MF model's R(t) for one trial."""
+    """Spectral RMSE (Fourier-amplitude) between micro and a given MF model's R(t) for one trial —
+    robust to small phase shifts between the models."""
     _, rm = R_mic[(s, c, tr)]
     _, rf = R_mf[(model, s, c, tr)]
-    n = min(len(rm), len(rf))
-    return float(np.sqrt(np.mean((rm[:n] - rf[:n]) ** 2)))
+    return spectral_rmse(rm, rf)
 
 
 def rmse_stats(R_mic, R_mf, model, s, c, trials):
@@ -109,119 +125,142 @@ def representative_trial(R_mic, R_mf, s, c, trials, model="mean"):
     return order[len(order) // 2]
 
 
-def _plot_mixture(ax, mixture, omega_max, M, mt):
-    w, Om, De = mixture
-    xg = np.linspace(-1.15 * omega_max, 1.15 * omega_max, 400)
-    for k in range(len(w)):
-        ax.plot(xg, w[k] * (De[k] / np.pi) / ((xg - Om[k]) ** 2 + De[k] ** 2),
-                color="0.75", lw=0.4, zorder=1)
-    dens = (w[None, :] * (De[None, :] / np.pi) / ((xg[:, None] - Om[None, :]) ** 2 + De[None, :] ** 2)).sum(1)
-    ax.plot(xg, dens, color="#1f77b4", lw=1.3, zorder=3)
-    uni = 1.0 / (2 * omega_max)
-    ax.plot([-omega_max, -omega_max, omega_max, omega_max], [0, uni, uni, 0],
-            color="0.35", ls="--", lw=0.8, zorder=2)
-    ax.set_xlim(xg[0], xg[-1]); ax.set_ylim(bottom=0.0)
-    ax.set_xlabel(r"$\omega$", labelpad=1); ax.set_ylabel(r"$\rho(\omega)$", labelpad=2)
-    ax.set_title(rf"shared LMMF mixture (trial {mt}, $M{{=}}{M}$)", fontsize=6.5, pad=2)
+def _example_pairs(sigmas, cs):
+    """Three (σ, c) example rows: (1) c=0 at intermediate σ, (2) the largest c>0 at the same σ,
+    (3) that same c at the largest σ."""
+    if EXAMPLES is not None:
+        return [tuple(e) for e in EXAMPLES]
+    s_int = sigmas[len(sigmas) // 2]                       # intermediate σ
+    s_max = sigmas[-1]                                     # largest σ
+    c0 = min(cs, key=abs)                                  # c closest to 0
+    c_pos = max(cs)                                        # largest c > 0
+    return [(s_int, c0), (s_int, c_pos), (s_max, c_pos)]
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  figure 1 — summary: RMSE vs strength slope c, one line per σ, one panel per MF model
+#  row-1 panels
 # ════════════════════════════════════════════════════════════════════════════
-def make_summary(sigmas, cs, trials, models, M, R_mic, R_mf):
-    cmap = plt.get_cmap(SIGMA_CMAP)
-    scol = [cmap(0.12 + 0.76 * i / max(1, len(sigmas) - 1)) for i in range(len(sigmas))]
+def _plot_rmse(ax, sigmas, cs, trials, models, R_mic, R_mf):
+    """RMSE vs strength slope c — colour = MF model, line transparency = noise σ."""
     cx = np.asarray(cs)
-
-    fig, axes = plt.subplots(1, len(models), figsize=(3.2 * len(models), 2.6),
-                             sharey=True, layout="constrained")
-    axes = np.atleast_1d(axes)
-    for mi, mo in enumerate(models):
-        ax = axes[mi]
+    ytop = 0.0
+    for mo in models:
+        col = MODEL_STYLE[mo][0]
         for si, s in enumerate(sigmas):
             ms = np.array([rmse_stats(R_mic, R_mf, mo, s, c, trials) for c in cs])
-            ax.errorbar(cx, ms[:, 0], yerr=ms[:, 1], color=scol[si], marker="o", ms=2.6, lw=1.0,
-                        capsize=1.5, elinewidth=0.6, label=f"{s:g}")
-        ax.set_title(rf"{MODEL_STYLE[mo][2]}  ($M{{=}}{M}$)", fontsize=7, pad=3)
-        ax.set_xlabel(r"strength slope $c$", labelpad=1)
-        ax.margins(x=0.08)
-        if mi == 0:
-            ax.set_ylabel(r"$R(t)$ RMSE", labelpad=2)
-            ax.legend(title=r"$\sigma$", ncol=1, fontsize=5.8, title_fontsize=6, handlelength=1.4,
-                      loc="best")
+            ax.errorbar(cx, ms[:, 0], yerr=ms[:, 1], color=col, alpha=_alpha_for_sigma(si, len(sigmas)),
+                        marker="o", ms=2.2, lw=0.9, capsize=1.2, elinewidth=0.5)
+            ytop = max(ytop, np.nanmax(ms[:, 0] + ms[:, 1]))
+    ax.set_xlabel(r"coupling coefficient $c$", labelpad=1)
+    ax.set_ylabel(r"$R(t)$ spectral RMSE", labelpad=2)
+    ax.margins(x=0.08)
+    ax.set_ylim(0.0, 1.55 * ytop)            # clear band above the data for the two legends
 
-    fig.savefig(OUT_SUMMARY + ".pdf")
-    fig.savefig(OUT_SUMMARY + ".png", dpi=300)
-    plt.close(fig)
-    print(f"[saved] {OUT_SUMMARY}.pdf / .png")
+    mod_handles = [Line2D([0], [0], color=MODEL_STYLE[mo][0], lw=1.4, label=MODEL_STYLE[mo][2])
+                   for mo in models]
+    sig_handles = [Line2D([0], [0], color="0.25", lw=1.4, alpha=_alpha_for_sigma(si, len(sigmas)),
+                          label=f"{s:g}") for si, s in enumerate(sigmas)]
+    leg1 = ax.legend(handles=mod_handles, loc="upper left", fontsize=5.6, handlelength=1.4,
+                     borderaxespad=0.3, labelspacing=0.25)
+    ax.add_artist(leg1)
+    ax.legend(handles=sig_handles, loc="upper right", title=r"$\sigma$", fontsize=5.4,
+              title_fontsize=5.6, handlelength=1.2, borderaxespad=0.3, labelspacing=0.2, ncol=len(sigmas))
+
+
+def _plot_mixture(ax, mixture, omega_samp, omega_max, M, mt):
+    """Shared Lorentzian-mixture fit over its empirical ω-sample (skardal_benchmark style)."""
+    w, Om, De = mixture
+    xg = np.linspace(-1.2 * omega_max, 1.2 * omega_max, 500)
+    comps = w[None, :] * (De[None, :] / np.pi) / ((xg[:, None] - Om[None, :]) ** 2 + De[None, :] ** 2)
+    if omega_samp is not None and omega_samp.size:
+        ax.hist(omega_samp, bins=20, range=(-1.2 * omega_max, 1.2 * omega_max), density=True,
+                color="0.85", edgecolor="none", zorder=0)
+    for k in range(len(w)):
+        ax.plot(xg, comps[:, k], color="#2e6f95", lw=0.4, alpha=0.5, zorder=2)
+    ax.plot(xg, comps.sum(axis=1), color="#222222", lw=1.2, zorder=3, label="fit")
+    uni = 1.0 / (2 * omega_max)
+    ax.plot([-omega_max, -omega_max, omega_max, omega_max], [0, uni, uni, 0],
+            color="0.4", ls="--", lw=0.8, zorder=4, label=r"$g(\omega)$")
+    ax.set_xlim(xg[0], xg[-1]); ax.set_ylim(bottom=0.0)
+    ax.set_xlabel(r"$\omega$", labelpad=1); ax.set_ylabel(r"$\rho(\omega)$", labelpad=2)
+    ax.set_title(rf"shared LMMF fit ($M{{=}}{M}$)", fontsize=6.5, pad=2)
+    ax.legend(loc="upper right", fontsize=5.4, handlelength=1.2, borderaxespad=0.2)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  figure 2 — representative examples: mixture fit + R(t) (micro vs 2 MF) + coupling matrix
+#  the single combined figure
 # ════════════════════════════════════════════════════════════════════════════
-def make_examples(sigmas, cs, trials, models, mixture, M, mt, omega_max, R_mic, R_mf, mats, corr):
-    sig_plot = list(SIGMA_PLOT) if SIGMA_PLOT is not None else list(sigmas)
-    c_plot = list(C_PLOT) if C_PLOT is not None else [cs[0], cs[len(cs) // 2], cs[-1]]
-    nrow, ncc = len(sig_plot) + 1, len(c_plot)
+def make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_max,
+                R_mic, R_mf, mats, corr):
+    ex_pairs = _example_pairs(sigmas, cs)
+    n_ex = len(ex_pairs)
 
-    fig = plt.figure(figsize=(7.0, 1.05 * len(sig_plot) + 1.2), layout="constrained")
-    fig.set_constrained_layout_pads(w_pad=0.015, h_pad=0.02, wspace=0.02, hspace=0.07)
-    gs = fig.add_gridspec(nrow, 3 * ncc, height_ratios=[0.75] + [1.0] * len(sig_plot))
+    fig = plt.figure(figsize=(3.4, 1.45 + 0.95 * n_ex), layout="constrained")
+    fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.03, hspace=0.05)
+    sf_top, sf_bot = fig.subfigures(2, 1, height_ratios=[1.0, 0.86 * n_ex])
 
-    # top row: the shared Lorentzian-mixture fit (centred block)
-    _plot_mixture(fig.add_subplot(gs[0, ncc:2 * ncc]), mixture, omega_max, M, mt)
+    # ── row 1 : RMSE line plot  |  representative mixture fit ─────────────────
+    gst = sf_top.add_gridspec(1, 2, width_ratios=[1.05, 1.0])
+    ax_rmse = sf_top.add_subplot(gst[0, 0])
+    ax_mix = sf_top.add_subplot(gst[0, 1])
+    _plot_rmse(ax_rmse, sigmas, cs, trials, models, R_mic, R_mf)
+    _plot_mixture(ax_mix, mixture, omega_samp, omega_max, M, mt)
+    _panel_label(ax_rmse, "a", dx=-22)
+    _panel_label(ax_mix, "b", dx=-20)
 
-    for ri, s in enumerate(sig_plot):
-        for ci_i, c in enumerate(c_plot):
-            b = 3 * ci_i
-            ax_dyn = fig.add_subplot(gs[ri + 1, b:b + 2])
-            ax_mat = fig.add_subplot(gs[ri + 1, b + 2])
-            tr = representative_trial(R_mic, R_mf, s, c, trials)
-            t, Rm = R_mic[(s, c, tr)]
-            ax_dyn.plot(t, Rm, color=C_MICRO, lw=1.0, label="micro", zorder=5)
-            for mo in models:
-                col, ls, _ = MODEL_STYLE[mo]
-                tf, Rf = R_mf[(mo, s, c, tr)]
-                ax_dyn.plot(tf, Rf, color=col, lw=0.9, ls=ls)
-            ax_dyn.set_xlim(t[0], t[-1]); ax_dyn.set_ylim(-0.02, 1.02); ax_dyn.set_yticks([0, 0.5, 1.0])
-            if ri == 0:
-                ax_dyn.set_title(rf"$c={c:g}$ ($c_{{\rm real}}{{=}}{corr.get((s, c, tr), c):+.2f}$)",
-                                 fontsize=6.0, pad=2)
-            if ri == len(sig_plot) - 1:
-                ax_dyn.set_xlabel(r"$t$", labelpad=1)
-            else:
-                ax_dyn.set_xticklabels([])
-            if ci_i == 0:
-                ax_dyn.set_ylabel(rf"$\sigma={s:g}$" + "\n" + r"$R(t)$", labelpad=2)
-            else:
-                ax_dyn.set_yticklabels([])
+    # ── rows 2..(1+n_ex) : R(t) comparison (wide)  +  square coupling matrix ──
+    gsb = sf_bot.add_gridspec(n_ex, 2, width_ratios=[2.25, 1.0])
+    for ri, (s_ex, c) in enumerate(ex_pairs):
+        ax_dyn = sf_bot.add_subplot(gsb[ri, 0])
+        ax_mat = sf_bot.add_subplot(gsb[ri, 1])
+        tr = representative_trial(R_mic, R_mf, s_ex, c, trials)
 
-            Mx = mats[(s, c, tr)]
-            im = ax_mat.imshow(Mx, origin="lower", aspect="equal", cmap=MATRIX_CMAP,
-                               vmin=np.nanmin(Mx), vmax=np.nanmax(Mx), interpolation="nearest")
-            ax_mat.set_xticks([]); ax_mat.set_yticks([])
-            if ri == 0:
-                ax_mat.set_title(r"$A_{ij}$", fontsize=6.0, pad=2)
-            cb = fig.colorbar(im, ax=ax_mat, fraction=0.05, pad=0.02)
-            cb.ax.tick_params(labelsize=4.5, pad=0.6)
+        t, Rm = R_mic[(s_ex, c, tr)]
+        ax_dyn.plot(t, Rm, color=C_MICRO, lw=1.0, label="micro", zorder=5)
+        for mo in models:
+            col, ls, _ = MODEL_STYLE[mo]
+            tf, Rf = R_mf[(mo, s_ex, c, tr)]
+            ax_dyn.plot(tf, Rf, color=col, lw=0.9, ls=ls)
+        ax_dyn.set_xlim(t[0], t[-1]); ax_dyn.set_ylim(-0.02, 1.02); ax_dyn.set_yticks([0, 0.5, 1.0])
+        ax_dyn.set_ylabel(r"$R(t)$", labelpad=2)
+        if ri == 0:
+            trace_handles = [Line2D([0], [0], color=C_MICRO, lw=1.0, label="micro")]
+            trace_handles += [Line2D([0], [0], color=MODEL_STYLE[mo][0], lw=0.9,
+                                     ls=MODEL_STYLE[mo][1], label=MODEL_STYLE[mo][2]) for mo in models]
+            ax_dyn.legend(handles=trace_handles, loc="lower left", fontsize=5.0, handlelength=1.3,
+                          borderaxespad=0.3, labelspacing=0.2)
+        ax_dyn.annotate(rf"$\sigma={s_ex:g}$,  $c={c:g}$  ($c_{{\rm real}}{{=}}{corr.get((s_ex, c, tr), c):+.2f}$)",
+                        xy=(0.97, 0.06), xycoords="axes fraction", ha="right", va="bottom", fontsize=5.6)
+        if ri == n_ex - 1:
+            ax_dyn.set_xlabel(r"$t$", labelpad=1)
+        else:
+            ax_dyn.set_xticklabels([])
+        _panel_label(ax_dyn, "cde"[ri] if ri < 3 else "", dx=-22)
 
-    handles = [Line2D([0], [0], color=C_MICRO, lw=1.0, label="micro")]
-    handles += [Line2D([0], [0], color=MODEL_STYLE[mo][0], lw=0.9, ls=MODEL_STYLE[mo][1],
-                       label=MODEL_STYLE[mo][2]) for mo in models]
-    fig.legend(handles=handles, loc="outside upper right", ncol=3, fontsize=6)
+        Mx = mats[(s_ex, c, tr)]
+        im = ax_mat.imshow(Mx, origin="lower", aspect="equal", cmap=MATRIX_CMAP,
+                           vmin=np.nanmin(Mx), vmax=np.nanmax(Mx), interpolation="nearest")
+        ax_mat.set_xticks([]); ax_mat.set_yticks([])
+        if ri == 0:
+            ax_mat.set_title(r"$A_{ij}$", fontsize=6.5, pad=2)
+        cax = inset_axes(ax_mat, width="6%", height="100%", loc="lower left",
+                         bbox_to_anchor=(1.04, 0.0, 1.0, 1.0), bbox_transform=ax_mat.transAxes,
+                         borderpad=0)
+        cb = fig.colorbar(im, cax=cax)
+        cb.ax.tick_params(labelsize=4.5, pad=0.6, length=1.5)
 
-    fig.savefig(OUT_EXAMPLES + ".pdf")
-    fig.savefig(OUT_EXAMPLES + ".png", dpi=300)
+    fig.savefig(OUT + ".svg")
+    fig.savefig(OUT + ".png", dpi=200)
     plt.close(fig)
-    print(f"[saved] {OUT_EXAMPLES}.pdf / .png")
+    print(f"[saved] {OUT}.svg / .png")
 
 
 def main():
-    (sigmas, cs, trials, models, mixture, M, mt, omega_max,
+    (sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_max,
      R_mic, R_mf, mats, corr) = load(CSV)
     set_prl_style()
-    make_summary(sigmas, cs, trials, models, M, R_mic, R_mf)
-    make_examples(sigmas, cs, trials, models, mixture, M, mt, omega_max, R_mic, R_mf, mats, corr)
+    make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_max,
+                R_mic, R_mf, mats, corr)
 
 
 if __name__ == "__main__":
