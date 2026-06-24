@@ -48,8 +48,8 @@ CONFIG = dict(
     K=1.2,                          # global coupling strength (effective coupling = K·⟨A⟩ = K·μ = K;
                                     #   uniform ω ⇒ K_c = 2/(π g(0)) = 4·omega_max/π ≈ 1.27)
     # sweep: additive-noise std σ × strength-slope c   (k_i = 1 + c·p_i, p_i∈[-1,1])
-    sigma_sweep=[0.0, 0.5, 1.0],
-    c_sweep=[-0.9, -0.6, -0.3, 0.0, 0.3, 0.6, 0.9],
+    sigma_sweep=[0.0, 1.0, 5.0],
+    c_sweep=[-1.0, -0.5, 0.0, 0.5, 1.0],
     n_trials=10,
     # coherent initial condition: θ_i(0) ~ N(0, sigma0);  LMMF z_m(0)=R(0)
     sigma0=0.5,
