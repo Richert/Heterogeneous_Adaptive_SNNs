@@ -22,7 +22,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 from kmo_lorentzian_fit_figure import spectral_rmse   # Fourier-amplitude RMSE (robust to phase shifts)
 
@@ -33,8 +32,9 @@ C_MICRO = "0.2"
 MODELS = ["mean", "corr"]
 MODEL_STYLE = {                                   # (colour, linestyle, label)
     "mean": ("#c1121f", "--", "mean-only LMMF"),
-    "corr": ("#1f77b4", ":",  "corr.-aware LMMF"),
+    "corr": ("#1f77b4", "--", "corr.-aware LMMF"),
 }
+MICRO_ALPHA = 0.7
 ALPHA_MIN = 0.4                  # most-noisy σ → this transparency (σ=0 → 1.0)
 MATRIX_CMAP = "magma"
 MIX_TRIAL = 0                    # which trial's (shared) mixture fit + ω-sample to show in row 1
@@ -223,7 +223,7 @@ def make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_ma
         tr = representative_trial(R_mic, R_mf, s_ex, c, trials)
 
         t, Rm = R_mic[(s_ex, c, tr)]
-        ax_dyn.plot(t, Rm, color=C_MICRO, lw=1.0, label="micro", zorder=5)
+        ax_dyn.plot(t, Rm, color=C_MICRO, lw=1.0, alpha=MICRO_ALPHA, label="micro")  # micro first, underneath
         for mo in models:
             col, ls, _ = MODEL_STYLE[mo]
             tf, Rf = R_mf[(mo, s_ex, c, tr)]
@@ -234,7 +234,7 @@ def make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_ma
         ax_dyn.set_title(rf"$\sigma={s_ex:g}$,  $c={c:g}$  ($c_{{\rm real}}{{=}}{corr.get((s_ex, c, tr), c):+.2f}$)",
                          fontsize=6.0, pad=2)
         if ri == 0:
-            trace_handles = [Line2D([0], [0], color=C_MICRO, lw=1.0, label="micro")]
+            trace_handles = [Line2D([0], [0], color=C_MICRO, lw=1.0, alpha=MICRO_ALPHA, label="micro")]
             trace_handles += [Line2D([0], [0], color=MODEL_STYLE[mo][0], lw=0.9,
                                      ls=MODEL_STYLE[mo][1], label=MODEL_STYLE[mo][2]) for mo in models]
             ax_dyn.legend(handles=trace_handles, loc="upper right", fontsize=5.0, handlelength=1.3,
