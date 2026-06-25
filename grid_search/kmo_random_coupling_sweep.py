@@ -51,7 +51,7 @@ CONFIG = dict(
                                     #   uniform ω ⇒ K_c = 2/(π g(0)) = 4·omega_max/π ≈ 1.27)
     # sweep: additive-noise std σ × coupling coefficient c   (A_ij = c²(ω_i−ω̄)(ω_j−ω̄) + N(1,σ))
     #   structured part ≤ c²·omega_max² ≈ c², baseline = 1, so keep σ ≲ O(1); c enters as c² (c ≥ 0)
-    sigma_sweep=[0.0, 0.1, 0.5],
+    sigma_sweep=[0.0, 0.5, 1.0],
     c_sweep=[0.0, 0.25, 0.5, 0.75, 1.0],
     n_trials=10,
     # coherent initial condition: θ_i(0) ~ N(0, sigma0);  LMMF z_m(0)=R(0)

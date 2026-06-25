@@ -2,18 +2,19 @@ r"""
 Kuramoto structured coupling vs. mean-only & correlation-aware LMMF — journal figure
 ====================================================================================
 
-Loads the sweep written by ``kmo_random_coupling_sweep.py`` (coupling A_ij = k_i k_j + N(0,σ),
-k_i = 1 + c·p_i linear in the ω-sorted index) and compares the micro network against TWO
-mean-field models that share one Lorentzian-mixture fit:
-    mean — mean-only global LMMF (knows only μ);    corr — correlation-aware LMMF.
+Loads the sweep written by ``kmo_random_coupling_sweep.py`` (coupling A_ij = c²(ω_i−ω̄)(ω_j−ω̄) +
+N(1,σ)) and compares the micro network against TWO mean-field models that share one
+Lorentzian-mixture fit:
+    mean — mean-only global LMMF (knows only μ);    corr — analytic correlation-aware LMMF.
 
-ONE single-column PRL figure:
-  * row 1, left   — RMSE(R_micro, R_mf) vs strength slope c, BOTH MF models in one axis
+ONE single-column PRL figure (layout hand-tuned to manuscript figure1.svg):
+  * row 1, left   — spectral RMSE(R_micro, R_mf) vs coupling coefficient c, BOTH MF models in one axis
                     (colour = model, line transparency = noise σ: σ=0 opaque → more σ more transparent);
+                    the σ legend sits ABOVE the axes, the model legend inside upper-left;
   * row 1, right  — a representative shared Lorentzian-mixture fit over its empirical ω-sample
                     (skardal_benchmark_figure.py style: histogram + components + sum + uniform box);
-  * rows 2–4      — three sweep examples at one intermediate σ and three equidistant c, each row a
-                    micro-vs-MF R(t) panel + the (square) microscopic coupling matrix A_ij.
+  * rows 2–4      — three sweep examples (intermediate σ at c≈0 and max c; max σ at max c), each row a
+                    micro-vs-MF R(t) panel (σ/c annotated upper-right) + the square coupling matrix A_ij.
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_random_coupling_figure.py
 """
@@ -154,7 +155,7 @@ def _plot_rmse(ax, sigmas, cs, trials, models, R_mic, R_mf):
     ax.set_xlabel(r"coupling coefficient $c$", labelpad=1)
     ax.set_ylabel(r"$R(t)$ spectral RMSE", labelpad=2)
     ax.margins(x=0.08)
-    ax.set_ylim(0.0, 1.55 * ytop)            # clear band above the data for the two legends
+    ax.set_ylim(0.0, 1.2 * ytop)             # modest headroom for the (upper-left) model legend
 
     mod_handles = [Line2D([0], [0], color=MODEL_STYLE[mo][0], lw=1.4, label=MODEL_STYLE[mo][2])
                    for mo in models]
@@ -163,8 +164,10 @@ def _plot_rmse(ax, sigmas, cs, trials, models, R_mic, R_mf):
     leg1 = ax.legend(handles=mod_handles, loc="upper left", fontsize=5.6, handlelength=1.4,
                      borderaxespad=0.3, labelspacing=0.25)
     ax.add_artist(leg1)
-    ax.legend(handles=sig_handles, loc="upper right", title=r"$\sigma$", fontsize=5.4,
-              title_fontsize=5.6, handlelength=1.2, borderaxespad=0.3, labelspacing=0.2, ncol=len(sigmas))
+    # σ legend ABOVE the axes box (horizontal, centred), title on top
+    ax.legend(handles=sig_handles, loc="lower center", bbox_to_anchor=(0.5, 1.0), title=r"$\sigma$",
+              fontsize=5.4, title_fontsize=5.6, handlelength=1.2, borderaxespad=0.2, labelspacing=0.2,
+              columnspacing=1.0, ncol=len(sigmas))
 
 
 def _plot_mixture(ax, mixture, omega_samp, omega_max, M, mt):
@@ -177,14 +180,17 @@ def _plot_mixture(ax, mixture, omega_samp, omega_max, M, mt):
                 color="0.85", edgecolor="none", zorder=0)
     for k in range(len(w)):
         ax.plot(xg, comps[:, k], color="#2e6f95", lw=0.4, alpha=0.5, zorder=2)
-    ax.plot(xg, comps.sum(axis=1), color="#222222", lw=1.2, zorder=3, label="fit")
+    dens = comps.sum(axis=1)
+    ax.plot(xg, dens, color="#222222", lw=1.2, zorder=3, label="fit")
     uni = 1.0 / (2 * omega_max)
     ax.plot([-omega_max, -omega_max, omega_max, omega_max], [0, uni, uni, 0],
             color="0.4", ls="--", lw=0.8, zorder=4, label=r"$g(\omega)$")
-    ax.set_xlim(xg[0], xg[-1]); ax.set_ylim(bottom=0.0)
+    ax.set_xlim(xg[0], xg[-1])
+    ax.set_ylim(0.0, 1.32 * max(dens.max(), uni))    # headroom so the legend clears the peaks
     ax.set_xlabel(r"$\omega$", labelpad=1); ax.set_ylabel(r"$\rho(\omega)$", labelpad=2)
     ax.set_title(rf"shared LMMF fit ($M{{=}}{M}$)", fontsize=6.5, pad=2)
-    ax.legend(loc="upper right", fontsize=5.4, handlelength=1.2, borderaxespad=0.2)
+    ax.legend(loc="upper center", fontsize=5.4, handlelength=1.2, borderaxespad=0.2, ncol=2,
+              columnspacing=1.0)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -197,7 +203,7 @@ def make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_ma
 
     fig = plt.figure(figsize=(3.4, 1.45 + 0.95 * n_ex), layout="constrained")
     fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.03, hspace=0.05)
-    sf_top, sf_bot = fig.subfigures(2, 1, height_ratios=[1.0, 0.86 * n_ex])
+    sf_top, sf_bot = fig.subfigures(2, 1, height_ratios=[1.0, 0.86 * n_ex], hspace=-0.06)
 
     # ── row 1 : RMSE line plot  |  representative mixture fit ─────────────────
     gst = sf_top.add_gridspec(1, 2, width_ratios=[1.05, 1.0])
@@ -208,11 +214,12 @@ def make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_ma
     _panel_label(ax_rmse, "a", dx=-22)
     _panel_label(ax_mix, "b", dx=-20)
 
-    # ── rows 2..(1+n_ex) : R(t) comparison (wide)  +  square coupling matrix ──
-    gsb = sf_bot.add_gridspec(n_ex, 2, width_ratios=[2.25, 1.0])
+    # ── rows 2..(1+n_ex) : R(t) comparison (wide)  +  square coupling matrix + colourbar ──
+    gsb = sf_bot.add_gridspec(n_ex, 3, width_ratios=[2.25, 1.0, 0.07])
     for ri, (s_ex, c) in enumerate(ex_pairs):
         ax_dyn = sf_bot.add_subplot(gsb[ri, 0])
         ax_mat = sf_bot.add_subplot(gsb[ri, 1])
+        cax = sf_bot.add_subplot(gsb[ri, 2])
         tr = representative_trial(R_mic, R_mf, s_ex, c, trials)
 
         t, Rm = R_mic[(s_ex, c, tr)]
@@ -223,14 +230,15 @@ def make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_ma
             ax_dyn.plot(tf, Rf, color=col, lw=0.9, ls=ls)
         ax_dyn.set_xlim(t[0], t[-1]); ax_dyn.set_ylim(-0.02, 1.02); ax_dyn.set_yticks([0, 0.5, 1.0])
         ax_dyn.set_ylabel(r"$R(t)$", labelpad=2)
+        # parameter values go in the panel title (frees the plotting area for the legend)
+        ax_dyn.set_title(rf"$\sigma={s_ex:g}$,  $c={c:g}$  ($c_{{\rm real}}{{=}}{corr.get((s_ex, c, tr), c):+.2f}$)",
+                         fontsize=6.0, pad=2)
         if ri == 0:
             trace_handles = [Line2D([0], [0], color=C_MICRO, lw=1.0, label="micro")]
             trace_handles += [Line2D([0], [0], color=MODEL_STYLE[mo][0], lw=0.9,
                                      ls=MODEL_STYLE[mo][1], label=MODEL_STYLE[mo][2]) for mo in models]
-            ax_dyn.legend(handles=trace_handles, loc="lower left", fontsize=5.0, handlelength=1.3,
+            ax_dyn.legend(handles=trace_handles, loc="upper right", fontsize=5.0, handlelength=1.3,
                           borderaxespad=0.3, labelspacing=0.2)
-        ax_dyn.annotate(rf"$\sigma={s_ex:g}$,  $c={c:g}$  ($c_{{\rm real}}{{=}}{corr.get((s_ex, c, tr), c):+.2f}$)",
-                        xy=(0.97, 0.06), xycoords="axes fraction", ha="right", va="bottom", fontsize=5.6)
         if ri == n_ex - 1:
             ax_dyn.set_xlabel(r"$t$", labelpad=1)
         else:
@@ -243,10 +251,7 @@ def make_figure(sigmas, cs, trials, models, mixture, M, mt, omega_samp, omega_ma
         ax_mat.set_xticks([]); ax_mat.set_yticks([])
         if ri == 0:
             ax_mat.set_title(r"$A_{ij}$", fontsize=6.5, pad=2)
-        cax = inset_axes(ax_mat, width="6%", height="100%", loc="lower left",
-                         bbox_to_anchor=(1.04, 0.0, 1.0, 1.0), bbox_transform=ax_mat.transAxes,
-                         borderpad=0)
-        cb = fig.colorbar(im, cax=cax)
+        cb = fig.colorbar(im, cax=cax)           # dedicated gridspec column → not clipped
         cb.ax.tick_params(labelsize=4.5, pad=0.6, length=1.5)
 
     fig.savefig(OUT + ".svg")
