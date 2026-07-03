@@ -27,7 +27,7 @@ CONFIG = dict(
     k_min=1.0, k_max=4.0, n_k=15,               # densely sampled global coupling K
     # microscopic network + integration (per (K, μ))
     N=500, T=5000.0, dt=0.05, dts=1.0, sigma0=0.3, seed=1,
-    out_dir="/home/richard/data/kmo_adaptive",    # ("/home/data/kmo_adaptive" → /home/rgast/data/...)
+    out_dir="/home/rgast/data/kmo_adaptive",    # ("/home/data/kmo_adaptive" → /home/rgast/data/...)
     out_name="weight_variance_VA_sweep.npz",
 )
 
