@@ -27,7 +27,7 @@ CONFIG = dict(
     mus=[0.001, 0.01],                 # monostable/cusp (μ=γ) and bistable (μ>γ)
     k_ramp=(0.5, 3.0, 0.3),            # microscopic ramp K values: np.arange(start, stop, step)
     k_min=0.3, k_max=3.0,              # K-range for the analytic branches (figure only)
-    tau_d=2000.0,                      # dwell time per K step (≳ 1/γ for quasi-static tracking)
+    tau_d=5000.0,                      # dwell time per K step (≳ 1/γ for quasi-static tracking)
     N=500, dt=0.05, dts=2.0, meas_frac=0.3, seed=1,
     out_dir="/home/rgast/data/kmo_adaptive",
     out_name="weight_variance_ramp.npz",
