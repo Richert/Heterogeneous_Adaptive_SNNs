@@ -114,9 +114,9 @@ def main(cfg=CONFIG):
                       loc="upper left", fontsize=4.6, handlelength=1.4, labelspacing=0.18)
     fig.suptitle(rf"Mean-field fixed points  ($\Delta={cfg['delta']:g}$, $\gamma={cfg['gamma']:g}$)",
                  fontsize=7.5)
-    fig.savefig(cfg["out"] + ".pdf"); fig.savefig(cfg["out"] + ".png", dpi=300)
+    fig.savefig(cfg["out"] + ".svg"); fig.savefig(cfg["out"] + ".png", dpi=200)
     plt.close(fig)
-    print(f"[saved] {cfg['out']}.pdf / .png")
+    print(f"[saved] {cfg['out']}.svg / .png")
 
 
 if __name__ == "__main__":

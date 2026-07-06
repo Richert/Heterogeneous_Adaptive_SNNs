@@ -31,10 +31,10 @@ from matplotlib.lines import Line2D
 #  configuration
 # ════════════════════════════════════════════════════════════════════════════
 CONFIG = dict(
-    K=1.0, gamma=0.01,
+    K=1.0, gamma=0.001,
     mus=[0.1, 0.01, 0.001],          # μ values (one panel each); spans the μ≷γ transition
     # microscopic verification network
-    N=300, T=600.0, dt=0.05, trans_frac=0.6, n_sim=6, seed=1,
+    N=500, T=1000.0, dt=0.05, trans_frac=0.6, n_sim=6, seed=1,
     out_bif="/home/rgast/data/mpmf_simulations/weight_variance_bifurcation",
     out_stats="/home/rgast/data/mpmf_simulations/weight_variance_statistics",
 )

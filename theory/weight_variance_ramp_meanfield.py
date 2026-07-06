@@ -10,8 +10,8 @@ The mean-field R is re-seeded to ≥ 1/√N at the start of each K-hold (`mf_see
 MF has R=0 as an invariant, so without this it stays stuck on the async branch even once K>2Δ; the
 finite-size incoherent level 1/√N supplies the physical ignition seed the deterministic MF lacks.
 
-Cheap (ODE integration only).  Saves one .npz (mean-field R(t), V_A/Ā²(t), C_A/(Ā R²)(t), per-step
-coherence + parameters) for the plotting scripts.
+Cheap (ODE integration only).  Saves one .npz (mean-field R(t), V_A(t), C_A(t), Ā(t), per-step
+coherence + parameters) for the plotting scripts (scale-free ratios V_A/Ā², C_A/Ā² formed downstream).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python weight_variance_ramp_meanfield.py
 """
@@ -50,17 +50,17 @@ def mf_ramp(mu, direction, cfg):
                 2.0 * mu * (CS + CF) - 2.0 * g * V]                   # Eq. 73
 
     R_floor = 1.0 / np.sqrt(cfg["N"]) if cfg.get("mf_seed_floor", True) else 0.0
-    tcur, T, Rt, ratio, cratio, Rpts = 0.0, [], [], [], [], []
+    tcur, T, Rt, VA, CA, Ab, Rpts = 0.0, [], [], [], [], [], []
     for K in Ksteps:
         y[0] = max(y[0], R_floor)                         # finite-size coherence seed (see docstring)
         sol = solve_ivp(lambda t, yy: rhs(t, yy, K), (0.0, cfg["tau_d"]), y, t_eval=te,
                         method="RK45", rtol=1e-7, atol=1e-9, max_step=1.0)
         R, A, CS, CF, V = sol.y
-        T.append(tcur + te); Rt.append(R); ratio.append(V / A ** 2)
-        cratio.append((CS + CF) / (A * np.maximum(R ** 2, 1e-6)))     # C_A/(Ā R²), guarded
+        T.append(tcur + te); Rt.append(R)
+        VA.append(V); CA.append(CS + CF); Ab.append(A)                # V_A, C_A, Ā
         Rpts.append(float(R[-1])); y = list(sol.y[:, -1]); tcur += cfg["tau_d"]
-    return (np.concatenate(T), np.concatenate(Rt), np.concatenate(ratio),
-            np.concatenate(cratio), np.array(Rpts))
+    return dict(T=np.concatenate(T), R=np.concatenate(Rt), VA=np.concatenate(VA),
+                CA=np.concatenate(CA), A=np.concatenate(Ab), Rpts=np.array(Rpts))
 
 
 def main(cfg=CONFIG):
@@ -70,24 +70,23 @@ def main(cfg=CONFIG):
     print(f"mean-field K-ramp — Δ={cfg['delta']}, γ={cfg['gamma']}, μ={mus}, "
           f"{n_ramp} K-steps × τ_d={cfg['tau_d']} (mf_seed_floor={cfg['mf_seed_floor']})")
 
-    Tf = Rf = ratio = cratio = Rp_f = None
+    Tf = Rf = VA = CA = A = Rp_f = None
     for i, mu in enumerate(mus):
         for di, d in enumerate(("fwd", "bwd")):
             print(f"  μ={mu} {d} ...")
-            tf, rf, rat, crat, rpf = mf_ramp(mu, d, cfg)
+            m = mf_ramp(mu, d, cfg)
             if Rf is None:
-                Tf = tf
-                Rf = np.full((len(mus), 2, tf.size), np.nan)
-                ratio = np.full((len(mus), 2, tf.size), np.nan)
-                cratio = np.full((len(mus), 2, tf.size), np.nan)
+                Tf = m["T"]
+                shape = (len(mus), 2, Tf.size)
+                Rf, VA, CA, A = (np.full(shape, np.nan) for _ in range(4))
                 Rp_f = np.full((len(mus), 2, n_ramp), np.nan)
-            Rf[i, di], ratio[i, di], cratio[i, di] = rf, rat, crat
-            Rp_f[i, di] = rpf if d == "fwd" else rpf[::-1]         # store in ascending-K order
+            Rf[i, di], VA[i, di], CA[i, di], A[i, di] = m["R"], m["VA"], m["CA"], m["A"]
+            Rp_f[i, di] = m["Rpts"] if d == "fwd" else m["Rpts"][::-1]   # ascending-K order
 
     os.makedirs(cfg["out_dir"], exist_ok=True)
     out = os.path.join(cfg["out_dir"], cfg["out_name"])
     np.savez(out, mus=np.asarray(mus, float), Ks=Ks, n_ramp=n_ramp, Tf=Tf,
-             Rf=Rf, ratio=ratio, cratio=cratio, Rp_f=Rp_f,
+             Rf=Rf, VA=VA, CA=CA, A=A, Rp_f=Rp_f,
              gamma=cfg["gamma"], delta=cfg["delta"], k_min=cfg["k_min"], k_max=cfg["k_max"],
              tau_d=cfg["tau_d"], N=cfg["N"], dts=cfg["dts"], seed=cfg["seed"],
              mf_seed_floor=cfg["mf_seed_floor"])
