@@ -25,13 +25,19 @@ PRX figure constraints
     - Vector PDF output.
 """
 
+import os
+import sys
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy.integrate import solve_ivp
-from scipy.optimize import minimize
 from scipy.stats import cauchy, norm
-from sklearn.mixture import GaussianMixture
+
+# the shared LMMF fitter (weighted-Lorentzian mixture with penalized CvM order selection),
+# the same algorithm used by grid_search/kmo_lorentzian_fit_sweep.py
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "theory")))
+import lorentzian_mixture as LM
 
 _EPS = 1e-12
 

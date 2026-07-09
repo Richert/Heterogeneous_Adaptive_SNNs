@@ -72,7 +72,7 @@ CONFIG = dict(
     # storage
     save_res=100,                  # block-average the final A matrix / ω axis to this size
     seed=1,
-    out_csv="/home/rgast/data/mpmf_simulations/kmo_adaptive_single_sweep.csv",
+    out_csv="/home/richard/data/mpmf_simulations/kmo_adaptive_single_sweep.csv",
 )
 
 
