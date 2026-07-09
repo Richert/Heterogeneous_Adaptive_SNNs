@@ -20,16 +20,17 @@ kmo_op:
     s_in: input(complex)
     i: 0.0+1.0j
 
-# ── microscopic adaptive coupling edge (Eq. 9):  Ȧ_ij = μ G_A(θ_j−θ_i) − γ A_ij ───────
+# ── microscopic adaptive coupling edge (Eq. 4):  Ȧ_ij = μ G_A(θ_j−θ_i) + γ(1 − A_ij) ──
 #    G_A = c_cos·cos + c_sin·sin + c_abs·|sin|  (set (1,0,0) for cos, (0,1,0) for sin,
-#    (0,0,1) for |sin|). The microscopic |sin| rule is exact — no Fourier truncation
-#    (that is only needed for its mean-field reduction). The coupling contribution is
-#    s_out = A·e_pre, so the field is s_in_i = (K/N) Σ_j A_ij e_j.
+#    (0,0,1) for |sin|). The linear term relaxes A toward 1 with rate γ=`decay` (Eq. 4),
+#    so the weights settle at A → 1 + (μ/γ)⟨G_A⟩ rather than at μ/γ⟨G_A⟩. The microscopic
+#    |sin| rule is exact — no Fourier truncation (that is only needed for its mean-field
+#    reduction). The coupling contribution is s_out = A·e_pre, so s_in_i = (K/N) Σ_j A_ij e_j.
 kmo_adapt_op:
   base: OperatorTemplate
   equations:
     - "gph = e_pre*conj(e_post)"
-    - "A' = mu*(c_cos*real(gph) + c_sin*imag(gph) + c_abs*absv(imag(gph))) - decay*A"
+    - "A' = mu*(c_cos*real(gph) + c_sin*imag(gph) + c_abs*absv(imag(gph))) + decay*(1 - A)"
     - "s_out = A*e_pre"
   variables:
     s_out: output(complex)
@@ -66,9 +67,9 @@ ens_coupling_op:
     wm: 1.0
     z: input(complex)
 
-# NOTE: the mean-field adaptive coupling operator (Eqs. 12-14, single ensemble) is
+# NOTE: the mean-field adaptive coupling operator (Eqs. 6/9, single ensemble) is
 # built in kmo_adaptive_single_sweep.py because its right-hand side depends on the
-# rule and, for |sin|, on the Fourier truncation order:
-#   cos  : Ā̇ = μ R² − γ Ā
-#   sin  : Ā̇ = −γ Ā            (odd rule → zero self-coupling mean)
-#   |sin|: Ā̇ = μ[2/π − (4/π) Σ_{n=1}^{n_trunc} R^{4n}/(4n²−1)] − γ Ā   (App. B2)
+# rule and, for |sin|, on the Fourier truncation order (all relax Ā toward 1, Eq. 9):
+#   cos  : Ā̇ = μ R² + γ(1 − Ā)
+#   sin  : Ā̇ = γ(1 − Ā)            (odd rule → zero self-coupling mean)
+#   |sin|: Ā̇ = μ[2/π − (4/π) Σ_{n=1}^{n_trunc} R^{4n}/(4n²−1)] + γ(1 − Ā)   (App. B2)

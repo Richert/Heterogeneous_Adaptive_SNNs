@@ -10,10 +10,15 @@ reduces the joint steady state to a single quadratic in Ā:
 
     γ Ā² − (γ + μ) Ā + 2μΔ/K = 0,   Ā_± = [ (γ+μ) ± √D ] / (2γ),   D = (γ+μ)² − 8γμΔ/K,
 
-with the synchronized state R² = 1 − 2Δ/(KĀ) (Eq. 41).  The weight variance follows in closed form
-(corrected Eq. 42; the manuscript's printed Eq. 42 is missing a 1/γ and has a sign flip):
+with the synchronized state R² = 1 − 2Δ/(KĀ) (Eq. 33).  The weight variance follows from the
+manuscript's current closure (Eqs. 32 & 37), using the squared order parameter S = ⟨|c|²⟩ from the
+locked/drifting decomposition (b = KĀR):
 
-    V_A = μ²(1 − R⁴) / [2γ(γ + 2Δ)] = 2μ²Δ(J − Δ) / [γ J²(γ + 2Δ)],   J = KĀ.
+    S = (2/π)arctan(b/Δ)(2 + 2Δ²/b²) − 4Δ/(πb) − R²   (Eq. 32),
+    V_A = μ²(S² − R⁴) / (2γ²)                          (Eq. 37).
+
+This matches the microscopic sims on the SYNCHRONIZED branch, unlike the earlier weak-coupling form
+V_A = μ²(1 − R⁴)/[2γ(γ + 2Δ)] (old Eq. 42), which held only at low R.
 
 FIGURE 1 — 1-D bifurcation diagrams R(Δ): synchronized (Ā_+, stable), saddle (Ā_−, unstable) and
            asynchronous (R=0, Ā=1) branches; solid = stable, dashed = unstable; saddle-node (fold)
@@ -66,9 +71,25 @@ def _panel_label(ax, letter, dx=-22, dy=4):
 # ════════════════════════════════════════════════════════════════════════════
 #  closed-form steady-state branches
 # ════════════════════════════════════════════════════════════════════════════
+def S_order(R2, A, delta, K):
+    """Squared order parameter S = ⟨|c|²⟩ (manuscript Eq. 32) on the OA manifold, with
+    locked/drifting decomposition and b = KĀR.  Rewritten to avoid the catastrophic
+    cancellation of the two ∝1/b terms as R→0 (b→0): with x = b/Δ,
+        (2/π)arctan(x)(2+2/x²) − 4/(πx) = (4/π)arctan(x) + (4/π)[arctan(x)/x² − 1/x],
+    and the bracket → −x/3 smoothly as x→0."""
+    b = K * A * np.sqrt(np.clip(R2, 0.0, None))
+    x = b / delta
+    xs = np.where(x > 1e-3, x, 1.0)                        # safe x for the direct branch
+    bracket = np.where(x > 1e-3, np.arctan(xs) / xs ** 2 - 1.0 / xs, -x / 3.0 + x ** 3 / 5.0)
+    return (4.0 / np.pi) * np.arctan(x) + (4.0 / np.pi) * bracket - R2
+
+
 def branches(delta, mu, K, g):
     """Return dict of analytic steady-state branches over the Δ-array `delta`.
-    Ā_± roots of γĀ²−(γ+μ)Ā+2μΔ/K; R²=1−2Δ/(KĀ); physical where R²≥0 (and D≥0)."""
+    Ā_± roots of γĀ²−(γ+μ)Ā+2μΔ/K; R²=1−2Δ/(KĀ); physical where R²≥0 (and D≥0).
+    Weight variance from the manuscript's current closure (Eq. 37, via S of Eq. 32):
+    V_A = μ²(S²−R⁴)/(2γ²)  — this matches the microscopic sims on the SYNCHRONIZED
+    branch (the earlier weak-coupling Eq. 42 only matched at low R)."""
     D = (g + mu) ** 2 - 8 * g * mu * delta / K
     real = D >= 0
     sqrtD = np.sqrt(np.where(real, D, np.nan))
@@ -78,14 +99,16 @@ def branches(delta, mu, K, g):
         J = K * A
         R2 = 1.0 - 2.0 * delta / J
         phys = real & (R2 >= 0) & (A > 0)
-        R = np.sqrt(np.where(phys, R2, np.nan))
-        VA = mu ** 2 * (1.0 - np.where(phys, R2, np.nan) ** 2) / (2 * g * (g + 2 * delta))
-        out[name] = dict(A=np.where(phys, A, np.nan), R=R,
-                         VA=VA, ratio=np.where(phys, A, np.nan) / VA, phys=phys)
-    # asynchronous branch: R=0, Ā=1 (stable for Δ>K/2)
+        R2p = np.where(phys, R2, np.nan)
+        R = np.sqrt(R2p)
+        S = S_order(R2p, np.where(phys, A, np.nan), delta, K)
+        VA = mu ** 2 * (S ** 2 - R2p ** 2) / (2 * g ** 2)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(phys, A, np.nan) / VA
+        out[name] = dict(A=np.where(phys, A, np.nan), R=R, VA=VA, ratio=ratio, phys=phys)
+    # asynchronous branch: R=0, Ā=1 (stable for Δ>K/2) ⇒ S=0 and V_A=0 (Eq. 37)
     out["async"] = dict(A=np.ones_like(delta), R=np.zeros_like(delta),
-                        VA=mu ** 2 / (2 * g * (g + 2 * delta)),
-                        ratio=2 * g * (g + 2 * delta) / mu ** 2,
+                        VA=np.zeros_like(delta), ratio=np.full_like(delta, np.inf),
                         stable=delta > K / 2)
     return out
 
@@ -209,11 +232,6 @@ def make_statistics(cfg, sims):
         ax.plot(dlt, br["sync"]["A"], color=C_ABAR, lw=1.1, label=r"$\bar A$")
         ax.plot(dlt, br["sync"]["VA"], color=C_VAR, lw=1.1, label=r"$V_A$")
         ax.plot(dlt, br["sync"]["ratio"], color=C_RATIO, lw=1.1, label=r"$\bar A/V_A$")
-        # asynchronous-branch closed forms (R=0): the clean low-R / weak-coupling reference
-        da = np.linspace(max(K / 2, dlt[0]), dlt[-1], 200)
-        ba = branches(da, mu, K, g)["async"]
-        ax.plot(da, ba["VA"], color=C_VAR, lw=0.8, ls=":")
-        ax.plot(da, ba["ratio"], color=C_RATIO, lw=0.8, ls=":", label=r"async. ($R{=}0$)")
         ax.axhline(1.0, color="0.6", lw=0.6, ls="--", zorder=0)
         if sims[mu].size:                                          # simulation markers
             sd, _, sA, sV = sims[mu].T
