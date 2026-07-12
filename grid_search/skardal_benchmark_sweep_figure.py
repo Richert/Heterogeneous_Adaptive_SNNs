@@ -43,7 +43,7 @@ REGIMES = ["subcritical", "critical", "supercritical"]
 
 # four representative examples = 2 values of n × 2 values of N (rows ordered n outer, N inner)
 EXAMPLE_n = [2, 128]
-EXAMPLE_N = [100, 10000]
+EXAMPLE_N = [200, 5000]
 
 # colours (consistent with the original Fig. 2): micro grey, Skardal blue, LMMF/best-fit red
 C_MICRO = "0.25"
@@ -51,7 +51,7 @@ C_SKARDAL = "#1f77b4"
 C_ENS = "#c1121f"
 C_COMP = "#2e6f95"
 # line style per network size N
-N_STYLE = {100: ":", 1000: "--", 10000: "-"}
+N_STYLE = {200: ":", 1000: "--", 5000: "-"}
 
 
 def set_prl_style():
@@ -217,7 +217,7 @@ def make_figure(regime):
 
     out = f"{OUT_STEM}_{regime}"
     fig.savefig(out + ".png", dpi=200)
-    fig.savefig(out + ".pdf")
+    # fig.savefig(out + ".pdf")
     fig.savefig(out + ".svg")
     plt.close(fig)
     print(f"[saved] {os.path.basename(out)}.{{png,pdf,svg}}")
