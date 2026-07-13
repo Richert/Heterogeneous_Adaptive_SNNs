@@ -67,8 +67,9 @@ def set_prl_style():
 
 
 def _panel_label(ax, letter):
-    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner."""
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(-26, 4),
+    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner. The horizontal
+    offset centres the label over the y-axis tick labels (shifted right from the axis left edge)."""
+    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(-16, 4),
                 textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
 
 
@@ -129,11 +130,11 @@ def _example_panels(fig, axL, axR, d, dl, show_dens_legend, show_R_legend,
     axL.plot(d["g_omega"], d["g_density"], color=C_SKARDAL, lw=1.1, zorder=3, label=r"$g_n(\omega)$")
     axL.set_xlim(-3 * Delta, 3 * Delta); axL.set_yticks([])
     if ylabel_dens:
-        axL.set_ylabel(r"$\rho(\omega)$")
+        axL.set_ylabel(r"$\rho(\omega)$", labelpad=1.5)
     if xlabels:
         axL.set_xlabel(r"$\omega$", labelpad=1)
     if show_dens_legend:
-        axL.legend(loc="upper right", fontsize=5.2)
+        axL.legend(loc="upper left", fontsize=5.2)
 
     # right: R(t) comparison
     axR.plot(d["t"], d["R_micro"][0], color=C_MICRO, lw=1.0, ls="--", label="microscopic")
@@ -144,7 +145,7 @@ def _example_panels(fig, axL, axR, d, dl, show_dens_legend, show_R_legend,
     if not R_yticklabels:
         axR.set_yticklabels([])
     if ylabel_R:
-        axR.set_ylabel(r"$R(t)$")
+        axR.set_ylabel(r"$R(t)$", labelpad=1.5)
     if xlabels:
         axR.set_xlabel(r"time $t$", labelpad=1)
     if show_R_legend:
@@ -185,28 +186,33 @@ def make_figure(regime):
     ax_neq.set_yscale("log")
     ax_neq.set_ylabel("# mean-field eqs.")
 
-    # legends: colours (model) on (a), line styles (N) on (b)
+    # both legends live on (b): line styles (N) upper-left, colours (model) lower-right
     model_handles = [Line2D([], [], color=C_SKARDAL, lw=1.2, label="Skardal"),
                      Line2D([], [], color=C_ENS, lw=1.2, label="LMMF")]
-    ax_rmse.legend(handles=model_handles, loc="lower left", fontsize=5.8, handlelength=1.6)
     N_handles = [Line2D([], [], color="0.35", lw=1.0, ls=N_STYLE.get(int(N), "-"),
                         label=rf"$N={int(N)}$") for N in Ns]
-    ax_neq.legend(handles=N_handles, loc="upper left", fontsize=5.8, handlelength=1.9)
+    N_leg = ax_neq.legend(handles=N_handles, loc="upper left", fontsize=5.8, handlelength=1.9)
+    ax_neq.add_artist(N_leg)                                    # keep both legends on the same axes
+    ax_neq.legend(handles=model_handles, loc="lower right", fontsize=5.8, handlelength=1.6)
     _panel_label(ax_rmse, "a")
     _panel_label(ax_neq, "b")
 
     # ── COLUMNS 2–5: 2×2 examples, rows = n (EXAMPLE_n), column pairs = N (EXAMPLE_N) ──
+    # the density panels have no y-ticks, so we slide them left into that white space to open up
+    # room for each R(t) y-axis label (which otherwise bleeds into the density panel to its left).
+    DENS_SHIFT = 0.01
     for r, n in enumerate(EXAMPLE_n):
         for c, N in enumerate(EXAMPLE_N):
             d, dl = _sweep_npz(n, regime, N), _lmmf_npz(n, regime, N)
             axL = fig.add_subplot(gs[r, 1 + 2 * c])
             axR = fig.add_subplot(gs[r, 2 + 2 * c])
-            first = (r == 0 and c == 0)
+            p = axL.get_position()
+            axL.set_position([p.x0 - DENS_SHIFT, p.y0, p.width, p.height])
+            legend_here = (r == len(EXAMPLE_n) - 1 and c == 0)    # bottom-left example = panel (d)
             M = _example_panels(fig, axL, axR, d, dl,
-                                 show_dens_legend=first, show_R_legend=first,
+                                 show_dens_legend=legend_here, show_R_legend=legend_here,
                                  xlabels=(r == len(EXAMPLE_n) - 1),
-                                 ylabel_dens=True, ylabel_R=(c == 0),
-                                 R_yticklabels=(c == 0))
+                                 ylabel_dens=True, ylabel_R=True, R_yticklabels=True)
             # centred example title over the (density, R) pair + bold panel label on axL
             # (letters increment by row first, then by column: c/d down the left pair, e/f down the right)
             pL, pR = axL.get_position(), axR.get_position()
