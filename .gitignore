@@ -1,0 +1,41 @@
+__pycache__/
+*.py[cod]
+.idea/
+.ipynb_checkpoints/
+
+# generated figures
+*.png
+*.pdf
+*.svg
+*.eps
+
+# generated data
+*.npz
+*.npy
+*.pkl
+*.h5
+*.hdf5
+*.csv
+*.txt
+
+# Auto-07p / PyCoBi build + continuation artefacts
+*.o
+*.so
+*.exe
+*.mod
+fort.*
+b.*
+s.*
+d.*
+*_seed.dat
+# ... and the ones PyCoBi generates inside bifurcation_analysis/ (the c.* files under
+# config/ are hand-written and stay tracked)
+bifurcation_analysis/system_equations.*
+bifurcation_analysis/c.*
+bifurcation_analysis/*.dat
+bifurcation_analysis/kmo_cycle_test
+pyrates_run.py
+
+# Allen Cell Types Database cache (re-downloaded on demand)
+LMMF/cell_types/
+cell_types/
