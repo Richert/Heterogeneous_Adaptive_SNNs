@@ -23,6 +23,12 @@ Requirements:
 First run downloads metadata into ./cell_types/ and caches it for reuse.
 """
 
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt

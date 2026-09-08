@@ -2,7 +2,7 @@ r"""
 Skardal-model benchmark — extensive parameter sweep (micro + Skardal mean field)
 ================================================================================
 
-Extended version of theory/skardal_benchmark_simulate.py for the improved Fig. 2 of the
+Extended version of LMMF/skardal_benchmark_simulate.py for the improved Fig. 2 of the
 LMMF manuscript. For the family of RATIONAL frequency distributions (Skardal, Phys. Rev.
 E 98, 022207 (2018), Eq. 14),
 
@@ -32,6 +32,13 @@ Output (resumable — existing per-combo files are skipped unless overwrite=True
 Run in the ``pycobi`` conda env (dev PyRates 1.2.x):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python skardal_benchmark_sweep.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import sys
 import time
@@ -39,9 +46,6 @@ import time
 import numpy as np
 import pandas as pd
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)                                   # grid_search: KFS.simulate_micro
-sys.path.insert(0, os.path.join(_HERE, "..", "theory"))     # skardal_benchmark_simulate
 import kmo_lorentzian_fit_sweep as KFS                       # reuse simulate_micro (PyRates net)
 import skardal_benchmark_simulate as SK                      # reuse gn_density/sample_gn/simulate_skardal
 
@@ -63,7 +67,7 @@ CONFIG = dict(
     T=100.0, dt=1e-2, dts=0.1, rtol=1e-6, atol=1e-8,
     base_seed=1,                              # per-trial seeds spawned from this
     overwrite=False,                          # if False, skip (n, regime, N) with an existing npz
-    out_dir="/home/rgast/data/mpmf_simulations/skardal_sweep",
+    out_dir=dp.mpmf("skardal_sweep"),
     out_stem="skardal_sweep",
 )
 

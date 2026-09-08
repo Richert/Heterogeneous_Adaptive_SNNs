@@ -15,38 +15,34 @@ Loads the microscopic ramp data (weight_variance_ramp_micro.npz) and the mean-fi
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python weight_variance_ramp_figure.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 import weight_variance_bifurcation as B                            # analytic fixed-point branches
 
-MICRO_NPZ = "/home/rgast/data/kmo_adaptive/weight_variance_ramp_micro.npz"
-MF_NPZ = "/home/rgast/data/kmo_adaptive/weight_variance_ramp_meanfield.npz"
-OUT = "/home/rgast/data/kmo_adaptive/weight_variance_ramp"
+MICRO_NPZ = dp.kmo_adaptive("weight_variance_ramp_micro.npz")
+MF_NPZ = dp.kmo_adaptive("weight_variance_ramp_meanfield.npz")
+OUT = dp.kmo_adaptive("weight_variance_ramp")
 
 C_MICRO, C_MF, C_ASYNC, C_SYNC, C_VC = "0.2", "#c1121f", "0.55", "#1f77b4", "#2a9d8f"
 DIRS = [(0, "fwd", "forward"), (1, "bwd", "backward")]
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif", "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
-        "legend.fontsize": 5.2, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 1.8, "ytick.major.size": 1.8,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl",
+                                 **{"legend.fontsize": 5.2})
 
 
-def _panel_label(ax, letter, dx=-26, dy=3):
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(dx, dy),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-26, dy=3)
 
 
 def plot_R_bifurcation(ax, mu, g, delta, k_min, k_max, Ks_ramp, Rp_m):

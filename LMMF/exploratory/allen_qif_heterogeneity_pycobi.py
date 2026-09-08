@@ -13,14 +13,18 @@ I = I_fix (per layer); bifurcation parameter = h_Delta (Auto param `hD`), swept 
 Run in the ``pycobi`` conda env (Auto-07p):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python allen_qif_heterogeneity_pycobi.py [cell_class] [layer]
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
 import allen_qif_bifurcation as B          # reuse build_circuit (hD/hC params), load_fit, helpers
 from pycobi import ODESystem
 

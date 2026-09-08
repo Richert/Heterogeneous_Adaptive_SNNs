@@ -5,7 +5,7 @@ Kuramoto micro vs. Lorentzian-ensemble mean-field — fit-quality sweep
 Compares the average-phase-coherence dynamics R(t) = |(1/N) Σ_j e^{iθ_j}| of a
 globally coupled Kuramoto network with the ensemble Ott–Antonsen mean field, where
 the ensembles are obtained by fitting the empirical oscillator-frequency
-distribution with a weighted mixture of Lorentzians (theory/lorentzian_mixture.py).
+distribution with a weighted mixture of Lorentzians (shared/lorentzian_mixture.py).
 
 Both models are defined as **vector-based PyRates networks** and integrated with
 scipy.integrate.solve_ivp. The global (all-to-all) coupling is realized with PyRates
@@ -39,13 +39,19 @@ Run in the ``pycobi`` conda env (dev PyRates 1.2.2: PopulationTemplate/Connectiv
 the scalar-weight global-coupling reduction; scipy + pandas):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_lorentzian_fit_sweep.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import sys
 import numpy as np
 import pandas as pd
 from scipy.integrate import solve_ivp
 from pyrates import OperatorTemplate, NodeTemplate, CircuitTemplate, clear, PopulationTemplate, Connectivity
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "theory")))
 import lorentzian_mixture as LM
 
 # shared Kuramoto / OA equation templates (config/kuramoto.yaml)
@@ -88,7 +94,7 @@ CONFIG = dict(
     M_max_sweep=[1, 2, 4, 8, 16],
     # misc
     seed=1,
-    out_csv="/home/rgast/data/mpmf_simulations/kmo_lorentzian_sweep.csv",
+    out_csv=dp.mpmf("kmo_lorentzian_sweep.csv"),
 )
 
 

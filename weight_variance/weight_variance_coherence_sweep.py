@@ -19,6 +19,13 @@ scale-free weight statistics V_A/Ā² and C_A/Ā² against the phase coherence R
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python weight_variance_coherence_sweep.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import numpy as np
 
@@ -28,7 +35,7 @@ CONFIG = dict(
     mu_min=0.001, mu_max=0.01, n_mu=3, mu_log=True,  # μ sweep (log by default)
     window=500.0, T_total=5000.0,                   # averaging window; total sim time
     N=500, dt=0.05, dts=1.0, sigma0=0.3, seed=1,     # coherent IC θ_i(0) ~ N(0, sigma0)
-    out_dir="/home/rgast/data/kmo_adaptive",
+    out_dir=dp.KMO_ADAPTIVE,
     out_name="weight_variance_coherence_sweep.npz",
 )
 

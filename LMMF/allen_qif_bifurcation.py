@@ -3,9 +3,9 @@ Bifurcation analysis of the Allen-fitted QIF threshold-heterogeneity mean field
 ================================================================================
 
 Loads the Lorentzian-mixture fit of the Allen excitability gap v_θ − v_r
-(``data_fitting/allen_lorentzian_fit.py``) and runs a PyCoBi/Auto-07p bifurcation
+(``LMMF/allen_lorentzian_fit.py``) and runs a PyCoBi/Auto-07p bifurcation
 analysis of the Gast-Solla-Kennedy 2023 mean field (b=κ=0 ⇒ QIF, C=k=1, additive
-current Js; see ``qif_simulations/allen_qif_meanfield.py``). For each Lorentzian
+current Js; see ``LMMF/allen_qif_meanfield.py``). For each Lorentzian
 component m (weight w_m, centre Ω_m, width Δ_m → mean threshold v̄_{θ,m}=v_r+Ω_m):
 
     ṙ_m = (Δ_m/π)(v_m − v_r) + r_m (2 v_m − v_r − v̄_{θ,m})
@@ -25,6 +25,12 @@ Pipeline:
 Run in the ``pycobi`` (or ``allen``) conda env with Auto-07p / meson on PATH:
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python allen_qif_bifurcation.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 
@@ -35,7 +41,6 @@ from matplotlib.lines import Line2D
 from pyrates import OperatorTemplate, NodeTemplate, CircuitTemplate, clear
 from pycobi import ODESystem
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
 AUTO_DIR = "~/PycharmProjects/auto-07p"
 
 C_EQ = "#1F77B4"
@@ -126,7 +131,7 @@ def build_circuit(M, omega, delta, weights, v_r, tau_s, J0, I0, r0, v0,
 #  helpers
 # ═════════════════════════════════════════════════════════════════════════════
 def _tag(cell_class, layer):
-    """Filename tag matching data_fitting/allen_lorentzian_fit.py (e.g. 'pyramidal_L23')."""
+    """Filename tag matching LMMF/allen_lorentzian_fit.py (e.g. 'pyramidal_L23')."""
     c = cell_class.split("+")[0].split()[0].lower()       # Pyramidal→pyramidal, PV+ int→pv
     return f"{c}_{layer.replace('/', '').replace(' ', '')}"
 
@@ -250,7 +255,7 @@ def add_markers(ax, sols, label, marker, xname, yname, color):
 def main():
     cfg = CONFIG
     tag = _tag(cfg["cell_class"], cfg["layer"])
-    fit_npz = os.path.join(_HERE, "..", "data_fitting", f"allen_lorentzian_{tag}.npz")
+    fit_npz = os.path.join(_HERE, f"allen_lorentzian_{tag}.npz")
     out_stem = os.path.join(_HERE, f"allen_qif_bifurcation_{tag}")
     w, Omega, Delta, M = load_fit(fit_npz)
     v_r = cfg["v_r"]

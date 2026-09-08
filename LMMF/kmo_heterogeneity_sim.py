@@ -20,6 +20,13 @@ Modes (CLI):
 Run in the ``pycobi`` conda env (dev PyRates 1.2.2 + scipy):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_heterogeneity_sim.py fit
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import sys
 
@@ -27,11 +34,9 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from pyrates import NodeTemplate, CircuitTemplate, PopulationTemplate, Connectivity, clear
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
 import kmo_lorentzian_fit_sweep as KFS          # _op, _var_slice, sample_gaussian_mixture, LM
 
-OUT_DIR = "/home/rgast/data/mpmf_simulations"
+OUT_DIR = dp.MPMF
 FIT_NPZ = os.path.join(OUT_DIR, "kmo_het_fit.npz")
 RATE_NPZ = os.path.join(OUT_DIR, "kmo_het_rate.npz")
 ENV_NPZ = os.path.join(OUT_DIR, "kmo_het_envelope.npz")

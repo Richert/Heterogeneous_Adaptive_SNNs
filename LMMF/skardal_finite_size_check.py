@@ -16,13 +16,16 @@ Decisive test: increase N. If the deviation is finite-size, micro(N) -> Skardal 
 We report ‖R_micro − R_Skardal‖ vs N, and the empirical density mismatch at ω=0 (which sets
 the effective K_c).  Run in the ``pycobi`` env.
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 import numpy as np
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
-sys.path.insert(0, os.path.join(_HERE, "..", "grid_search"))
 import kmo_lorentzian_fit_sweep as KFS
 import skardal_benchmark_simulate as SK
 

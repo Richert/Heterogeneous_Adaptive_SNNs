@@ -25,6 +25,13 @@ part only), and the async branch (R = 0), with line style encoding stability.
 
     python bifurcation_R.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+from prl_style import set_prl_style
+# ---------------------------------------------------------------------------
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -69,20 +76,6 @@ def thresholds(mu, g, K):
 
 
 # ── plotting ─────────────────────────────────────────────────────────────────
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
-        "legend.fontsize": 6, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 1.8, "ytick.major.size": 1.8,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
 
 
 def make_figure():

@@ -29,6 +29,13 @@ the off-diagonal weights only (self-coupling A_ii is spurious in the mean-field 
 Run in the ``pycobi`` conda env (dev PyRates 1.2.2 + scipy + pandas):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_adaptive_single_sweep.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import numpy as np
 import pandas as pd
@@ -72,7 +79,7 @@ CONFIG = dict(
     # storage
     save_res=100,                  # block-average the final A matrix / ω axis to this size
     seed=1,
-    out_csv="/home/richard/data/mpmf_simulations/kmo_adaptive_single_sweep.csv",
+    out_csv=dp.mpmf("kmo_adaptive_single_sweep.csv"),
 )
 
 
@@ -108,9 +115,10 @@ def delta_sweep_for(mu, K, gamma, n, frac_hi):
     The branch ends either at the saddle-node Δ_SN = K(γ+μ)²/(8μγ) (physical only for
     μ>γ) or, for μ≤γ, at the transcritical point Δ = K/2 where R→0; we sweep up to
     `frac_hi`× that endpoint so the sweep also captures the collapse onto the async state."""
-    dSN = K * (gamma + mu) ** 2 / (8.0 * mu * gamma)
-    d_end = dSN if mu > gamma else min(dSN, K / 2.0)
-    return np.linspace(0.02 * K, frac_hi * d_end, n)
+    # dSN = K * (gamma + mu) ** 2 / (8.0 * mu * gamma)
+    # d_end = dSN if mu > gamma else min(dSN, K / 2.0)
+    # return np.linspace(0.02 * K, frac_hi * d_end, n)
+    return np.asarray([0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00]) * K
 
 
 _RUN_ID = 0

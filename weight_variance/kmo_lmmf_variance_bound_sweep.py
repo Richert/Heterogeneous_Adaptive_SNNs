@@ -21,7 +21,7 @@ So the control knob is a budget `rv_max` on the predicted per-ensemble V_A/Ā².
 budget we invert the closed-form relative-variance curve rv(Δ) (weight_variance_analysis,
 synchronized branch, manuscript Eqs. 32/37) to the ensemble width Δ_max whose predicted
 V_A/Ā² equals the budget (first crossing of the inverted-U). The Lorentzian-mixture fit
-(theory/lorentzian_mixture) then tiles the uniform distribution with ensembles of width
+(shared/lorentzian_mixture) then tiles the uniform distribution with ensembles of width
 Δ_m = Δ_max (widths *pinned* at the budget, cf. `pin_widths`; the fit still selects the
 number of ensembles M and their centres/weights by penalized goodness-of-fit). A smaller
 budget ⇒ narrower Δ_max ⇒ more ensembles M* ⇒ the LMMF captures more of the true weight
@@ -61,6 +61,13 @@ The micro run depends only on (trial, μ, rule) — not on rv_max — so it is s
 Run in the ``pycobi`` conda env (dev PyRates 1.2.2 + scipy + pandas):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_lmmf_variance_bound_sweep.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import sys
 import numpy as np
@@ -70,7 +77,6 @@ from scipy.integrate import solve_ivp
 # microscopic adaptive Kuramoto + shared helpers (weight-variance convention)
 from kmo_adaptive_single_sweep import simulate_micro, block_average, block_average_1d
 # closed-form relative-variance curve rv(Δ) and Lorentzian-mixture fit
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "theory")))
 import weight_variance_analysis as WVA
 import lorentzian_mixture as LM
 
@@ -94,7 +100,7 @@ CONFIG = dict(
     # ⇒ narrower Δ_max ⇒ more ensembles). Each maps to Δ_max via the cos-rule rv(Δ) inversion;
     # for a=1.0, K=1.2 these give M*≈2,3,5,9,10 (see delta_max_for + `pin_widths`).
     rv_bounds=[0.08, 0.04, 0.02, 0.01, 0.005],
-    # Lorentzian-mixture fit (theory/lorentzian_mixture.fit)
+    # Lorentzian-mixture fit (shared/lorentzian_mixture.fit)
     pin_widths=True,                # pin every ensemble width at Δ_max (the budget); False =>
                                     # (delta_min, Δ_max) upper bound only (degenerate: the CvM
                                     # fit then picks narrow widths and M* stops tracking Δ_max)
@@ -109,7 +115,7 @@ CONFIG = dict(
     # storage
     save_res=100,                   # block-average the final A matrix / ω axis to this size
     seed=1,
-    out_csv="/home/rgast/data/mpmf_simulations/kmo_lmmf_variance_bound_sweep.csv",
+    out_csv=dp.mpmf("kmo_lmmf_variance_bound_sweep.csv"),
 )
 
 
@@ -159,9 +165,10 @@ def _lmmf_rhs(t, y, M, w, Om, De, K, mu, gamma, rule, ntrunc, c0, c1, coef):
     return out
 
 
-def simulate_lmmf(w, Om, De, K, mu, gamma, rule, R0, A0, cfg):
+def simulate_lmmf(w, Om, De, K, mu, gamma, rule, R0, A0, cfg, return_final_A=False):
     """Integrate the M-ensemble adaptive LMMF from a coherent IC (z_m(0)=R0, Ā_{ml}(0)=A0).
-    Returns (t, R(t), Ā(t), V_A(t)) with Ā = wᵀĀw and V_A = wᵀ(Ā∘Ā)w − Ā² (between-block)."""
+    Returns (t, R(t), Ā(t), V_A(t)) with Ā = wᵀĀw and V_A = wᵀ(Ā∘Ā)w − Ā² (between-block).
+    With `return_final_A`, also returns the final M×M mean-coupling matrix Ā_{ml}(T)."""
     M = w.size
     c0, c1 = 2.0 / np.pi, 4.0 / np.pi
     coef = np.array([1.0 / (4 * n * n - 1) for n in range(1, cfg["n_trunc"] + 1)])
@@ -176,6 +183,8 @@ def simulate_lmmf(w, Om, De, K, mu, gamma, rule, R0, A0, cfg):
     R = np.abs(w @ z)                                        # |Σ_m w_m z_m|
     Abar = np.einsum("m,mlk,l->k", w, Ab, w)                 # wᵀĀw
     VA = np.einsum("m,mlk,l->k", w, Ab ** 2, w) - Abar ** 2  # between-block variance
+    if return_final_A:
+        return t_eval, R, Abar, VA, Ab[:, :, -1]
     return t_eval, R, Abar, VA
 
 

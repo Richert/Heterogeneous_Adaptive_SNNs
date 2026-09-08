@@ -5,6 +5,13 @@ acceptance level alpha (which sets M via the greedy CvM early-stopping criterion
 the smallest M with 1-p < alpha, so SMALLER alpha => better fit => more components).
 Same plotting style as lorentzian_mixture_demo.py.
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -49,5 +56,5 @@ for i, dbounds in enumerate(delta_choices):
 
 fig.suptitle(r"Gaussian-mixture samples fit by Lorentzian mixtures (Eq. 5)",
              fontsize=10)
-fig.savefig("/home/rgast/data/mpmf_simulations/gaussian_mixture_demo.png", dpi=200)
+fig.savefig(dp.mpmf("gaussian_mixture_demo.png"), dpi=200)
 print("saved figure")

@@ -10,7 +10,7 @@ adaptively-coupled Kuramoto network at a single adaptation rate μ, showing:
         for each rule.
 
 The microscopic model is the all-to-all adaptive network of the weight-variance study
-(``grid_search/kmo_lmmf_variance_bound_sweep.py``), reused verbatim via its CONFIG and
+(``weight_variance/kmo_lmmf_variance_bound_sweep.py``), reused verbatim via its CONFIG and
 ``simulate_micro`` (uniform natural frequencies ω ~ U(±a), Ȧ_ij = μ G_A(θ_j−θ_i) + γ(1−A_ij)).
 Only the microscopic model is shown here, and it does not depend on the LMMF variance
 budget, so the three runs are computed directly (and cached) rather than read from the
@@ -19,6 +19,15 @@ budget, so the three runs are computed directly (and cached) rather than read fr
 Run in the ``pycobi`` conda env (needs PyRates for ``simulate_micro``):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_adaptive_rules_figure.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+from prl_style import set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import os
 import sys
 import numpy as np
@@ -26,14 +35,13 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 # reuse the sweep's config + microscopic simulator (weight-variance convention)
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "grid_search")))
 import kmo_lmmf_variance_bound_sweep as SW
 from kmo_adaptive_single_sweep import simulate_micro, block_average
 
 MU = 0.001                       # adaptation rate to plot
 TRIAL = 0                        # random realization (matches the sweep's per-trial RNG)
 RULES = ["cos", "sin", "|sin|"]
-OUT = "/home/rgast/data/mpmf_simulations/kmo_adaptive_rules_mu{mu:g}"
+OUT = dp.mpmf("kmo_adaptive_rules_mu{mu:g}")
 FORCE = False                    # True => recompute even if the cache exists
 
 # rule -> colour (coherence overlay) and filename-safe tag
@@ -42,25 +50,9 @@ LBL = {"cos": r"\cos", "sin": r"\sin", "|sin|": r"|\sin|"}   # math body (no $ d
 MATRIX_CMAP = "magma"
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
-        "legend.fontsize": 6, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 1.8, "ytick.major.size": 1.8,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
 
 
-def _panel_label(ax, letter, dx=-6, dy=3):
-    ax.annotate(rf"$\bf({letter})$", xy=(0, 1), xycoords="axes fraction", xytext=(dx, dy),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-6, dy=3)
 
 
 # ════════════════════════════════════════════════════════════════════════════

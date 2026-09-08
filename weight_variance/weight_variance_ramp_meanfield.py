@@ -15,6 +15,12 @@ coherence + parameters) for the plotting scripts (scale-free ratios V_A/Ā², C_
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python weight_variance_ramp_meanfield.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import numpy as np
 from scipy.integrate import solve_ivp

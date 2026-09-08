@@ -7,8 +7,8 @@ produced by skardal_benchmark_sweep.py and, for EACH TRIAL of EACH parameter com
 (n, coupling regime, N), performs the Lorentzian-mixture-mean-field (LMMF) benchmark:
 
     1. fit a weighted Lorentzian mixture to that trial's frequency samples ω_i with the
-       greedy penalized-CvM algorithm (theory/lorentzian_mixture.py) — same fit settings as
-       the original theory/skardal_benchmark_figure.py (FIT below),
+       greedy penalized-CvM algorithm (shared/lorentzian_mixture.py) — same fit settings as
+       the original LMMF/skardal_benchmark_figure.py (FIT below),
     2. simulate the multi-ensemble Ott–Antonsen model built from that mixture
        (KFS.simulate_ensemble, PyRates+solve_ivp) from the SAME coherent initial condition
        R(0)=R0 as the microscopic run for that trial,
@@ -32,6 +32,12 @@ re-run to pick up combos finished since the last run.
 Run in the ``pycobi`` conda env (dev PyRates 1.2.x):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python skardal_benchmark_lmmf.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import re
 import sys
@@ -40,8 +46,6 @@ import time
 import numpy as np
 import pandas as pd
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
 import kmo_lorentzian_fit_sweep as KFS                       # KFS.LM.fit + KFS.simulate_ensemble
 import skardal_benchmark_sweep as SWEEP                      # reuse out_dir/out_stem + _rmse
 
@@ -53,7 +57,7 @@ CONFIG = dict(
     in_dir=SWEEP.CONFIG["out_dir"],          # read the sweep .npz files from here
     in_stem=SWEEP.CONFIG["out_stem"],        # "skardal_sweep"
     overwrite=False,                         # if False, skip combos with an existing *_lmmf.npz
-    # Lorentzian-mixture fit settings (mirrors theory/skardal_benchmark_figure.py)
+    # Lorentzian-mixture fit settings (mirrors LMMF/skardal_benchmark_figure.py)
     FIT=dict(delta_bounds=(0.01, 1.5),       # width bounds on the ω-scale (g_n has spread Δ≈1)
              M_max=100, alpha=0.001, lambda_M=1e-6, patience=2,
              n_restarts=10, seed=1, loss="cvm", method="slsqp"),

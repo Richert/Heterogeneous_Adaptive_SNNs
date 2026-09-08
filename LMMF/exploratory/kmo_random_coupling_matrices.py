@@ -8,6 +8,13 @@ columns = c.  One shared colourbar per σ row (so the c-progression is comparabl
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_random_coupling_matrices.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -16,7 +23,7 @@ import kmo_random_coupling_sweep as S
 N = 50
 SEED = 1
 CMAP = "magma"
-OUT = "/home/rgast/data/mpmf_simulations/kmo_random_coupling_matrices"
+OUT = dp.mpmf("kmo_random_coupling_matrices")
 
 
 def main():

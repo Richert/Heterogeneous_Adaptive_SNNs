@@ -15,20 +15,24 @@ phase-coherence dynamics R(t) (micro vs. Skardal vs. best fit), integrated to T=
 Run in the ``pycobi`` conda env:
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python skardal_benchmark_supplement.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
-sys.path.insert(0, os.path.join(_HERE, "..", "grid_search"))
 import kmo_lorentzian_fit_sweep as KFS
 import skardal_benchmark_simulate as SK
 import skardal_benchmark_figure as FIG          # reuse PRL style, colours, fit hyper-parameters
 
-DATA_DIR = "/home/rgast/data/mpmf_simulations"
+DATA_DIR = dp.MPMF
 OUT = os.path.join(DATA_DIR, "skardal_benchmark_supplement")
 
 CONFIG = dict(

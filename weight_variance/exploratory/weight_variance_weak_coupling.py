@@ -8,6 +8,12 @@ IN ISOLATION, in the drift regime it is derived for:
   - regime Delta >> gamma, V(0) = 0
 It is NOT a test of the full closed-loop mean-field system (Eqs. 8-10 + 38).
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+# ---------------------------------------------------------------------------
 import numpy as np
 import matplotlib.pyplot as plt
 

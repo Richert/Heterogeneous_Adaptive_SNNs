@@ -14,12 +14,20 @@ throughout (L2/3 vs L5/6):
                                                        [allen_qif_bifurcation_<tag>.npz]
   row 3 : (spans both columns) the firing-rate dynamics overlaid: mean field (solid) and
           spiking network (dashed, reduced alpha) in the matching layer colour.
-                                                       [qif_simulations/allen_qif_meanfield_<tag>.npz]
+                                                       [LMMF/allen_qif_meanfield_<tag>.npz]
 
 Reads only the self-contained .npz files (numpy + matplotlib; no PyRates / PyCoBi / Auto):
 
     python allen_qif_figure.py "Pyramidal"        # or "PV+ interneuron", "SOM interneuron"
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import os
 import sys
 
@@ -27,9 +35,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_FIT_DIR = os.path.join(_HERE, "..", "data_fitting")
-_SIM_DIR = os.path.join(_HERE, "..", "qif_simulations")
+_FIT_DIR = os.path.join(_HERE, "..")
+_SIM_DIR = os.path.join(_HERE, "..")
 
 CELL_CLASS = sys.argv[1] if len(sys.argv) > 1 else "Pyramidal"
 LAYERS = ["L2/3", "L5/6"]
@@ -45,30 +52,15 @@ def _tag(cell_class, layer):
     return f"{c}_{layer.replace('/', '').replace(' ', '')}"
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7.5,
-        "legend.fontsize": 5.5, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 1.8, "ytick.major.size": 1.8,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl",
+                                 **{"axes.titlesize": 7.5, "legend.fontsize": 5.5})
 
 
 def _load(path):
     return np.load(path, allow_pickle=False) if os.path.exists(path) else None
 
 
-def _panel_label(ax, letter):
-    """PRL-style bold panel label in the top-left corner."""
-    ax.text(0.02, 0.97, f"({letter})", transform=ax.transAxes, ha="left", va="top",
-            fontsize=8, fontweight="bold")
+_panel_label = functools.partial(panel_label, dx=-16, dy=4)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -198,7 +190,7 @@ def main():
         tag = _tag(CELL_CLASS, layer)
         fit_by_layer[layer] = _load(os.path.join(_FIT_DIR, f"allen_lorentzian_{tag}.npz"))
         sim_by_layer[layer] = _load(os.path.join(_SIM_DIR, f"allen_qif_meanfield_{tag}.npz"))
-        bif_by_layer[layer] = _load(os.path.join(_HERE, f"allen_qif_bifurcation_{tag}.npz"))
+        bif_by_layer[layer] = _load(os.path.join(_HERE, "..", f"allen_qif_bifurcation_{tag}.npz"))
 
     panels = []
     # row 1: the two distribution fits side by side

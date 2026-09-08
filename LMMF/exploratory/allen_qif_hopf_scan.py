@@ -11,6 +11,12 @@ Pure numpy/scipy/matplotlib -> runs in any env (e.g. `allen`).
 
     python allen_qif_hopf_scan.py "PV+ Interneuron" "L2/3"
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 import numpy as np

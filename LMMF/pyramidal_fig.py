@@ -17,6 +17,14 @@ J=100, tau_s=0.5, width-heterogeneity (h_Delta) regime:
 Reads only self-contained .npz (numpy + matplotlib + scipy.ndimage):
     python pyramidal_fig.py            # in the ``allen`` env
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import os
 
 import numpy as np
@@ -24,9 +32,8 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.ndimage import gaussian_filter
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
 _FIT_DIR = os.path.join(_HERE, "..", "data_fitting")
-_SIM_DIR = os.path.join(_HERE, "..", "qif_simulations")
+_SIM_DIR = _HERE
 
 CELL_CLASS = "Pyramidal"
 LAYERS = ["L2/3", "L5/6"]
@@ -42,30 +49,15 @@ def _tag(cell_class, layer):
     return f"{c}_{layer.replace('/', '').replace(' ', '')}"
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7.5,
-        "legend.fontsize": 5.5, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 1.8, "ytick.major.size": 1.8,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl",
+                                 **{"axes.titlesize": 7.5, "legend.fontsize": 5.5})
 
 
 def _load(path):
     return np.load(path, allow_pickle=False) if os.path.exists(path) else None
 
 
-def _panel_label(ax, letter):
-    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner."""
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(-16, 5),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-16, dy=5)
 
 
 # ════════════════════════════════════════════════════════════════════════════

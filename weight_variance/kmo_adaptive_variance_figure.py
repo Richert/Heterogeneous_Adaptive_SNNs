@@ -7,7 +7,7 @@ two cases μ=γ and μ=10γ) and assembles the manuscript's first figure. Two co
 μ), three row-groups:
 
   (a,b) relative weight variance  V_A/Ā² vs Δ  — simulation markers + closed-form Eq. 37
-        (imported from theory/weight_variance_analysis.py so the overlay matches exactly).
+        (imported from weight_variance/weight_variance_analysis.py so the overlay matches exactly).
   (c,d) phase coherence R vs Δ — microscopic network (markers) vs the variance-free OA
         ensemble mean field (line): they agree for μ=γ and diverge badly for μ=10γ.
   (e–j) the final, frequency-sorted coupling matrix A at low / peak-variance / high Δ,
@@ -15,6 +15,15 @@ two cases μ=γ and μ=10γ) and assembles the manuscript's first figure. Two co
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_adaptive_variance_figure.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import os
 import sys
 import numpy as np
@@ -23,11 +32,10 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "theory")))
 from weight_variance_analysis import branches, S_order   # noqa: E402  (reuse Eq. 37 closed form)
 
-CSV = "/home/rgast/data/mpmf_simulations/kmo_adaptive_single_sweep.csv"
-OUT = "/home/rgast/data/mpmf_simulations/kmo_adaptive_variance"
+CSV = dp.mpmf("kmo_adaptive_single_sweep.csv")
+OUT = dp.mpmf("kmo_adaptive_variance")
 K, GAMMA = 1.0, 0.001
 TAIL_FRAC = 0.8                                           # steady state = last 20% of each trace
 # μ cases and adaptation rules are auto-detected from the CSV (mus_in / rules_in).
@@ -36,24 +44,11 @@ C_MIC, C_MF, C_VAR, C_REF = "#e63946", "#1f77b4", "#c1121f", "0.55"
 MAT_CMAP = "magma"
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif", "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
-        "legend.fontsize": 5.6, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 1.8, "ytick.major.size": 1.8,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl",
+                                 **{"legend.fontsize": 5.6})
 
 
-def _panel_label(ax, letter, dx=-24, dy=4):
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(dx, dy),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-24, dy=4)
 
 
 # ════════════════════════════════════════════════════════════════════════════

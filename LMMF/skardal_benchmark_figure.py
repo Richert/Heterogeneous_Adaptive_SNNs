@@ -5,7 +5,7 @@ Skardal-model benchmark — part 2: Lorentzian-mixture ensemble + comparison fig
 Loads the results written by skardal_benchmark_simulate.py (one .npz per exponent n),
 and for each n:
   1. fits a Lorentzian mixture to the saved frequency samples with the CvM algorithm
-     (theory/lorentzian_mixture.py) — this is the approach being benchmarked,
+     (shared/lorentzian_mixture.py) — this is the approach being benchmarked,
   2. simulates the multi-ensemble Ott–Antonsen model built from that mixture (same
      PyRates+solve_ivp ensemble model as kmo_lorentzian_fit_sweep), from the same
      coherent initial condition R(0)=R0,
@@ -21,6 +21,15 @@ NOTE: the plotting layout here is PROVISIONAL — to be refined per the user's s
 Run in the ``pycobi`` conda env:
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python skardal_benchmark_figure.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import os
 import sys
 
@@ -28,13 +37,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
-gs_path = os.path.join(_HERE, "..", "grid_search")
-sys.path.insert(0, gs_path)
 import kmo_lorentzian_fit_sweep as KFS          # reuse simulate_ensemble + LM (lorentzian_mixture)
 
-DATA_DIR = "/home/rgast/data/mpmf_simulations"
+DATA_DIR = dp.MPMF
 IN_STEM = "skardal_benchmark_n"
 OUT = os.path.join(DATA_DIR, "skardal_benchmark")
 
@@ -54,22 +59,11 @@ C_ENS = "#c1121f"
 C_COMP = "#2e6f95"
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif", "font.serif": ["STIXGeneral", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7.5, "axes.labelsize": 7.5, "axes.titlesize": 8,
-        "legend.fontsize": 6, "xtick.labelsize": 6.5, "ytick.labelsize": 6.5,
-        "axes.linewidth": 0.5, "xtick.direction": "in", "ytick.direction": "in",
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl_wide",
+                                 **{})
 
 
-def _panel_label(ax, letter):
-    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner."""
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(-14, 4),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-14, dy=4)
 
 
 def main():

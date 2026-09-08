@@ -10,6 +10,12 @@ run the spiking QIF network (forward Euler) and the Ott-Antonsen mean field (sol
     python pyramidal_fig_rate.py            # both layers
 Run in the ``allen`` conda env (PyRates PopulationTemplate + numba + scipy).
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 from time import perf_counter
@@ -18,8 +24,6 @@ import numpy as np
 from numba import njit
 from scipy.integrate import solve_ivp
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
 import allen_qif_meanfield as MF
 
 CELL_CLASS = "Pyramidal"

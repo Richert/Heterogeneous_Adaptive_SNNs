@@ -11,7 +11,7 @@ layer, this script
   2. builds the empirical distribution of the excitability gap v_θ − v_r (mV)
      (the depolarisation needed to fire; smaller ⇒ more excitable),
   3. fits a weighted sum of M Lorentzians to it with the Cramér–von Mises (CvM)
-     algorithm in ``theory/lorentzian_mixture.py`` (M selected by D + λ·M),
+     algorithm in ``shared/lorentzian_mixture.py`` (M selected by D + λ·M),
   4. saves the fitted mixture parameters (weights w_m, centres Ω_m, half-widths
      Δ_m) to ``<stem>.npz`` (+ a human-readable ``.txt``) so a downstream script
      can use them directly as the ensembles of an Ott–Antonsen mean-field network,
@@ -21,6 +21,12 @@ layer, this script
 Run in the ``allen`` conda env:
     PATH="$HOME/conda/envs/allen/bin:$PATH" python allen_lorentzian_fit.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 
@@ -31,9 +37,7 @@ import matplotlib.pyplot as plt
 from allensdk.core.cell_types_cache import CellTypesCache
 from allensdk.api.queries.cell_types_api import CellTypesApi
 
-# CvM Lorentzian-mixture fitter (theory/lorentzian_mixture.py)
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(_HERE, "..", "theory"))
+# CvM Lorentzian-mixture fitter (shared/lorentzian_mixture.py)
 import lorentzian_mixture as LM
 
 

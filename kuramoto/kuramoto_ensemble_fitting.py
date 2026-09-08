@@ -2,8 +2,8 @@
 Figure 1: Ensemble Mean-Field vs. Kuramoto Network with Multi-Modal Frequencies
 ================================================================================
 Compares the microscopic Kuramoto network to the OA mean-field for TWO ensemble
-decompositions, obtained with the shared LMMF fitter (theory/lorentzian_mixture.py,
-the same algorithm as grid_search/kmo_lorentzian_fit_sweep.py): a weighted mixture
+decompositions, obtained with the shared LMMF fitter (shared/lorentzian_mixture.py,
+the same algorithm as LMMF/kmo_lorentzian_fit_sweep.py): a weighted mixture
 of Lorentzians whose effective order M* is chosen by a penalized Cramér–von Mises
 search. The two decompositions differ in a PER-ENSEMBLE WEIGHT-VARIANCE BUDGET: a
 maximum allowed V_A/Ā² per ensemble, translated (Eq. 37 of the weight-variance
@@ -49,10 +49,11 @@ from scipy.integrate import solve_ivp
 from scipy.stats import cauchy, norm
 
 # the shared LMMF fitter (weighted-Lorentzian mixture with penalized CvM order selection),
-# the same algorithm used by grid_search/kmo_lorentzian_fit_sweep.py; and the closed-form
+# the same algorithm used by LMMF/kmo_lorentzian_fit_sweep.py; and the closed-form
 # weight-variance relation V_A/Ā²(Δ) (Eq. 37) used to turn a per-ensemble variance budget
 # into an upper bound on the ensemble width Δ.
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "theory")))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [os.path.join(_HERE, "..", "shared"), os.path.join(_HERE, "..", "weight_variance")]
 import lorentzian_mixture as LM
 import weight_variance_analysis as WV
 
@@ -136,7 +137,7 @@ def phases_for_coherence(N, R0, rng):
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. Weighted-Lorentzian mixture fit via the shared LMMF algorithm
-#    (theory/lorentzian_mixture.py — penalized Cramér–von Mises order selection)
+#    (shared/lorentzian_mixture.py — penalized Cramér–von Mises order selection)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def cauchy_mixture_pdf(x, params):
@@ -698,7 +699,7 @@ if __name__ == "__main__":
         R0       = 0.9,     # initial phase coherence R(0) (0 = incoherent/uniform, →1 = aligned)
         A0_mean  = 1.0,     # mean initial coupling weight  A_ij(0) ~ N(A0_mean, A0_std²)
         A0_std   = 0.0,     # std  of initial coupling weight (0 = uniform A_ij(0)=A0_mean)
-        # shared LMMF settings (same algorithm as grid_search/kmo_lorentzian_fit_sweep.py);
+        # shared LMMF settings (same algorithm as LMMF/kmo_lorentzian_fit_sweep.py);
         # M_max / lambda_M are now FIXED — the variance budget is what varies the decomposition.
         delta_min    = 1e-4,
         M_max        = 20,         # generous cap; the Δ budget sets the granularity

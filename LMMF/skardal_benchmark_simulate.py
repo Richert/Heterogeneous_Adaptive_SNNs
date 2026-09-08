@@ -27,16 +27,19 @@ simulates the ensemble model, and plots the three-way comparison.
 Run in the ``pycobi`` conda env (dev PyRates 1.2.x):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python skardal_benchmark_simulate.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import sys
 
 import numpy as np
 from scipy.integrate import solve_ivp
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
-gs_path = os.path.join(_HERE, "..", "grid_search")
-sys.path.insert(0, gs_path)
 import kmo_lorentzian_fit_sweep as KFS          # reuse simulate_micro (PyRates Kuramoto net)
 
 
@@ -52,7 +55,7 @@ CONFIG = dict(
     # integration (shared by micro / Skardal / ensemble; solve_ivp RK45)
     T=40.0, dt=1e-2, dts=0.1, rtol=1e-6, atol=1e-8,
     seed=1,
-    out_dir="/home/rgast/data/mpmf_simulations",
+    out_dir=dp.MPMF,
     out_stem="skardal_benchmark_n",            # -> <out_dir>/skardal_benchmark_n<n>.npz
 )
 

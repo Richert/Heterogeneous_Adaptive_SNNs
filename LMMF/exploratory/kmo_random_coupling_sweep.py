@@ -33,6 +33,13 @@ and each MF R(t), reported as mean ± std over trials.  Output: one tidy CSV by 
 Run in the ``pycobi`` conda env (dev PyRates 1.2.2 + scipy + pandas):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_random_coupling_sweep.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import numpy as np
 import pandas as pd
@@ -64,7 +71,7 @@ CONFIG = dict(
     # storage
     save_res=50,                    # block-average the (example) coupling matrix to this size
     seed=1,
-    out_csv="/home/richard/data/mpmf_simulations/kmo_random_coupling_sweep.csv",
+    out_csv=dp.mpmf("kmo_random_coupling_sweep.csv"),
 )
 
 

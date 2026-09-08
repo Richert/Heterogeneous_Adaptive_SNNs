@@ -15,6 +15,13 @@ plotting script.  NB: this is a heavy one-time run (one N×N micro sim per (K, �
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python weight_variance_VA_sweep.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import numpy as np
 from scipy.integrate import solve_ivp
@@ -22,12 +29,12 @@ from scipy.integrate import solve_ivp
 import weight_variance_meanfield as W          # reuse simulate_micro + order_parameter_S (+ S table)
 
 CONFIG = dict(
-    delta=1.0, gamma=0.001,                     # fixed
-    mus=[0.001, 0.003, 0.01],                   # one sweep per μ
+    delta=1.0, gamma=0.01,                     # fixed
+    mus=[0.005, 0.01, 0.02, 0.04],                   # one sweep per μ
     k_min=1.0, k_max=4.0, n_k=15,               # densely sampled global coupling K
     # microscopic network + integration (per (K, μ))
     N=500, T=5000.0, dt=0.05, dts=1.0, sigma0=0.3, seed=1,
-    out_dir="/home/rgast/data/kmo_adaptive",    # ("/home/data/kmo_adaptive" → /home/rgast/data/...)
+    out_dir=dp.KMO_ADAPTIVE,    # override the root via $HASNN_DATA (see shared/data_paths.py)
     out_name="weight_variance_VA_sweep.npz",
 )
 

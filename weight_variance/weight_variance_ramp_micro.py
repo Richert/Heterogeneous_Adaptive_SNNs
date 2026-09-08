@@ -16,6 +16,13 @@ shared parameters and helpers from here).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python weight_variance_ramp_micro.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import numpy as np
 
@@ -26,7 +33,7 @@ CONFIG = dict(
     k_min=0.3, k_max=3.0,              # K-range for the analytic branches (figures only)
     tau_d=5000.0,                      # dwell time per K step (≳ 1/γ for quasi-static tracking)
     N=500, dt=0.05, dts=2.0, meas_frac=0.3, seed=22,
-    out_dir="/home/rgast/data/kmo_adaptive",
+    out_dir=dp.KMO_ADAPTIVE,
     out_name="weight_variance_ramp_micro.npz",
 )
 

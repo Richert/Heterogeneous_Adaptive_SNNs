@@ -11,13 +11,17 @@ ONE LAYER PER PROCESS (two ODESystems collide on shared continuation names):
     python pv_heta_check.py "PV+ Interneuron" "L5/6"
 Run in the ``pycobi`` conda env.
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 
 import numpy as np
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
 import allen_qif_bifurcation as B
 from pycobi import ODESystem
 

@@ -6,23 +6,30 @@ Loads the sweep produced by skardal_benchmark_sweep.py + the LMMF fits produced 
 skardal_benchmark_lmmf.py, and assembles a single-column PRL figure for ONE coupling
 regime (subcritical / critical / supercritical). Run once, it writes all three figures.
 
-Layout (two column, 5 columns × 2 rows):
-  * COLUMN 1 (both rows) — two line plots vs the exponent n (trial-averaged):
-      (a) RMSE of the AMPLITUDE SPECTRUM |FFT{R(t)}| between mean field and microscopic
+Layout (single column, 5 rows × 2 columns):
+  * ROW 1 — two line plots vs the exponent n (trial-averaged):
+      (a) number of mean-field equations,
+      (b) RMSE of the AMPLITUDE SPECTRUM |FFT{R(t)}| between mean field and microscopic
           network (frequency-content mismatch; phase-insensitive — raw-trace RMSE would be
-          Parseval-equivalent to the complex-FFT RMSE, so the magnitude spectrum is used),
-      (b) number of mean-field equations.
+          Parseval-equivalent to the complex-FFT RMSE, so the magnitude spectrum is used).
     Two COLOURS distinguish the two reductions (Skardal vs. LMMF); LINE STYLE encodes N.
     (Skardal's dimension is exactly n, independent of N, so it is drawn once as a reference.)
-  * COLUMNS 2–5 (both rows) — four representative examples arranged as a 2×2 grid organised by
-    n (rows) × N (column pairs), each example in the identical style as the original Fig. 2:
-    LEFT the frequency density (histogram + fitted Lorentzian mixture + analytic g_n),
-    RIGHT the R(t) comparison micro / Skardal / best fit.
+  * ROWS 2–5 (shorter than row 1) — four representative examples, one per row, in the identical
+    style as the original Fig. 2: LEFT the frequency density (histogram + fitted Lorentzian
+    mixture + analytic g_n), RIGHT the R(t) comparison micro / Skardal / best fit.
 
 Run in the ``pycobi`` conda env:
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python skardal_benchmark_sweep_figure.py
     # optional: restrict to one regime -> python skardal_benchmark_sweep_figure.py critical
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import os
 import sys
 
@@ -31,8 +38,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
 import skardal_benchmark_lmmf as LMMF                        # load_mixture + data dir
 
 DATA_DIR = LMMF.CONFIG["in_dir"]
@@ -54,23 +59,11 @@ C_COMP = "#2e6f95"
 N_STYLE = {200: ":", 1000: "--", 5000: "-"}
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif", "font.serif": ["STIXGeneral", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7.5, "axes.labelsize": 7.5, "axes.titlesize": 8,
-        "legend.fontsize": 6, "xtick.labelsize": 6.5, "ytick.labelsize": 6.5,
-        "axes.linewidth": 0.5, "xtick.direction": "in", "ytick.direction": "in",
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl_wide",
+                                 **{})
 
 
-def _panel_label(ax, letter):
-    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner. The horizontal
-    offset centres the label over the y-axis tick labels (shifted right from the axis left edge)."""
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(-16, 4),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-16, dy=4)
 
 
 def _sweep_npz(n, regime, N):
@@ -140,8 +133,8 @@ def _example_panels(fig, axL, axR, d, dl, show_dens_legend, show_R_legend,
     axR.plot(d["t"], d["R_micro"][0], color=C_MICRO, lw=1.0, ls="--", label="microscopic")
     axR.plot(d["t"], d["R_skardal"][0], color=C_SKARDAL, lw=1.1, ls="-", label="Skardal")
     axR.plot(dl["t"], dl["R_ensemble"][0], color=C_ENS, lw=1.1, ls="-", label="LMMF")
-    axR.set_xlim(d["t"][0], d["t"][-1]); axR.set_ylim(-0.02, 1.02)
-    axR.set_yticks([0, 0.5, 1.0])
+    axR.set_xlim(d["t"][10], d["t"][-1]); axR.set_ylim(0.0, 0.8)
+    axR.set_yticks([0.0, 0.4, 0.8])
     if not R_yticklabels:
         axR.set_yticklabels([])
     if ylabel_R:
@@ -158,14 +151,16 @@ def make_figure(regime):
     g = load_metrics(regime)
     Ns = sorted(g.N.unique())
 
-    fig = plt.figure(figsize=(7.0, 3.3))
-    gs = fig.add_gridspec(2, 5, width_ratios=[1.2, 1, 1, 1, 1],
-                          left=0.058, right=0.995, top=0.88, bottom=0.13,
-                          wspace=0.26, hspace=0.6)
+    fig = plt.figure(figsize=(3.4, 6.6))
+    # 5 rows: row 1 = metrics (a)+(b); rows 2-5 = the four examples (~3/4 the height of row 1)
+    gs = fig.add_gridspec(5, 2, width_ratios=[1, 1.35],
+                          height_ratios=[1, 0.75, 0.75, 0.75, 0.75],
+                          left=0.135, right=0.975, top=0.94, bottom=0.055,
+                          wspace=0.42, hspace=0.6)
 
-    # ── COLUMN 1: metrics vs n [(a) spectral RMSE, (b) # eqs] ────────────────
-    ax_rmse = fig.add_subplot(gs[0, 0])
-    ax_neq = fig.add_subplot(gs[1, 0])
+    # ── ROW 1: metrics vs n [(a) # eqs, (b) spectral RMSE] ────────────────────
+    ax_neq = fig.add_subplot(gs[0, 0])
+    ax_rmse = fig.add_subplot(gs[0, 1])
     for N in Ns:
         sub = g[g.N == N].sort_values("n")
         ls = N_STYLE.get(int(N), "-")
@@ -182,11 +177,11 @@ def make_figure(regime):
         ax.set_xticklabels([1, 4, 16, 64, 256])
         ax.set_xlabel(r"exponent $n$", labelpad=1)
     ax_rmse.set_yscale("log")
-    ax_rmse.set_ylabel(r"RMSE $[\,|\hat{R}(f)|\,]$")
+    ax_rmse.set_ylabel(r"RMSE $[\,|\hat{R}(f)|\,]$", labelpad=1.5)
     ax_neq.set_yscale("log")
-    ax_neq.set_ylabel("# mean-field eqs.")
+    ax_neq.set_ylabel("# mean-field eqs.", labelpad=1.5)
 
-    # both legends live on (b): line styles (N) upper-left, colours (model) lower-right
+    # both legends live on (a): line styles (N) upper-left, colours (model) lower-right
     model_handles = [Line2D([], [], color=C_SKARDAL, lw=1.2, label="Skardal"),
                      Line2D([], [], color=C_ENS, lw=1.2, label="LMMF")]
     N_handles = [Line2D([], [], color="0.35", lw=1.0, ls=N_STYLE.get(int(N), "-"),
@@ -194,32 +189,28 @@ def make_figure(regime):
     N_leg = ax_neq.legend(handles=N_handles, loc="upper left", fontsize=5.8, handlelength=1.9)
     ax_neq.add_artist(N_leg)                                    # keep both legends on the same axes
     ax_neq.legend(handles=model_handles, loc="lower right", fontsize=5.8, handlelength=1.6)
-    _panel_label(ax_rmse, "a")
-    _panel_label(ax_neq, "b")
+    _panel_label(ax_neq, "a")
+    _panel_label(ax_rmse, "b")
 
-    # ── COLUMNS 2–5: 2×2 examples, rows = n (EXAMPLE_n), column pairs = N (EXAMPLE_N) ──
-    # the density panels have no y-ticks, so we slide them left into that white space to open up
-    # room for each R(t) y-axis label (which otherwise bleeds into the density panel to its left).
-    DENS_SHIFT = 0.01
-    for r, n in enumerate(EXAMPLE_n):
-        for c, N in enumerate(EXAMPLE_N):
-            d, dl = _sweep_npz(n, regime, N), _lmmf_npz(n, regime, N)
-            axL = fig.add_subplot(gs[r, 1 + 2 * c])
-            axR = fig.add_subplot(gs[r, 2 + 2 * c])
-            p = axL.get_position()
-            axL.set_position([p.x0 - DENS_SHIFT, p.y0, p.width, p.height])
-            legend_here = (r == len(EXAMPLE_n) - 1 and c == 0)    # bottom-left example = panel (d)
-            M = _example_panels(fig, axL, axR, d, dl,
-                                 show_dens_legend=legend_here, show_R_legend=legend_here,
-                                 xlabels=(r == len(EXAMPLE_n) - 1),
-                                 ylabel_dens=True, ylabel_R=True, R_yticklabels=True)
-            # centred example title over the (density, R) pair + bold panel label on axL
-            # (letters increment by row first, then by column: c/d down the left pair, e/f down the right)
-            pL, pR = axL.get_position(), axR.get_position()
-            fig.text((pL.x0 + pR.x1) / 2.0, pL.y1 + 0.015,
-                     rf"$n={n}$, $N={N}$:  Skardal $M={n}$,  best fit $M={M}$",
-                     ha="center", va="baseline", fontsize=7)
-            _panel_label(axL, "cdef"[c * len(EXAMPLE_n) + r])
+    # ── ROWS 2–5: four examples, one per row (density LEFT, R(t) RIGHT) ───────
+    # ordered n outer, N inner -> (c) (d) (e) (f)
+    examples = [(n, N) for n in EXAMPLE_n for N in EXAMPLE_N]
+    for i, (n, N) in enumerate(examples):
+        d, dl = _sweep_npz(n, regime, N), _lmmf_npz(n, regime, N)
+        row = i + 1
+        axL = fig.add_subplot(gs[row, 0])
+        axR = fig.add_subplot(gs[row, 1])
+        legend_here = (i == 0)                                  # first example = panel (c)
+        M = _example_panels(fig, axL, axR, d, dl,
+                             show_dens_legend=legend_here, show_R_legend=legend_here,
+                             xlabels=(i == len(examples) - 1),
+                             ylabel_dens=True, ylabel_R=True, R_yticklabels=True)
+        # centred example title over the (density, R) pair + bold panel label on axL
+        pL, pR = axL.get_position(), axR.get_position()
+        fig.text((pL.x0 + pR.x1) / 2.0, pL.y1 + 0.012,
+                 rf"$n={n}$, $N={N}$:  Skardal $M={n}$,  best fit $M={M}$",
+                 ha="center", va="baseline", fontsize=6.5)
+        _panel_label(axL, "cdef"[i])
 
     out = f"{OUT_STEM}_{regime}"
     fig.savefig(out + ".png", dpi=200)

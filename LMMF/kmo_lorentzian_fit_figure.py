@@ -21,13 +21,22 @@ models. Reads the tidy CSV (discriminated by the `quantity` column).
 Run with any numpy/scipy/pandas/matplotlib env, e.g.:
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_lorentzian_fit_figure.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 
-CSV = "/home/rgast/data/mpmf_simulations/kmo_lorentzian_sweep.csv"
-OUT = "/home/rgast/data/mpmf_simulations/kmo_lorentzian_fit_figure"
+CSV = dp.mpmf("kmo_lorentzian_sweep.csv")
+OUT = dp.mpmf("kmo_lorentzian_fit_figure")
 
 C_MICRO = "0.2"
 C_MF = "#c1121f"
@@ -37,20 +46,8 @@ HEATMAP_CMAP = "Reds"     # colormap for the spectral-RMSE heatmap
 # ════════════════════════════════════════════════════════════════════════════
 #  PRL single-column style
 # ════════════════════════════════════════════════════════════════════════════
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
-        "legend.fontsize": 6, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 2.0, "ytick.major.size": 2.0,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl",
+                                 **{"xtick.major.size": 2.0, "ytick.major.size": 2.0})
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -112,10 +109,7 @@ def plot_dynamics(ax, t_mic, R_mic, p):
     ax.set_ylabel(r"$R(t)$", labelpad=2)
 
 
-def _panel_label(ax, letter):
-    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner."""
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(-14, 4),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-14, dy=4)
 
 
 # ════════════════════════════════════════════════════════════════════════════

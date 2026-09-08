@@ -18,6 +18,15 @@ ONE single-column PRL figure (layout hand-tuned to manuscript figure1.svg):
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_random_coupling_figure.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, ".."), os.path.join(_HERE, "..", "..", "shared")]
+import data_paths as dp
+from prl_style import set_prl_style as _set_prl_style
+from prl_style import panel_label
+# ---------------------------------------------------------------------------
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -25,8 +34,8 @@ from matplotlib.lines import Line2D
 
 from kmo_lorentzian_fit_figure import spectral_rmse   # Fourier-amplitude RMSE (robust to phase shifts)
 
-CSV = "/home/rgast/data/mpmf_simulations/kmo_random_coupling_sweep.csv"
-OUT = "/home/rgast/data/mpmf_simulations/kmo_random_coupling"
+CSV = dp.mpmf("kmo_random_coupling_sweep.csv")
+OUT = dp.mpmf("kmo_random_coupling")
 
 C_MICRO = "0.2"
 MODELS = ["mean", "corr"]
@@ -41,26 +50,11 @@ MIX_TRIAL = 0                    # which trial's (shared) mixture fit + ω-sampl
 EXAMPLES = None                  # list of (σ, c) example rows; None = auto (see _example_pairs)
 
 
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
-        "legend.fontsize": 6, "xtick.labelsize": 6, "ytick.labelsize": 6,
-        "axes.linewidth": 0.5, "lines.linewidth": 0.9,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.major.width": 0.5, "ytick.major.width": 0.5,
-        "xtick.major.size": 1.8, "ytick.major.size": 1.8,
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "axes.formatter.useoffset": False, "savefig.dpi": 300, "figure.dpi": 150,
-    })
+set_prl_style = functools.partial(_set_prl_style, "prl",
+                                 **{"axes.formatter.useoffset": False})
 
 
-def _panel_label(ax, letter, dx=-20, dy=4):
-    """Bold PRL-style panel label OUTSIDE the axis box, above its top-left corner."""
-    ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction", xytext=(dx, dy),
-                textcoords="offset points", fontsize=8, fontweight="bold", ha="left", va="bottom")
+_panel_label = functools.partial(panel_label, dx=-20, dy=4)
 
 
 def _alpha_for_sigma(i, n):

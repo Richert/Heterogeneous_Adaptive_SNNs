@@ -3,7 +3,7 @@ QIF network with Allen-fitted threshold heterogeneity — spiking net vs. mean f
 ===================================================================================
 
 Loads the Lorentzian-mixture fit of the Allen excitability gap v_θ − v_r produced
-by ``data_fitting/allen_lorentzian_fit.py`` and simulates
+by ``LMMF/allen_lorentzian_fit.py`` and simulates
 
   1. a spiking network of N quadratic integrate-and-fire (QIF) neurons
          v̇_i = (v_i − v_r)(v_i − v_{θ,i}) + I(t) + J s(t),
@@ -41,6 +41,13 @@ Run in the ``allen`` conda env (PyRates 1.2.3 PopulationTemplate/Connectivity + 
 + scipy + the Allen fit .npz):
     PATH="$HOME/conda/envs/allen/bin:$PATH" python allen_qif_meanfield.py
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import functools, os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+from prl_style import set_prl_style as _set_prl_style
+# ---------------------------------------------------------------------------
 import os
 import sys
 from time import perf_counter
@@ -53,14 +60,13 @@ from scipy.integrate import solve_ivp
 from pyrates import (OperatorTemplate, NodeTemplate, CircuitTemplate,
                      PopulationTemplate, clear)
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 # ════════════════════════════════════════════════════════════════════════════
 #  configuration
 # ════════════════════════════════════════════════════════════════════════════
 def _tag(cell_class, layer):
-    """Filename tag matching data_fitting/allen_lorentzian_fit.py (e.g. 'pyramidal_L23')."""
+    """Filename tag matching LMMF/allen_lorentzian_fit.py (e.g. 'pyramidal_L23')."""
     c = cell_class.split("+")[0].split()[0].lower()       # Pyramidal→pyramidal, PV+ int→pv
     return f"{c}_{layer.replace('/', '').replace(' ', '')}"
 
@@ -71,7 +77,7 @@ LAYER = sys.argv[2] if len(sys.argv) > 2 else "L2/3"             # "L2/3" | "L5/
 I0 = float(sys.argv[3]) if len(sys.argv) > 3 else 200.0
 I1 = float(sys.argv[4]) if len(sys.argv) > 4 else 400.0
 _TAG = _tag(CELL_CLASS, LAYER)
-FIT_NPZ = os.path.join(_HERE, "..", "data_fitting", f"allen_lorentzian_{_TAG}.npz")
+FIT_NPZ = os.path.join(_HERE, f"allen_lorentzian_{_TAG}.npz")
 OUT = os.path.join(_HERE, f"allen_qif_meanfield_{_TAG}")
 
 P = dict(
@@ -101,18 +107,8 @@ P["I1"] = I1
 # ════════════════════════════════════════════════════════════════════════════
 #  PRL figure style
 # ════════════════════════════════════════════════════════════════════════════
-def set_prl_style():
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "font.size": 8, "axes.labelsize": 8, "axes.titlesize": 8,
-        "legend.fontsize": 7, "xtick.labelsize": 7, "ytick.labelsize": 7,
-        "axes.linewidth": 0.6, "lines.linewidth": 1.0,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "legend.frameon": False, "pdf.fonttype": 42, "ps.fonttype": 42,
-        "savefig.dpi": 300, "figure.dpi": 140,
-    })
+set_prl_style = functools.partial(_set_prl_style, "diagnostic",
+                                 **{})
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -359,7 +355,7 @@ def main():
     tf, rf, sf, vf = run_mf(P, w, vth_bar, Delta)
     print(f"   done in {perf_counter()-t0:.1f}s")
 
-    # ── save the rate dynamics for the summary figure (bifurcation_analysis/allen_qif_figure.py) ──
+    # ── save the rate dynamics for the summary figure (LMMF/exploratory/allen_qif_figure.py) ──
     Iarr = np.array([make_input(P)(t) for t in tf])
     np.savez(OUT + ".npz",
              cell_class=CELL_CLASS, layer=LAYER,

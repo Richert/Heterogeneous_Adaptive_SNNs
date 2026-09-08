@@ -26,6 +26,13 @@ Run in the ``pycobi`` conda env (reads kmo_het_fit.npz from kmo_heterogeneity_si
     python kmo_heterogeneity_bifurcation.py lumped
     python kmo_heterogeneity_bifurcation.py twoknob
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+import data_paths as dp
+# ---------------------------------------------------------------------------
 import os
 import sys
 
@@ -37,8 +44,7 @@ from pycobi import ODESystem
 from pycobi.utility import write_auto_dat
 
 AUTO_DIR = "~/PycharmProjects/auto-07p"
-FIT_NPZ = "/home/rgast/data/mpmf_simulations/kmo_het_fit.npz"
-_HERE = os.path.dirname(os.path.abspath(__file__))
+FIT_NPZ = dp.mpmf("kmo_het_fit.npz")
 
 # PyRates emits PAR slots for the constant params in declaration order: K=PAR(1), h=PAR(2)
 # (lumped) ; PAR(11) is Auto's reserved period slot.

@@ -23,6 +23,12 @@ ONE LAYER PER PROCESS:
     python pv_figure2_rate.py "PV+ Interneuron" "L5/6"
 Run in the ``allen`` conda env.
 """
+
+# --- shared library bootstrap (repo-root shared/) ---------------------------
+import os, sys
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_HERE, os.path.join(_HERE, "..", "shared")]
+# ---------------------------------------------------------------------------
 import os
 import sys
 from time import perf_counter
@@ -30,8 +36,6 @@ from time import perf_counter
 import numpy as np
 from numba import njit
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
 import allen_qif_meanfield as MF       # reuse build_micro/build_mf, _state_slice, _param, load_fit, _tag
 
 # fixed regime (matches pv_figure2_bifurcation.py): J=-100, tau_s=0.5, I=I_fix per layer.
