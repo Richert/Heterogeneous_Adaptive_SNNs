@@ -44,6 +44,141 @@ kmo_adapt_op:
     e_pre: input(complex)
     e_post: input(complex)
 
+# ── adaptation rules, one operator per (rule family × symmetry)  [adaptive_LMMF] ──────
+#    Naming convention:  kmo_adapt_<family>_<sym|asym>
+#      <family>  = mathematical structure of the rule (decay, ... — one per manuscript rule)
+#      sym       = SYMMETRIC   adaptation, G(x) = cos(x)  → real(gph)
+#      asym      = ANTISYMMETRIC adaptation, G(x) = sin(x)  → imag(gph)
+#    Every operator is a coupling EDGE: gph = e_pre·conj(e_post) = exp(i(θ_pre−θ_post)),
+#    the weight it carries is A, and it emits s_out = A·e_pre. Same edge as the switch-based
+#    `kmo_adapt_op` above, but written out so a rule is picked by OPERATOR NAME alone and
+#    later families can add their own state variables/parameters.
+#    To add a family: define <family>_sym and <family>_asym here and register the pair in
+#    ``adaptive_LMMF/kmo_adaptive_rule_sweep.py`` (RULES).
+
+# family `decay`: linear relaxation of A toward 1 —  Ȧ = μ G(θ_pre−θ_post) + γ(1 − A)
+kmo_adapt_decay_sym:                             # G = cos
+  base: OperatorTemplate
+  equations:
+    - "gph = e_pre*conj(e_post)"
+    - "A' = mu*real(gph) + decay*(1 - A)"
+    - "s_out = A*e_pre"
+  variables:
+    s_out: output(complex)
+    A: variable(1.0)
+    gph: variable(complex)
+    mu: 0.1
+    decay: 0.0
+    e_pre: input(complex)
+    e_post: input(complex)
+
+kmo_adapt_decay_asym:                            # G = sin
+  base: OperatorTemplate
+  equations:
+    - "gph = e_pre*conj(e_post)"
+    - "A' = mu*imag(gph) + decay*(1 - A)"
+    - "s_out = A*e_pre"
+  variables:
+    s_out: output(complex)
+    A: variable(1.0)
+    gph: variable(complex)
+    mu: 0.1
+    decay: 0.0
+    e_pre: input(complex)
+    e_post: input(complex)
+
+# family `logistic`: saturating (bounded) adaptation —  Ȧ = μ G(θ_pre−θ_post) A (A_max − A)
+#    A = 0 and A = A_max are invariant, so weights started in (0, A_max) stay in that
+#    interval for either sign of G; there is no relaxation term (no `decay` parameter).
+kmo_adapt_logistic_sym:                          # G = cos
+  base: OperatorTemplate
+  equations:
+    - "gph = e_pre*conj(e_post)"
+    - "A' = mu*real(gph)*A*(A_max - A)"
+    - "s_out = A*e_pre"
+  variables:
+    s_out: output(complex)
+    A: variable(1.0)
+    gph: variable(complex)
+    mu: 0.1
+    A_max: 2.0
+    e_pre: input(complex)
+    e_post: input(complex)
+
+kmo_adapt_logistic_asym:                         # G = sin
+  base: OperatorTemplate
+  equations:
+    - "gph = e_pre*conj(e_post)"
+    - "A' = mu*imag(gph)*A*(A_max - A)"
+    - "s_out = A*e_pre"
+  variables:
+    s_out: output(complex)
+    A: variable(1.0)
+    gph: variable(complex)
+    mu: 0.1
+    A_max: 2.0
+    e_pre: input(complex)
+    e_post: input(complex)
+
+# family `pulse`: separate LTP/LTD terms driven by pulse (spike) functions
+# (Duchet et al., Neural Comp. 2023; Fennelly et al., Chaos 2025)
+#
+#    Ȧ = μ_p G_p(θ_post,θ_pre) (A_max − A) − μ_d G_d(θ_post,θ_pre) A
+#
+# with the non-negative pulse function of ``theory/pulse_kernels.py`` (theta-neuron
+# convention: the spike is at θ=π, ⟨s⟩=1 for uniform phases)
+#
+#    s(n,θ) = c_n (1 − cos θ)^n,   c_n = 2^n (n!)²/(2n)!,
+#
+# evaluated through cos θ = real(e) and cos(θ−φ) = real(e) cos φ + imag(e) sin φ for the
+# phase-lagged pulses. G_p, G_d ≥ 0 keeps A inside [0, A_max] (Ȧ>0 at A=0, Ȧ<0 at A_max),
+# and Ȧ = F − Γ A is LINEAR in A: each pair relaxes at rate Γ = μ_p G_p + μ_d G_d toward
+# A* = A_max/(1 + μ_d G_d/(μ_p G_p)). `pre` = source neuron j, `post` = target i (A ≡ A_ij).
+kmo_adapt_pulse_sym:                             # symmetric / Hebbian: coincidence LTP,
+  base: OperatorTemplate                         # activity-driven (heterosynaptic) LTD
+  equations:                                     #   G_p = s(θ_i)s(θ_j),  G_d = ½[s(θ_i)+s(θ_j)]
+    - "sig_post = c_pulse*(1 - real(e_post))^n_pulse"
+    - "sig_pre = c_pulse*(1 - real(e_pre))^n_pulse"
+    - "A' = mu_p*sig_pre*sig_post*(A_max - A) - mu_d*0.5*(sig_pre + sig_post)*A"
+    - "s_out = A*e_pre"
+  variables:
+    s_out: output(complex)
+    A: variable(1.0)
+    sig_pre: variable(0.0)
+    sig_post: variable(0.0)
+    mu_p: 0.1
+    mu_d: 0.1
+    A_max: 2.0
+    n_pulse: 2.0
+    c_pulse: 0.6666666666666666                  # c_n for n_pulse=2
+    e_pre: input(complex)
+    e_post: input(complex)
+
+kmo_adapt_pulse_asym:                            # antisymmetric / STDP-like: causal window
+  base: OperatorTemplate                         #   G_p = s(θ_i) s(θ_j−φ)  (pre before post)
+  equations:                                     #   G_d = s(θ_i−φ) s(θ_j)  (post before pre)
+    - "sig_post = c_pulse*(1 - real(e_post))^n_pulse"
+    - "sig_pre = c_pulse*(1 - real(e_pre))^n_pulse"
+    - "sig_post_lag = c_pulse*(1 - real(e_post)*cos(phi) - imag(e_post)*sin(phi))^n_pulse"
+    - "sig_pre_lag = c_pulse*(1 - real(e_pre)*cos(phi) - imag(e_pre)*sin(phi))^n_pulse"
+    - "A' = mu_p*sig_post*sig_pre_lag*(A_max - A) - mu_d*sig_post_lag*sig_pre*A"
+    - "s_out = A*e_pre"
+  variables:
+    s_out: output(complex)
+    A: variable(1.0)
+    sig_pre: variable(0.0)
+    sig_post: variable(0.0)
+    sig_pre_lag: variable(0.0)
+    sig_post_lag: variable(0.0)
+    mu_p: 0.1
+    mu_d: 0.1
+    A_max: 2.0
+    n_pulse: 2.0
+    c_pulse: 0.6666666666666666                  # c_n for n_pulse=2
+    phi: 1.5707963267948966                      # STDP lag φ (π/2): G_p^ij = G_d^ji
+    e_pre: input(complex)
+    e_post: input(complex)
+
 # ── single Ott–Antonsen ensemble (Eqs. 6,7):  ż = (iΩ−Δ)z + (h − conj(h) z²)/2 ────────
 oa_op:
   base: OperatorTemplate
