@@ -45,10 +45,10 @@ except ImportError:
 # ════════════════════════════════════════════════════════════════════════════
 CONFIG = dict(
     # network parameters (constant across the sweep)
-    K=1.0, gamma=0.01,
+    K=1.0, gamma=0.003,
     # sweep axes: adaptation rule G × adaptation rate μ × heterogeneity Δ
     rules=["cos", "sin"],
-    mus=[0.005, 0.01, 0.02, 0.04],
+    mus=[0.001, 0.003, 0.01],
     deltas=list(np.round(np.linspace(0.01, 1.0, 20), 4)),   # spans sync (small Δ) → async (large Δ)
     # microscopic network + Euler integration
     N=500, T=5000.0, dt=0.05, trans_frac=0.0,               # steady state = last (1−trans_frac) of T
