@@ -125,15 +125,15 @@ RULES = {
 # ════════════════════════════════════════════════════════════════════════════
 CONFIG = dict(
     # network
-    N=200,                          # number of oscillators
+    N=300,                          # number of oscillators
     K=1.0,                          # global coupling scale
     omega_bar=0.0,                  # Lorentzian centre (only rotates the frame)
-    trunc=10.0,                     # Lorentzian truncated at ±trunc·Δ (tames the fast tails)
+    trunc=20.0,                     # Lorentzian truncated at ±trunc·Δ (tames the fast tails)
     # adaptation: rule families (keys of RULES) × symmetries (keys of SYMMETRIES)
     rules=["decay", "logistic", "pulse"],
     symmetries=["sym", "asym"],
-    mu=0.04,                        # adaptation rate μ (shared by all families)
-    gamma=0.01,                     # weight decay γ (relaxes A → 1)
+    mu=0.01,                        # adaptation rate μ (shared by all families)
+    gamma=0.003,                     # weight decay γ (relaxes A → 1)
     A0=1.0,                         # initial coupling weights A_ij(0)
     rule_params={},                 # per-family parameter overrides: {"decay": {...}}
     # sweep + trials
@@ -143,10 +143,10 @@ CONFIG = dict(
     fresh_ics=False,                # True: re-draw the ICs for every simulation
     seed=1,
     # integration (T ≫ 1/γ so the slow weights reach steady state)
-    T=1000.0, dts=2.0,
+    T=2000.0, dts=1.0,
     method="RK45", rtol=1e-6, atol=1e-8,
     # storage
-    save_res=200,                   # block-average the final A matrix / ω axis to this size
+    save_res=1000,                   # block-average the final A matrix / ω axis to this size
     out=dp.mpmf("kmo_adaptive_rule_sweep.npz"),
 )
 
