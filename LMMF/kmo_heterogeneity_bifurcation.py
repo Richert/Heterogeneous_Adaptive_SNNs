@@ -79,11 +79,16 @@ def state_var_order(M):
     return names
 
 
-def build_equations(M, omega, delta, weights, combined=False):
+def build_equations(M, omega, delta, weights, combined=False, ombar=None):
     """Reduced OA (co-rotating Cartesian, y_0:=0). Width knob hD scales Delta_m, centre knob hC
     scales the centre spread about Ombar; combined ties them to a single h. dim = 2M-1."""
     w = [float(x) for x in weights]; om = [float(x) for x in omega]; dl = [float(x) for x in delta]
-    Ombar = repr(float(np.asarray(weights, float) @ np.asarray(omega, float)))
+    # parenthesised: a negative mean would otherwise emit "x - -c", which Fortran rejects.
+    # `ombar` overrides the weighted mean (with the centre knob fixed at 1 it cancels exactly; passing
+    # 0.0 avoids tiny means in scientific notation, which the PyRates Fortran line-wrapper can split
+    # inside the exponent, e.g. "1.2e" & "-8").
+    Ombar = "(" + repr(float(np.asarray(weights, float) @ np.asarray(omega, float)
+                             if ombar is None else ombar)) + ")"
     hw, hc = ("h", "h") if combined else ("hD", "hC")
 
     def De(i):
@@ -172,8 +177,8 @@ def settle_and_classify_h(M, K, h, omega0, delta0, weights, Ombar, r0val,
 
 
 def build_circuit(M, K, omega, delta, weights, r0, combined=False,
-                  h0=1.0, hD0=1.0, hC0=1.0, name="kmo_het"):
-    eqs = build_equations(M, omega, delta, weights, combined=combined)
+                  h0=1.0, hD0=1.0, hC0=1.0, name="kmo_het", ombar=None):
+    eqs = build_equations(M, omega, delta, weights, combined=combined, ombar=ombar)
     variables = {"x_0": f"output({float(r0[0])})"}
     for i in range(1, M):
         variables[f"x_{i}"] = f"variable({float(r0[i])})"
