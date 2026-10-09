@@ -7,7 +7,10 @@ matplotlib.use('tkagg')
 import seaborn as sb
 
 # load data file
-path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
+import data_paths
+path = data_paths.MPMF  # shared lab drive, resolved per machine (shared/data_paths.py)
 f = h5py.File(f"{path}/mpmf_1pop_data.hdf5", "r")
 gr = f["stdp_asym"]
 

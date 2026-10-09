@@ -12,7 +12,10 @@ import h5py
 from config.utility_functions import *
 
 # define data directory
-path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
+import data_paths
+path = data_paths.MPMF  # shared lab drive, resolved per machine (shared/data_paths.py)
 
 # read sweep condition
 trial = int(sys.argv[-1])

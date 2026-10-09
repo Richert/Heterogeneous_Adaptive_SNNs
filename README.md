@@ -24,9 +24,11 @@ manuscript figures.
   `LM` throughout.
 - `prl_style.py` — `set_prl_style(preset, **overrides)` and `panel_label(...)`. Presets:
   `"prl"` (canonical single/two-column), `"prl_wide"`, `"diagnostic"`.
-- `data_paths.py` — output directories. `mpmf_simulations` lives on the shared lab drive
-  (`/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations`); the other directories
-  live under the data root, which defaults to `~/data`. Both are overridable:
+- `data_paths.py` — output directories. `mpmf_simulations` lives on the shared lab drive,
+  which is mounted differently per machine: the first existing entry of
+  `SHARED_MPMF_CANDIDATES` is used (workstation `/mnt/kennedy_labdata/...`, compute server
+  `/media/storage/DATA/...`; add a line for a new machine). The other directories live
+  under the data root, which defaults to `~/data`. Both are overridable:
 
       HASNN_MPMF=/some/dir python LMMF/kmo_lorentzian_fit_sweep.py          # mpmf_simulations only
       HASNN_DATA=/scratch/$USER/data python weight_variance/weight_variance_rule_micro.py
