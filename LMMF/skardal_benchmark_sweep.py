@@ -62,7 +62,11 @@ CONFIG = dict(
     # network sizes (finite-size convergence micro -> Skardal)
     N_list=[200, 1000, 5000],
     n_trials=5,                               # independent realisations per (n, regime, N)
-    sigma0=0.5,                               # coherent IC θ_i(0) ~ N(0, σ0); z(0)=R0
+    # coherent IC: "wrapped_cauchy" = θ_i(0) i.i.d. wrapped Cauchy independent of ω_i (on the OA
+    # manifold for N→∞) with <e^{iθ}> = exp(-σ0²/2); "gauss" = θ_i(0) ~ N(0, σ0) (former IC).
+    # Mean fields start from z(0) = the sample's R0.
+    ic="wrapped_cauchy",
+    sigma0=0.5,
     # integration (shared by micro / Skardal; solve_ivp RK45)
     T=100.0, dt=1e-2, dts=0.1, rtol=1e-6, atol=1e-8,
     base_seed=1,                              # per-trial seeds spawned from this
@@ -110,7 +114,10 @@ def run_combo(n, regime, ratio, N, cfg):
         # g_n → 0 there (the uniform-box limit) — a benign overflow inside sample_gn, not an error.
         with np.errstate(over="ignore"):
             omega = SK.sample_gn(n, Delta, N, rng)
-        theta0 = rng.normal(0.0, cfg["sigma0"], N)
+        if cfg["ic"] == "wrapped_cauchy":
+            theta0 = 0.5 * cfg["sigma0"] ** 2 * np.tan(np.pi * (rng.random(N) - 0.5))
+        else:
+            theta0 = rng.normal(0.0, cfg["sigma0"], N)
         R0 = float(np.abs(np.exp(1j * theta0).mean()))
         hw = 0.05 * Delta                                    # empirical density at ω=0 (sets effective K_c)
         g0_emp = float(np.mean(np.abs(omega) < hw) / (2 * hw))
@@ -139,6 +146,7 @@ def run_combo(n, regime, ratio, N, cfg):
     result = dict(
         n=np.int64(n), regime=regime, K_ratio=float(ratio), K=float(K), K_c=float(Kc),
         N=np.int64(N), n_trials=np.int64(nt), Delta=float(Delta), sigma0=float(cfg["sigma0"]),
+        ic=cfg["ic"],
         g0_exact=float(g0), n_mf_skardal=np.int64(n),
         T=float(cfg["T"]), dt=float(cfg["dt"]), dts=float(cfg["dts"]),
         rtol=float(cfg["rtol"]), atol=float(cfg["atol"]),
@@ -156,10 +164,10 @@ def out_path(cfg, n, regime, N):
     return os.path.join(cfg["out_dir"], f"{cfg['out_stem']}_n{n}_{regime}_N{N}.npz")
 
 
-def main(cfg=CONFIG):
+def main(cfg=CONFIG, n_subset=None):
     os.makedirs(cfg["out_dir"], exist_ok=True)
     combos = [(n, regime, ratio, N)
-              for n in cfg["n_exponents"]
+              for n in (n_subset or cfg["n_exponents"])
               for regime, ratio in cfg["K_ratios"].items()
               for N in cfg["N_list"]]
     total = len(combos)
@@ -202,4 +210,6 @@ def main(cfg=CONFIG):
 
 
 if __name__ == "__main__":
-    main()
+    # optional: restrict to a subset of exponents for parallel runs, e.g. `... sweep.py 1 16 256`;
+    # a final run without arguments only collects the summary CSV (existing files are skipped)
+    main(n_subset=[int(a) for a in sys.argv[1:]] or None)

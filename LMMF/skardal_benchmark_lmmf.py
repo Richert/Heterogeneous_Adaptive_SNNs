@@ -57,11 +57,24 @@ CONFIG = dict(
     in_dir=SWEEP.CONFIG["out_dir"],          # read the sweep .npz files from here
     in_stem=SWEEP.CONFIG["out_stem"],        # "skardal_sweep"
     overwrite=False,                         # if False, skip combos with an existing *_lmmf.npz
-    # Lorentzian-mixture fit settings (mirrors LMMF/skardal_benchmark_figure.py)
+    # Lorentzian-mixture fit settings: revised algorithm (warm start + noise-floor cap
+    # D(M) <= floor_c/(6N), M* = argmin D + λM over the visited M; alpha unused). The tiny
+    # absolute λ leaves the choice of M to the noise floor, as in the original Fig. 2.
     FIT=dict(delta_bounds=(0.01, 1.5),       # width bounds on the ω-scale (g_n has spread Δ≈1)
-             M_max=100, alpha=0.001, lambda_M=1e-6, patience=2,
+             M_max=100, alpha=0.001, lambda_M=1e-6, patience=3, floor_c=1.0,
              n_restarts=10, seed=1, loss="cvm", method="slsqp"),
+    out_suffix="_lmmf",
 )
+
+# Fit variants (select with `variant=<name>` on the command line). "floor": noise-floor cap
+# (default, above). "nofloor": no noise floor -- the former GoF acceptance 1-p < alpha, which
+# keeps adding components far below the sampling noise level and thereby resolves the
+# sample-specific structure of each network realisation. Warm start is on in both, so the two
+# differ only in the stopping rule.
+VARIANTS = {
+    "floor": {},
+    "nofloor": dict(FIT={**CONFIG["FIT"], "floor_c": None}, out_suffix="_lmmf_nofloor"),
+}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -70,11 +83,11 @@ CONFIG = dict(
 def sweep_files(cfg):
     """Sweep .npz files (skardal_sweep_n*_*_N*.npz), excluding LMMF outputs."""
     pat = re.compile(rf"^{re.escape(cfg['in_stem'])}_n\d+_[a-z]+_N\d+\.npz$")
-    return sorted(f for f in os.listdir(cfg["in_dir"]) if pat.match(f) and not f.endswith("_lmmf.npz"))
+    return sorted(f for f in os.listdir(cfg["in_dir"]) if pat.match(f))
 
 
 def lmmf_path(cfg, sweep_file):
-    return os.path.join(cfg["in_dir"], sweep_file[:-4] + "_lmmf.npz")
+    return os.path.join(cfg["in_dir"], sweep_file[:-4] + cfg["out_suffix"] + ".npz")
 
 
 def load_mixture(d, trial):
@@ -105,7 +118,8 @@ def fit_combo(d, cfg):
         R0 = float(d["R0"][trial])
         res = KFS.LM.fit(omega, fit["delta_bounds"], M_max=fit["M_max"], alpha=fit["alpha"],
                          lambda_M=fit["lambda_M"], patience=fit["patience"], loss=fit["loss"],
-                         n_restarts=fit["n_restarts"], seed=fit["seed"], method=fit["method"])
+                         n_restarts=fit["n_restarts"], seed=fit["seed"], method=fit["method"],
+                         floor_c=fit["floor_c"])
         m, M = res["model"], int(res["M"])
         t_e, R_e = KFS.simulate_ensemble(m.w, m.Omega, m.Delta, K, R0, sim_cfg,
                                          tag=f"ens_n{n}_{regime}_N{N}_t{trial}")
@@ -133,6 +147,7 @@ def fit_combo(d, cfg):
         fit_delta_min=float(fit["delta_bounds"][0]), fit_delta_max=float(fit["delta_bounds"][1]),
         fit_M_max=np.int64(fit["M_max"]), fit_alpha=float(fit["alpha"]),
         fit_lambda_M=float(fit["lambda_M"]), fit_patience=np.int64(fit["patience"]),
+        fit_floor_c=float(fit["floor_c"]) if fit["floor_c"] is not None else np.nan,
         fit_n_restarts=np.int64(fit["n_restarts"]), fit_seed=np.int64(fit["seed"]),
         fit_method=fit["method"], fit_loss=fit["loss"],
     )
@@ -142,8 +157,12 @@ def fit_combo(d, cfg):
 # ════════════════════════════════════════════════════════════════════════════
 #  main
 # ════════════════════════════════════════════════════════════════════════════
-def main(cfg=CONFIG):
+def main(cfg=CONFIG, n_subset=None, regime=None):
     files = sweep_files(cfg)
+    if n_subset:                             # parallel runs over disjoint exponent subsets
+        files = [f for f in files if int(re.search(r"_n(\d+)_", f).group(1)) in n_subset]
+    if regime:                               # restrict to one coupling regime
+        files = [f for f in files if f"_{regime}_" in f]
     if not files:
         raise SystemExit(f"no {cfg['in_stem']}_n*_N*.npz in {cfg['in_dir']} "
                          f"(run skardal_benchmark_sweep.py first)")
@@ -180,10 +199,15 @@ def main(cfg=CONFIG):
               f"({time.time()-t0:.1f}s, ETA {eta/60:.1f}min)")
 
     df = pd.DataFrame(all_rows).sort_values(["n", "K_ratio", "N", "trial"]).reset_index(drop=True)
-    csv = os.path.join(cfg["in_dir"], f"{cfg['in_stem']}_lmmf_summary.csv")
+    csv = os.path.join(cfg["in_dir"], f"{cfg['in_stem']}{cfg['out_suffix']}_summary.csv")
     df.to_csv(csv, index=False)
     print(f"[saved] {csv}  ({len(df)} rows)")
 
 
 if __name__ == "__main__":
-    main()
+    # usage: skardal_benchmark_lmmf.py [variant=floor|nofloor] [regime=<name>] [n ...]
+    # (exponent subset for parallel runs; a final run without exponents collects the CSV)
+    kw = dict(a.split("=", 1) for a in sys.argv[1:] if "=" in a)
+    cfg = {**CONFIG, **VARIANTS[kw.get("variant", "floor")]}
+    main(cfg, n_subset=[int(a) for a in sys.argv[1:] if "=" not in a] or None,
+         regime=kw.get("regime"))
