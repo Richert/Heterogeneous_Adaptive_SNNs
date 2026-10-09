@@ -32,8 +32,10 @@ written to one tidy CSV (discriminated by the `quantity` column):
     R_mf    : ensemble-MF coherence per sweep point  (lambda, M_max, M_star, pvalue, time, value=R)
     mixture : fitted Lorentzian params per sweep pt  (lambda, M_max, M_star, idx, w, Omega, Delta)
 plus constant columns K, N, the Δ-bounds and the fixed α. M is chosen by the greedy penalized
-CvM search: accept at the smallest M with 1−p < α, else return argmin_M [D(M)+λ·M] (greedy with
-patience). Each fit is pruned to its non-degenerate effective order. LARGER λ => fewer ensembles.
+CvM search, warm-started from the previous M: it stops once the loss reaches the sampling
+noise floor D(M) ≤ 1/(6N) (or after `patience` non-improving steps) and returns
+argmin_M [D(M)+λ·M] over the visited M. Each fit is pruned to its non-degenerate effective
+order. LARGER λ => fewer ensembles.
 
 Run in the ``pycobi`` conda env (dev PyRates 1.2.2: PopulationTemplate/Connectivity +
 the scalar-weight global-coupling reduction; scipy + pandas):
@@ -71,7 +73,11 @@ CONFIG = dict(
     N=5000,                       # number of microscopic oscillators
     # coupling
     K=3.0,
-    # initial condition (coherent start): θ_i(0) ~ N(0, sigma0); MF z_m(0)=R(0)
+    # initial condition (coherent start). "wrapped_cauchy": θ_i(0) i.i.d. wrapped Cauchy (Poisson
+    # kernel) independent of ω_i, i.e. ON the OA manifold for N→∞, with <e^{iθ}> = exp(-sigma0²/2)
+    # (same R(0) as the former wrapped-Gaussian start, ic="gauss": θ_i(0) ~ N(0, sigma0)).
+    # MF z_m(0) = the sample's R(0).
+    ic="wrapped_cauchy",
     sigma0=0.5,
     # integration (solve_ivp / RK45)
     T=30.0,
@@ -85,10 +91,13 @@ CONFIG = dict(
                                   # which spuriously trips the greedy β stop early
     loss="cvm",
     method="slsqp",               # constraint handling: "slsqp" (natural params + Σw=1) or "softmax"
-    # fixed GoF acceptance level (kept strict so the λ penalty is what selects M)
+    # noise-floor cap: the greedy search stops once the CvM loss reaches the sampling noise
+    # floor, D(M) <= floor_c / (6N) (LM.fit floor_c; replaces the GoF test, alpha unused);
+    # M* = argmin over the visited M of D(M)+λ·M.
+    floor_c=1.0,
     alpha=1e-2,
-    # meta-parameter sweep over λ: the per-ensemble penalty in M* = argmin[D(M)+λ·M]
-    # (D is the CvM loss). LARGER λ => FEWER ensembles.
+    # meta-parameter sweep over the (N-independent) per-ensemble penalty λ. LARGER λ => FEWER
+    # ensembles. N-independent λ makes M* saturate in N (kmo_lorentzian_M_stability.py).
     lambda_sweep=[1e-5, 1e-4, 1e-3],
     patience=3,                   # stop after this many non-improving steps in D+λM, return argmin
     M_max_sweep=[1, 2, 4, 8, 16],
@@ -181,7 +190,11 @@ def main(cfg=CONFIG):
     # microscopic frequencies + coherent initial condition
     omega = sample_gaussian_mixture(cfg["gmm_means"], cfg["gmm_stds"],
                                     cfg["gmm_weights"], cfg["N"], rng)
-    theta0 = rng.normal(0.0, cfg["sigma0"], cfg["N"])
+    if cfg["ic"] == "wrapped_cauchy":
+        gamma = 0.5 * cfg["sigma0"] ** 2                 # <e^{iθ}> = e^{-γ} = e^{-σ0²/2}
+        theta0 = gamma * np.tan(np.pi * (rng.random(cfg["N"]) - 0.5))
+    else:
+        theta0 = rng.normal(0.0, cfg["sigma0"], cfg["N"])
     R0 = float(np.abs(np.exp(1j * theta0).mean()))
 
     print(f"micro Kuramoto (PyRates+solve_ivp): N={cfg['N']}, K={cfg['K']}, "
@@ -194,7 +207,8 @@ def main(cfg=CONFIG):
     dmin, dmax = cfg["delta_bounds"]
 
     def base():                                    # constant columns on every row
-        return dict(K=Kc, N=Nc, delta_min=dmin, delta_max=dmax, alpha=cfg["alpha"])
+        return dict(K=Kc, N=Nc, delta_min=dmin, delta_max=dmax, alpha=cfg["alpha"],
+                    floor_c=cfg["floor_c"], ic=cfg["ic"])
 
     # micro frequencies
     for i, om in enumerate(omega):
@@ -209,28 +223,32 @@ def main(cfg=CONFIG):
         for lam in cfg["lambda_sweep"]:
             res = LM.fit(omega, cfg["delta_bounds"], M_max=M_max, alpha=cfg["alpha"],
                          lambda_M=lam, patience=cfg["patience"], loss=cfg["loss"],
-                         n_restarts=cfg["n_restarts"], seed=cfg["seed"], method=cfg["method"])
+                         n_restarts=cfg["n_restarts"], seed=cfg["seed"], method=cfg["method"],
+                         floor_c=cfg["floor_c"])
             m = res["model"]
             M_star = res["M"]
             t_mf, R_mf = simulate_ensemble(m.w, m.Omega, m.Delta, cfg["K"], R0, cfg,
                                            tag=f"ens{si}")
             si += 1
-            print(f"  λ={lam:<8g} M_max={M_max:2d} -> M*={M_star}  p={res['pvalue']:.3f}  "
+            print(f"  λ={lam:<8g} M_max={M_max:2d} -> M*={M_star}  "
+                  f"floor-reached={res['accepted']}  "
                   f"R_mf(end)={R_mf[-1]:.3f}  (data_loss={res['data_loss']:.2e})")
             # ensemble-MF coherence
             for t, R in zip(t_mf, R_mf):
-                rows.append({**base(), "quantity": "R_mf", "lambda": lam, "M_max": M_max,
+                rows.append({**base(), "quantity": "R_mf", "lambda": lam,
+                             "M_max": M_max,
                              "M_star": M_star, "pvalue": float(res["pvalue"]),
                              "time": float(t), "value": float(R)})
             # fitted Lorentzian mixture parameters
             for k in range(M_star):
-                rows.append({**base(), "quantity": "mixture", "lambda": lam, "M_max": M_max,
+                rows.append({**base(), "quantity": "mixture", "lambda": lam,
+                             "M_max": M_max,
                              "M_star": M_star, "idx": k, "w": float(m.w[k]),
                              "Omega": float(m.Omega[k]), "Delta": float(m.Delta[k])})
 
     df = pd.DataFrame(rows).reindex(columns=[
         "quantity", "lambda", "M_max", "M_star", "pvalue", "time", "idx", "value",
-        "w", "Omega", "Delta", "K", "N", "delta_min", "delta_max", "alpha"])
+        "w", "Omega", "Delta", "K", "N", "delta_min", "delta_max", "alpha", "floor_c", "ic"])
     os.makedirs(os.path.dirname(cfg["out_csv"]) or ".", exist_ok=True)
     df.to_csv(cfg["out_csv"], index=False)
     print(f"[saved] {cfg['out_csv']}  ({len(df)} rows)")

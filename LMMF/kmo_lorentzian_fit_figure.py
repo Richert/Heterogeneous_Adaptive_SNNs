@@ -9,7 +9,9 @@ Loads the sweep results written by ``kmo_lorentzian_fit_sweep.py`` and
      microscopic Kuramoto network and the ensemble mean field, and
   2. renders a Physical-Review-Letters double-column figure (2 rows × 4 columns):
 
-       column 1 (both rows): heatmap of the spectral RMSE over the whole sweep
+       column 1: (a) heatmap of the spectral RMSE over the (λ, M_max) sweep, and
+                 (b) heatmap of the mean selected M* over resampled data sets as a function
+                     of λ and the sample size N (kmo_lorentzian_M_stability.py), with ranges
        columns 2-4: three representative sweep points (best / median / worst RMSE);
          each column shows the micro-vs-MF frequency distribution (top, Gaussian-
          mixture-demo style) and the R(t) dynamics (bottom).
@@ -36,12 +38,14 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 
 CSV = dp.mpmf("kmo_lorentzian_sweep.csv")
+STAB_CSV = dp.mpmf("kmo_lorentzian_M_stability.csv")   # kmo_lorentzian_M_stability.py
 OUT = dp.mpmf("kmo_lorentzian_fit_figure")
 
 C_MICRO = "0.2"
 C_MF = "#c1121f"
 C_COMP = "#2e6f95"
 HEATMAP_CMAP = "Reds"     # colormap for the spectral-RMSE heatmap
+STAB_CMAP = "Blues"       # colormap for the M*-stability heatmap
 
 # ════════════════════════════════════════════════════════════════════════════
 #  PRL single-column style
@@ -67,6 +71,9 @@ def load(csv):
         points[(float(lm), int(Mmax))] = dict(
             t=g["time"].to_numpy(), R=g["value"].to_numpy(),
             Mstar=int(g["M_star"].iloc[0]),
+            # λ in units of the noise floor 1/(6N) (sweeps after the floor-rule change)
+            kappa=(float(g["kappa"].iloc[0]) if "kappa" in g and g["kappa"].notna().any()
+                   else None),
             w=mg["w"].to_numpy(), Omega=mg["Omega"].to_numpy(), Delta=mg["Delta"].to_numpy())
     return omega, t_mic, R_mic, points
 
@@ -77,6 +84,12 @@ def spectral_rmse(R_ref, R):
     Fa = np.abs(np.fft.rfft(R_ref[:n])) / n
     Fb = np.abs(np.fft.rfft(R[:n])) / n
     return float(np.sqrt(np.mean((Fb - Fa) ** 2)))
+
+
+def _sci(x):
+    """1e-05 -> $10^{-5}$ (exact powers of ten), else %g."""
+    e = np.log10(x)
+    return f"$10^{{{int(round(e))}}}$" if np.isclose(e, round(e)) else f"{x:g}"
 
 
 def lorentzian_pdf(x, w, Om, De):
@@ -136,61 +149,93 @@ def main():
 
     gx = np.linspace(np.percentile(omega, 0.5), np.percentile(omega, 99.5), 700)
 
-    # ── figure: 4×2, single column ──────────────────────────────────────────
+    # ── figure: 4 columns; column 1 = two heatmaps + shared legend ──────────
     set_prl_style()
-    # Double-column; height reduced (the old bottom legend strip is gone). The
-    # shared legend now lives in a strip below the heatmap within column 1, so the
-    # example columns (distribution + dynamics) keep their full, unchanged height.
-    fig = plt.figure(figsize=(7.0, 2.0), layout="constrained")   # PRL double column
-    # minimal but non-overlapping whitespace (pads in inches, *space as fractions)
+    fig = plt.figure(figsize=(7.0, 2.7), layout="constrained")   # PRL double column
     fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.04, hspace=0.06)
-    gs = fig.add_gridspec(2, 4)
-
-    # column 1: heatmap on top, shared legend in the freed strip beneath it
-    col1 = gs[0:2, 0].subgridspec(2, 1, height_ratios=[6, 1], hspace=0.04)
+    gs = fig.add_gridspec(2, 4, width_ratios=[1.35, 1, 1, 1])
+    col1 = gs[0:2, 0].subgridspec(3, 1, height_ratios=[5, 5, 1.4], hspace=0.08)
     axh = fig.add_subplot(col1[0])
-    ax_leg = fig.add_subplot(col1[1]); ax_leg.axis("off")
-    im = axh.imshow(RMSE, origin="lower", aspect="auto", cmap=HEATMAP_CMAP)
-    axh.set_xticks(range(len(lams)))
-    axh.set_xticklabels([f"{b:g}" for b in lams])
-    axh.set_yticks(range(len(Mmaxs)))
-    axh.set_yticklabels([str(m) for m in Mmaxs])
-    axh.set_xlabel(r"penalty $\lambda$", labelpad=1)
-    axh.set_ylabel(r"max. ensembles $M_{\max}$", labelpad=2)
-    axh.set_title("spectral RMSE", fontsize=7, pad=3)
-    _panel_label(axh, "a")
-    _stroke = [pe.withStroke(linewidth=1.0, foreground="black")]
-    # M* per cell: plain fill (no stroke), black on light cells / white on dark cells,
-    # chosen from the cell's background luminance.
-    for i in range(len(Mmaxs)):
-        for j in range(len(lams)):
-            if np.isnan(RMSE[i, j]):
-                continue
-            r, g, b, _ = im.cmap(im.norm(RMSE[i, j]))
-            lum = 0.299 * r + 0.587 * g + 0.114 * b      # perceived luminance
-            axh.text(j, i, f"{Mstar[i, j]}", ha="center", va="center",
-                     fontsize=6, color="black" if lum > 0.5 else "white")
-    cb = fig.colorbar(im, ax=axh, fraction=0.045, pad=0.012)
-    cb.ax.tick_params(labelsize=5.5, pad=1.0)
+    axs = fig.add_subplot(col1[1])
+    ax_leg = fig.add_subplot(col1[2]); ax_leg.axis("off")
 
-    # mark the three chosen points on the heatmap (offset to the cell corner so
-    # they don't sit on the M* annotation)
-    for (lm, Mmax), lab in zip(chosen, "bcd"):
-        i, j = Mmaxs.index(Mmax), lams.index(lm)
-        axh.text(j + 0.30, i + 0.30, lab, ha="center", va="center", fontsize=6.5,
+    kap = {lm: next(p["kappa"] for (l2, _), p in points.items() if l2 == lm) for lm in lams}
+    in_floor_units = all(k is not None for k in kap.values())
+
+    def _lam_ticks(ax):
+        ax.set_yticks(range(len(lams)))
+        ax.set_yticklabels([f"{kap[b]:g}" if in_floor_units else _sci(b) for b in lams])
+        ax.set_ylabel(r"penalty $\lambda$ $[1/(6N)]$" if in_floor_units else r"penalty $\lambda$",
+                      labelpad=1)
+
+    def _annotate(ax, im, A, txt, fs=5.5):
+        for i in range(A.shape[0]):
+            for j in range(A.shape[1]):
+                if np.isnan(A[i, j]):
+                    continue
+                r, g, b, _ = im.cmap(im.norm(A[i, j]))
+                lum = 0.299 * r + 0.587 * g + 0.114 * b      # perceived luminance
+                ax.text(j, i, txt(i, j), ha="center", va="center", linespacing=0.9,
+                        fontsize=fs, color="black" if lum > 0.5 else "white")
+
+    # (a) spectral RMSE: rows = λ, columns = M_max; cell text = selected M*
+    im = axh.imshow(RMSE.T, origin="lower", aspect="auto", cmap=HEATMAP_CMAP)
+    _lam_ticks(axh)
+    axh.set_xticks(range(len(Mmaxs)))
+    axh.set_xticklabels([str(m) for m in Mmaxs])
+    axh.set_xlabel(r"max. ensembles $M_{\max}$", labelpad=1)
+    axh.set_title("spectral RMSE", fontsize=6.5, pad=2)
+    _panel_label(axh, "a")
+    _annotate(axh, im, RMSE.T, lambda i, j: f"{Mstar.T[i, j]}")
+    cb = fig.colorbar(im, ax=axh, fraction=0.06, pad=0.02)
+    cb.ax.tick_params(labelsize=5.0, pad=1.0)
+    _stroke = [pe.withStroke(linewidth=1.0, foreground="black")]
+    for (lm, Mmax), lab in zip(chosen, "cde"):          # mark the three example points
+        i, j = lams.index(lm), Mmaxs.index(Mmax)
+        axh.text(j + 0.32, i + 0.28, lab, ha="center", va="center", fontsize=6.0,
                  fontweight="bold", color="white", path_effects=_stroke,
                  bbox=dict(boxstyle="circle,pad=0.05", fc="0.1", ec="white", lw=0.7))
 
+    # (b) sampling stability of M*: mean over resampled data sets, rows = λ, columns = N;
+    #     cell text = mean (top) and observed range (bottom)
+    sel = pd.read_csv(STAB_CSV)
+    sel = sel[sel.quantity == "selection"]              # fits with M_max = 16
+    Ns = sorted(sel.N.unique())
+    MEAN = np.full((len(lams), len(Ns)), np.nan); LO = np.zeros_like(MEAN); HI = np.zeros_like(MEAN)
+    for i, lm in enumerate(lams):
+        for j, N in enumerate(Ns):
+            g = sel[np.isclose(sel["lambda"], lm) & (sel.N == N)].M_star
+            MEAN[i, j], LO[i, j], HI[i, j] = g.mean(), g.min(), g.max()
+    n_seeds = int(sel.groupby(["lambda", "N"]).size().min())
+    im2 = axs.imshow(MEAN, origin="lower", aspect="auto", cmap=STAB_CMAP,
+                     vmin=1, vmax=np.nanmax(HI))
+    _lam_ticks(axs)
+    axs.set_xticks(range(len(Ns)))
+    axs.set_xticklabels([f"{n / 1000:g}k" if n >= 1000 else str(n) for n in Ns])
+    axs.set_xlabel(r"sample size $N$", labelpad=1)
+    axs.set_title(rf"mean $M^*$ ({n_seeds} samples each)", fontsize=6.5, pad=2)
+    _panel_label(axs, "b")
+    _annotate(axs, im2, MEAN, lambda i, j: (f"{MEAN[i, j]:.1f}\n"
+                                            + (f"{LO[i, j]:.0f}" if LO[i, j] == HI[i, j]
+                                               else f"{LO[i, j]:.0f}–{HI[i, j]:.0f}")),
+              fs=4.8)
+    if len(omega) in Ns:                                 # outline the N used in (a) and (c-e)
+        j = Ns.index(len(omega))
+        axs.add_patch(plt.Rectangle((j - 0.5, -0.5), 1, len(lams), fill=False, ec="0.1", lw=0.8))
+    cb2 = fig.colorbar(im2, ax=axs, fraction=0.06, pad=0.02)
+    cb2.ax.tick_params(labelsize=5.0, pad=1.0)
+
     # remaining three columns: representative examples (dist on top, R(t) below)
     block_cells = [(gs[0, 1], gs[1, 1]), (gs[0, 2], gs[1, 2]), (gs[0, 3], gs[1, 3])]
-    for (lm, Mmax), (top_gs, bot_gs), lab, tag in zip(chosen, block_cells, "bcd", labels):
+    for (lm, Mmax), (top_gs, bot_gs), lab, tag in zip(chosen, block_cells, "cde", labels):
         p = points[(lm, Mmax)]
         rm = rmse_pt[(lm, Mmax)]
         ax_d = fig.add_subplot(top_gs)
         ax_t = fig.add_subplot(bot_gs)
         plot_distribution(ax_d, omega, p, gx)
         plot_dynamics(ax_t, t_mic, R_mic, p)
-        ax_d.set_title(f"{tag}: $M^*={p['Mstar']}$, $\\lambda={lm:g}$\n"
+        lam_txt = (f"${p['kappa']:g}/(6N)$" if p["kappa"] is not None else _sci(lm))
+        ax_d.set_title(f"{tag}: $M^*={p['Mstar']}$, $\\lambda=${lam_txt}\n"
                        f"RMSE$={rm:.3f}$", fontsize=6.0, pad=2)
         _panel_label(ax_d, lab)
 

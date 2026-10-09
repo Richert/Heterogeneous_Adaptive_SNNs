@@ -9,6 +9,10 @@ the PRL figure style in [`../shared/prl_style.py`](../shared/prl_style.py); outp
 locations in [`../shared/data_paths.py`](../shared/data_paths.py) (override the root
 with `$HASNN_DATA`).
 
+> **Revision in progress (2026-10):** the fitter changed (warm start, noise-floor cap, absolute λ).
+> Only Fig. 1 has been regenerated. See [`REVISION_TODO.md`](REVISION_TODO.md) for the figures,
+> captions and text that still need updating.
+
 ## Figure pipelines
 
 Run each column left to right. Unless noted, use the `pycobi` conda env; the Allen

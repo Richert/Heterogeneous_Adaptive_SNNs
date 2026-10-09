@@ -167,23 +167,56 @@ def _init(xs, M, dmin, dmax, rng, jitter=0.0):                 # softmax-packed 
     return th
 
 
+def _grow_inits(prev, M, xs, dmin, dmax):
+    """Warm-start initialisations for an M-component fit from a smaller fitted mixture `prev`,
+    padded to M components one at a time at the location of the largest CDF residual
+    x* = argmax |F_N - F_prev|. Returns two (w, Omega, Delta) candidates:
+      * 'duplicate': the component with the largest weighted density at x* is split into two
+        identical halves, nudged apart by 1e-3*Delta. This represents (almost) the same
+        distribution as `prev`, so this restart starts from D(prev) and a descent method
+        returns an M-fit that is no worse than the (M-1)-fit;
+      * 'split': the same component is split into two narrower halves at Omega +- Delta/2."""
+    u = (np.arange(xs.size) + 0.5) / xs.size
+    out = []
+    for gap in (1e-3, 0.5):
+        w, Om, De = (np.array(prev.w, float), np.array(prev.Omega, float),
+                     np.array(prev.Delta, float))
+        while w.size < M:
+            res = np.abs(u - (_comp_cdf(xs, Om, De) @ w))
+            x_star = xs[int(np.argmax(res))]
+            k = int(np.argmax(w * _comp_pdf([x_star], Om, De)[0]))
+            d = gap * De[k]
+            De_new = De[k] if gap < 0.1 else max(dmin, 0.7 * De[k])
+            w = np.concatenate([w, [0.5 * w[k]]]); w[k] *= 0.5
+            Om = np.concatenate([Om, [Om[k] + d]]); Om[k] -= d
+            De = np.concatenate([De, [De_new]]); De[k] = De_new
+        out.append((w, Om, np.clip(De, dmin, dmax)))
+    return out
+
+
 def fit_fixed_M(samples, M, delta_bounds, loss="cvm", n_restarts=6, seed=0,
-                method="softmax"):
+                method="softmax", init_model=None):
     """Best continuous fit of an M-Lorentzian mixture to `samples`.
 
     method : "softmax" (unconstrained reparametrisation + L-BFGS-B, default) or
              "slsqp" (natural params with box bounds + sum_m w_m = 1 via SLSQP).
+    init_model : optional smaller fitted mixture (e.g. the (M-1)-fit) used for two extra
+             warm-start initialisations (see _grow_inits), in addition to the restarts.
     """
     xs = np.sort(np.asarray(samples, float)); n = xs.size
     dmin, dmax = delta_bounds
     u = (np.arange(n) + 0.5) / n
     rng = np.random.default_rng(seed)
     use_grad = (loss == "cvm")
+    warm = (_grow_inits(init_model, M, xs, dmin, dmax)
+            if init_model is not None and init_model.M <= M else [])
 
     best = None
     if method == "softmax":
         inits = [_init(xs, M, dmin, dmax, rng, 0.0)]
         inits += [_init(xs, M, dmin, dmax, rng, 0.75) for _ in range(n_restarts)]
+        inits += [_pack(np.clip(w, 1e-12, None), Om, np.clip(De, dmin * (1 + 1e-9), dmax * (1 - 1e-9)),
+                        dmin, dmax) for w, Om, De in warm]
         obj = _cvm_obj if use_grad else _nll_obj
         for th0 in inits:
             res = minimize(obj, th0, args=(M, xs, n, dmin, dmax, u),
@@ -195,6 +228,7 @@ def fit_fixed_M(samples, M, delta_bounds, loss="cvm", n_restarts=6, seed=0,
     elif method == "slsqp":
         raws = [_init_raw(xs, M, dmin, dmax, rng, 0.0)]
         raws += [_init_raw(xs, M, dmin, dmax, rng, 0.75) for _ in range(n_restarts)]
+        raws += warm                                   # appended last: restart RNG stream unchanged
         obj = _cvm_obj_natural if use_grad else _nll_obj_natural
         bounds = [(0.0, 1.0)] * M + [(None, None)] * M + [(dmin, dmax)] * M
         eq = dict(type="eq",
@@ -255,8 +289,15 @@ def _prune_mixture(model, w_min=1e-3, merge_frac=0.5):
     return LorentzianMixture((w / w.sum())[order], Om[order], De[order])
 
 
+def noise_floor(n):
+    """Expected CvM loss D = mean_i (u_i - F(x_(i)))^2 of n samples against their TRUE CDF:
+    E[N W^2] = 1/6 and D = (N W^2 - 1/(12N))/N, so E[D] = 1/(6N) - 1/(12N^2)."""
+    return 1.0 / (6.0 * n) - 1.0 / (12.0 * n * n)
+
+
 def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, loss="cvm",
-        n_restarts=6, seed=0, method="softmax", w_min=1e-3, merge_frac=0.5, verbose=False):
+        n_restarts=6, seed=0, method="softmax", w_min=1e-3, merge_frac=0.5, verbose=False,
+        floor_c=None, warm_start=True):
     """Fit a Lorentzian mixture, choosing M by a GREEDY penalized goodness-of-fit search.
 
     Each fixed-M fit is PRUNED to its non-degenerate form (drop weight<w_min, merge coincident
@@ -264,7 +305,8 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
     overlapping components, and the penalty acts on the EFFECTIVE number of ensembles m.
 
     Greedy loop over M=1..M_max with the penalized total loss  total(M) = D(M) + lambda_M * m:
-      (1) GoF ACCEPTANCE -- if the fit is good enough, 1 - p < alpha (GoF p-value p > 1 - alpha,
+      (1) ACCEPTANCE (GoF test, or noise floor if floor_c is set) -- if the fit is good enough,
+          1 - p < alpha (GoF p-value p > 1 - alpha,
           statistic T = N W^2), stop immediately and keep this (smallest adequate) M.
       (2) PENALIZED MINIMISATION -- otherwise track the running minimum of total(M); if it has
           not improved for `patience` consecutive M, stop and return the M with the LOWEST total
@@ -282,6 +324,16 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
     loss     : 'cvm' (Cramer-von Mises, default) or 'nll'.
     method   : 'softmax' (default) or 'slsqp' constrained fit (see fit_fixed_M).
     w_min, merge_frac : pruning thresholds (internal; not tuning meta-parameters).
+    floor_c  : if given, REPLACES the GoF acceptance (1) by a sampling-noise-floor CAP: the
+               search stops at the first M with D(M) <= floor_c * noise_floor(N) (or by patience /
+               M_max), and M* = argmin_{visited M} [D(M) + lambda_M m]. noise_floor(N) = 1/(6N)
+               is the expected CvM loss of the empirical CDF against the TRUE distribution
+               (E[(F_N-F)^2] = F(1-F)/N integrated over dF); floor_c = 1 reads "as close to the
+               data as the true distribution would be" -- further components would fit sampling
+               noise. Use an N-independent lambda_M so that M* saturates in N. alpha is ignored.
+    warm_start : seed each fixed-M fit with two extra initialisations grown from the previous
+               (pruned) fit (see _grow_inits), so the loss does not increase with M because the
+               optimiser got stuck in a worse local optimum.
     Returns a dict with the chosen model, M, data_loss, T, pvalue, total_loss, alpha, lambda_M,
     patience and the per-M trace.
     """
@@ -290,9 +342,11 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
     best = None                                          # entry with the lowest penalized total
     accepted = None
     stall = 0
+    floor = noise_floor(n)
     for M in range(1, M_max + 1):
+        prev = trace[-1]["model"] if (warm_start and trace) else None
         model, _ = fit_fixed_M(samples, M, delta_bounds, loss=loss,
-                               n_restarts=n_restarts, seed=seed, method=method)
+                               n_restarts=n_restarts, seed=seed, method=method, init_model=prev)
         model = _prune_mixture(model, w_min, merge_frac)  # -> non-degenerate, effective order m
         m = model.M
         gof = cramervonmises(xs, model.cdf)               # statistic T = N W^2, asymptotic p-value
@@ -304,6 +358,23 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
         if verbose:
             print("  M=%2d (eff %2d)  D=%.4e  1-p=%.4f  total=D+lambda*m=%.4e"
                   % (M, m, D, 1.0 - pval, total), flush=True)
+        if floor_c is not None:
+            # noise-floor CAP: the floor only ends the search; M* is still the penalized argmin
+            # over all M visited so far, so lambda keeps its meaning (larger lambda => fewer
+            # components) and the floor prevents fitting sampling noise.
+            if best is None or total < best["total_loss"]:
+                best, stall = trace[-1], 0
+            else:
+                stall += 1
+            if D <= floor_c * floor:
+                accepted = best
+                if verbose:
+                    print("    -> noise floor reached (D <= %.3g x 1/(6N)) at M=%d: keep argmin M=%d"
+                          % (floor_c, m, best["M"]), flush=True)
+                break
+            if stall >= patience:
+                break
+            continue
         if (1.0 - pval) < alpha:                          # (1) GoF acceptance -> smallest adequate M
             accepted = trace[-1]
             if verbose:
@@ -323,4 +394,5 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
     chosen = accepted if accepted is not None else best
     return dict(model=chosen["model"], M=chosen["M"], data_loss=chosen["data_loss"],
                 T=chosen["T"], pvalue=chosen["pvalue"], total_loss=chosen["total_loss"],
-                alpha=alpha, lambda_M=lambda_M, patience=patience, trace=trace)
+                alpha=alpha, lambda_M=lambda_M, patience=patience, floor_c=floor_c,
+                noise_floor=floor, accepted=accepted is not None, trace=trace)
