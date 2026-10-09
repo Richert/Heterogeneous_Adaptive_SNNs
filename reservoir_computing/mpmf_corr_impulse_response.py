@@ -10,7 +10,7 @@ from config.utility_functions import *
 from scipy.ndimage import gaussian_filter1d
 
 # define data directory
-path = "/home/rgast/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 
 # read condition
 trial = 0

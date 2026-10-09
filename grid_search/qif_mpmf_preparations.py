@@ -4,7 +4,7 @@ from mpi4py import MPI
 import sys
 
 # directory
-path = "/home/richard/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 
 # sweep conditions
 group = str(sys.argv[-1])

@@ -7,7 +7,7 @@ matplotlib.use('tkagg')
 import seaborn as sb
 
 # load data file
-path = "/home/rgast/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 f = h5py.File(f"{path}/qif_1pop_data.hdf5", "r")
 gr = f["stdp_sym"]
 

@@ -12,7 +12,7 @@ import h5py
 from config.utility_functions import *
 
 # define data directory
-path = "/home/richard/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 
 # read sweep condition
 trial = int(sys.argv[-1])

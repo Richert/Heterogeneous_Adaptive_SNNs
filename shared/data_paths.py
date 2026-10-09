@@ -3,10 +3,14 @@ Shared output/data locations for the PRL_2026 manuscript pipelines
 ===================================================================
 
 Replaces the ``/home/rgast/data/...`` literals that used to be hard-coded in every
-sweep and figure script.  Override the root with the ``HASNN_DATA`` environment
-variable to run the pipelines on another machine::
+sweep and figure script.
 
-    HASNN_DATA=/scratch/$USER/data python weight_variance/weight_variance_rule_micro.py
+``mpmf_simulations`` lives on the shared lab drive (``SHARED_MPMF``) so that every
+machine reads and writes the same results.  The other directories live under the
+data root (default ``~/data``).  Overrides, in order of precedence::
+
+    HASNN_MPMF=/some/dir python ...      # mpmf_simulations only
+    HASNN_DATA=/scratch/$USER/data ...   # data root (mpmf_simulations = <root>/mpmf_simulations)
 
 Directories
 -----------
@@ -26,7 +30,12 @@ import os
 #: root of all generated data; override with ``HASNN_DATA``
 ROOT = os.environ.get("HASNN_DATA") or os.path.join(os.path.expanduser("~"), "data")
 
-MPMF = os.path.join(ROOT, "mpmf_simulations")
+#: shared lab-drive location of ``mpmf_simulations`` (used unless overridden)
+SHARED_MPMF = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
+
+MPMF = (os.environ.get("HASNN_MPMF")
+        or (os.path.join(os.environ["HASNN_DATA"], "mpmf_simulations")
+            if os.environ.get("HASNN_DATA") else SHARED_MPMF))
 KMO_ADAPTIVE = os.path.join(ROOT, "kmo_adaptive")
 QIF_PLASTICITY = os.path.join(ROOT, "qif_plasticity")
 

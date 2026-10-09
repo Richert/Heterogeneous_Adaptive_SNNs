@@ -13,7 +13,7 @@ import seaborn as sb
 from sklearn.manifold import TSNE, Isomap
 
 # load data file
-path = "/home/rgast/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 f = h5py.File(f"{path}/qif_1pop_data2.hdf5", "r")
 stdp_conditions = ["stdp_asym", "stdp_sym", "antihebbian", "oja", "antioja"]
 

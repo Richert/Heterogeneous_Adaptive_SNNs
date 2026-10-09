@@ -9,7 +9,7 @@ from scipy.signal import welch
 from config.utility_functions import *
 
 # define data directory
-path = "/home/rgast/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 
 # read condition
 trial = 0

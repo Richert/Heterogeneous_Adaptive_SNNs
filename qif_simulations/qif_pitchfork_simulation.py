@@ -12,7 +12,7 @@ def ssr(eta: np.ndarray, Delta: float):
     return np.sqrt(eta + np.sqrt(eta**2 + Delta**2))/(2*np.pi)
 
 # define data directory
-path = "/home/rgast/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 
 # read condition
 trial = 0

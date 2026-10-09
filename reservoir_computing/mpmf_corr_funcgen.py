@@ -23,7 +23,7 @@ def get_c(X: np.ndarray, alpha: float = 1e-4):
     return X @ X.T + alpha*np.eye(X.shape[0])
 
 # define data directory
-path = "/home/rgast/data/mpmf_simulations"
+path = "/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations"
 
 # read condition
 trial = 0
