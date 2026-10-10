@@ -32,13 +32,43 @@ def gram(pa, pb, eps):
     return 2 * np.pi / (2 * eps + pa[:, None] + np.conj(pb)[None, :])
 
 
-def spectral_loss(w, Om, De, omega, eps):
+def spectral_const(omega, eps, block=2000):
+    """Parameter-independent part of L_eps (the sample-sample term), computed once.
+    O(N^2) work, done in blocks to avoid an N x N matrix in memory."""
+    pn = -1j * np.asarray(omega, float)
+    tot = 0.0
+    for i in range(0, pn.size, block):
+        tot += gram(pn[i:i + block], pn, eps).real.sum()
+    return float(tot / pn.size ** 2)
+
+
+def spectral_loss(w, Om, De, omega, eps, const=None):
+    """L_eps(rho_N, rho_M). Pass `const` (spectral_const(omega, eps)) when calling repeatedly --
+    otherwise the O(N^2) sample-sample term is recomputed on every call."""
     pm = De - 1j * Om
     pn = -1j * omega
     G_mm = gram(pm, pm, eps).real
     cross = (gram(pm, pn, eps).real.sum(1)) / omega.size
-    const = gram(pn, pn, eps).real.sum() / omega.size ** 2
+    if const is None:
+        const = spectral_const(omega, eps)
     return float(w @ G_mm @ w - 2 * w @ cross + const)
+
+
+def spectral_loss_grad(w, Om, De, omega, eps):
+    """Analytic gradient of L_eps w.r.t. (w, Omega, Delta). With h(s) = 2π/(2ε + s), p = Δ − iΩ:
+    L = Σ_jk w_j w_k Re h(p_j + p̄_k) − 2 Σ_j w_j <Re h(p_j + iω_i)>_i + const, so
+    ∂L/∂w_j = 2 Σ_k w_k Re h(p_j+p̄_k) − 2 <Re h(p_j+iω_i)>,
+    ∂L/∂Δ_j = 2 w_j [Σ_k w_k Re h'(p_j+p̄_k) − <Re h'(p_j+iω_i)>],
+    ∂L/∂Ω_j = 2 w_j [Σ_k w_k Im h'(p_j+p̄_k) − <Im h'(p_j+iω_i)>],  h'(s) = −2π/(2ε+s)²."""
+    p = De - 1j * Om
+    S_mm = 2 * eps + p[:, None] + np.conj(p)[None, :]
+    S_mn = 2 * eps + p[:, None] + 1j * np.asarray(omega)[None, :]
+    h_mm, h_mn = 2 * np.pi / S_mm, 2 * np.pi / S_mn
+    dh_mm, dh_mn = -h_mm / S_mm, -h_mn / S_mn
+    g_w = 2 * (h_mm.real @ w) - 2 * h_mn.real.mean(1)
+    g_De = 2 * w * ((dh_mm.real @ w) - dh_mn.real.mean(1))
+    g_Om = 2 * w * ((dh_mm.imag @ w) - dh_mn.imag.mean(1))
+    return np.concatenate([g_w, g_Om, g_De])
 
 
 def fit_spectral(omega, M, eps, init=None, n_restarts=6, seed=0, dmin=1e-3):

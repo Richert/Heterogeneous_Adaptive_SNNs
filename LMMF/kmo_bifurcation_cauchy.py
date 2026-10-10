@@ -38,7 +38,7 @@ import pandas as pd
 from scipy.optimize import minimize
 import lorentzian_mixture as LM
 import kmo_bifurcation_accuracy as BA
-from spectral_loss_prototype import spectral_loss
+from spectral_loss_prototype import spectral_loss, spectral_const, spectral_loss_grad
 
 OUT = BA.OUT
 FITS_NPZ = os.path.join(OUT, "cauchy_fits.npz")
@@ -68,11 +68,17 @@ def fig1_fits():
 def fit_cauchy(omega, f0, eps, beta, n_jitter=4, seed=0, dbounds=(1e-4, 1e2)):
     """Fixed-M fit of J = D/D0 + β L_ε/L0, started from the CvM fit f0 (+ jittered restarts)."""
     xs = np.sort(omega); n = xs.size; u = (np.arange(n) + 0.5) / n; M = f0["M"]
+    const = spectral_const(omega, eps)                     # O(N^2) sample term: once, not per call
     D = lambda p: LM._cvm_obj_natural(p, M, xs, n, u)[0]
-    L = lambda p: spectral_loss(p[:M], p[M:2 * M], p[2 * M:], omega, eps)
+    L = lambda p: spectral_loss(p[:M], p[M:2 * M], p[2 * M:], omega, eps, const=const)
     p0 = np.concatenate([f0["w"], f0["Om"], f0["De"]])
     D0, L0 = D(p0), L(p0)
-    J = lambda p: D(p) / D0 + beta * L(p) / L0
+
+    def J(p):                                              # value + analytic gradient
+        d, gd = LM._cvm_obj_natural(p, M, xs, n, u)
+        l = spectral_loss(p[:M], p[M:2 * M], p[2 * M:], omega, eps, const=const)
+        gl = spectral_loss_grad(p[:M], p[M:2 * M], p[2 * M:], omega, eps)
+        return d / D0 + beta * l / L0, gd / D0 + beta * gl / L0
     rng = np.random.default_rng(seed)
     starts = [p0] + [np.concatenate([f0["w"], f0["Om"] + rng.normal(0, 0.05, M),
                                      f0["De"] * np.exp(rng.normal(0, 0.2, M))]) for _ in range(n_jitter)]
@@ -80,7 +86,7 @@ def fit_cauchy(omega, f0, eps, beta, n_jitter=4, seed=0, dbounds=(1e-4, 1e2)):
     eq = dict(type="eq", fun=lambda p: p[:M].sum() - 1)
     best = None
     for s in starts:
-        r = minimize(J, s, method="SLSQP", bounds=bounds, constraints=[eq],
+        r = minimize(J, s, method="SLSQP", jac=True, bounds=bounds, constraints=[eq],
                      options=dict(maxiter=1000, ftol=1e-12))
         if best is None or r.fun < best.fun:
             best = r
