@@ -243,7 +243,7 @@ def eig_KH(f, lo=0.05, hi=20.0):
 
 def run_auto(idx, which):
     f = load_fits()[idx]
-    wd = dp.ensure(os.path.join(OUT, "auto_work")); os.chdir(wd)      # keep Auto/PyRates files out of the repo
+    os.chdir(dp.local_work("kmo_bif_accuracy_auto"))   # local: executables must not live on the share
     out = os.path.join(OUT, f"auto_{idx:02d}_{which}.npy")
     t0 = time.time()
     res = auto_incoherent(f) if which == "incoh" else auto_locked(f)

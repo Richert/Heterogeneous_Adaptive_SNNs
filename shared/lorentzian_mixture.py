@@ -195,13 +195,16 @@ def _grow_inits(prev, M, xs, dmin, dmax):
 
 
 def fit_fixed_M(samples, M, delta_bounds, loss="cvm", n_restarts=6, seed=0,
-                method="softmax", init_model=None):
+                method="softmax", init_model=None, return_all=False):
     """Best continuous fit of an M-Lorentzian mixture to `samples`.
 
     method : "softmax" (unconstrained reparametrisation + L-BFGS-B, default) or
              "slsqp" (natural params with box bounds + sum_m w_m = 1 via SLSQP).
     init_model : optional smaller fitted mixture (e.g. the (M-1)-fit) used for two extra
              warm-start initialisations (see _grow_inits), in addition to the restarts.
+    return_all : also return the local optimum of EVERY initialisation, as a third element: a list
+             of (LorentzianMixture, objective, kind) with kind 'random' or 'warm' (slsqp: only
+             restarts flagged successful). The best fit and the RNG stream are unchanged.
     """
     xs = np.sort(np.asarray(samples, float)); n = xs.size
     dmin, dmax = delta_bounds
@@ -212,16 +215,20 @@ def fit_fixed_M(samples, M, delta_bounds, loss="cvm", n_restarts=6, seed=0,
             if init_model is not None and init_model.M <= M else [])
 
     best = None
+    every = []                                         # (w, Om, De, fun, kind) per initialisation
     if method == "softmax":
         inits = [_init(xs, M, dmin, dmax, rng, 0.0)]
         inits += [_init(xs, M, dmin, dmax, rng, 0.75) for _ in range(n_restarts)]
         inits += [_pack(np.clip(w, 1e-12, None), Om, np.clip(De, dmin * (1 + 1e-9), dmax * (1 - 1e-9)),
                         dmin, dmax) for w, Om, De in warm]
         obj = _cvm_obj if use_grad else _nll_obj
-        for th0 in inits:
+        for k_, th0 in enumerate(inits):
             res = minimize(obj, th0, args=(M, xs, n, dmin, dmax, u),
                            method="L-BFGS-B", jac=use_grad,
                            options=dict(maxiter=1000, ftol=1e-13, gtol=1e-10))
+            if return_all:
+                every.append(_unpack(res.x, M, dmin, dmax)
+                             + (float(res.fun), "warm" if k_ >= len(inits) - len(warm) else "random"))
             if best is None or res.fun < best.fun:
                 best = res
         w, Om, De = _unpack(best.x, M, dmin, dmax)
@@ -234,11 +241,16 @@ def fit_fixed_M(samples, M, delta_bounds, loss="cvm", n_restarts=6, seed=0,
         eq = dict(type="eq",
                   fun=lambda p: np.sum(p[:M]) - 1.0,
                   jac=lambda p: np.concatenate([np.ones(M), np.zeros(2 * M)]))
-        for w0, Om0, De0 in raws:
+        for k_, (w0, Om0, De0) in enumerate(raws):
             p0 = np.concatenate([w0, Om0, De0])
             res = minimize(obj, p0, args=(M, xs, n, u), method="SLSQP", jac=use_grad,
                            bounds=bounds, constraints=[eq],
                            options=dict(maxiter=1000, ftol=1e-12))
+            if return_all and res.success:
+                wk = np.clip(res.x[:M], 0.0, None)
+                wk = wk / wk.sum() if wk.sum() > 0 else np.full(M, 1.0 / M)
+                every.append((wk, res.x[M:2 * M], res.x[2 * M:3 * M], float(res.fun),
+                              "warm" if k_ >= len(raws) - len(warm) else "random"))
             if res.success and (best is None or res.fun < best.fun):
                 best = res
         if best is None:                               # all restarts flagged failure
@@ -251,7 +263,14 @@ def fit_fixed_M(samples, M, delta_bounds, loss="cvm", n_restarts=6, seed=0,
         raise ValueError(f"unknown method {method!r} (use 'softmax' or 'slsqp')")
 
     order = np.argsort(Om)
-    return LorentzianMixture(w[order], Om[order], De[order]), float(best.fun)
+    model = LorentzianMixture(w[order], Om[order], De[order])
+    if not return_all:
+        return model, float(best.fun)
+    allm = []
+    for wk, Ok, Dk, fk, kind in every:
+        o = np.argsort(Ok)
+        allm.append((LorentzianMixture(np.asarray(wk)[o], np.asarray(Ok)[o], np.asarray(Dk)[o]), fk, kind))
+    return model, float(best.fun), allm
 
 
 def _prune_mixture(model, w_min=1e-3, merge_frac=0.5):
@@ -297,7 +316,7 @@ def noise_floor(n):
 
 def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, loss="cvm",
         n_restarts=6, seed=0, method="softmax", w_min=1e-3, merge_frac=0.5, verbose=False,
-        floor_c=None, warm_start=True):
+        floor_c=None, warm_start=True, floor_n=None, n_restarts_large=None, large_M=16):
     """Fit a Lorentzian mixture, choosing M by a GREEDY penalized goodness-of-fit search.
 
     Each fixed-M fit is PRUNED to its non-degenerate form (drop weight<w_min, merge coincident
@@ -324,6 +343,10 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
     loss     : 'cvm' (Cramer-von Mises, default) or 'nll'.
     method   : 'softmax' (default) or 'slsqp' constrained fit (see fit_fixed_M).
     w_min, merge_frac : pruning thresholds (internal; not tuning meta-parameters).
+    floor_n  : sample size the noise floor refers to (default: the number of input points). Set it
+               when fitting the TRUE distribution through quantile nodes: the nodes carry no sampling
+               noise, so their count only sets a tolerance; floor_n = N makes the population fit stop
+               at the same tolerance as a fit to an N-sample ("matched resolution").
     floor_c  : if given, REPLACES the GoF acceptance (1) by a sampling-noise-floor CAP: the
                search stops at the first M with D(M) <= floor_c * noise_floor(N) (or by patience /
                M_max), and M* = argmin_{visited M} [D(M) + lambda_M m]. noise_floor(N) = 1/(6N)
@@ -331,6 +354,12 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
                (E[(F_N-F)^2] = F(1-F)/N integrated over dF); floor_c = 1 reads "as close to the
                data as the true distribution would be" -- further components would fit sampling
                noise. Use an N-independent lambda_M so that M* saturates in N. alpha is ignored.
+               floor_c = 0: NO acceptance rule at all (neither floor nor GoF test) -- M* is chosen by
+               lambda_M alone (penalized argmin with patience, up to M_max): the "best possible fit"
+               mode, e.g. for the true distribution or to resolve sample-specific structure.
+    n_restarts_large, large_M : random restarts per fixed-M fit for M > large_M (default: n_restarts).
+               At large M the warm-started initialisations dominate, so fewer random restarts there
+               cut the cost of long greedy searches (e.g. M_max = 100) substantially.
     warm_start : seed each fixed-M fit with two extra initialisations grown from the previous
                (pruned) fit (see _grow_inits), so the loss does not increase with M because the
                optimiser got stuck in a worse local optimum.
@@ -342,11 +371,15 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
     best = None                                          # entry with the lowest penalized total
     accepted = None
     stall = 0
-    floor = noise_floor(n)
+    floor = noise_floor(floor_n or n)
+    import time as _time
     for M in range(1, M_max + 1):
         prev = trace[-1]["model"] if (warm_start and trace) else None
+        nr = n_restarts if (n_restarts_large is None or M <= large_M) else n_restarts_large
+        _t0 = _time.time()
         model, _ = fit_fixed_M(samples, M, delta_bounds, loss=loss,
-                               n_restarts=n_restarts, seed=seed, method=method, init_model=prev)
+                               n_restarts=nr, seed=seed, method=method, init_model=prev)
+        _dt = _time.time() - _t0
         model = _prune_mixture(model, w_min, merge_frac)  # -> non-degenerate, effective order m
         m = model.M
         gof = cramervonmises(xs, model.cdf)               # statistic T = N W^2, asymptotic p-value
@@ -354,7 +387,7 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
         D = (T - 1.0 / (12.0 * n)) / n                    # CvM loss (mean-squared CDF discrepancy)
         total = D + lambda_M * m
         trace.append(dict(M=m, M_nominal=M, data_loss=D, T=T, pvalue=pval,
-                          total_loss=total, model=model))
+                          total_loss=total, model=model, time=_dt))
         if verbose:
             print("  M=%2d (eff %2d)  D=%.4e  1-p=%.4f  total=D+lambda*m=%.4e"
                   % (M, m, D, 1.0 - pval, total), flush=True)
@@ -366,7 +399,7 @@ def fit(samples, delta_bounds, M_max=8, alpha=0.05, lambda_M=1e-3, patience=2, l
                 best, stall = trace[-1], 0
             else:
                 stall += 1
-            if D <= floor_c * floor:
+            if floor_c > 0 and D <= floor_c * floor:
                 accepted = best
                 if verbose:
                     print("    -> noise floor reached (D <= %.3g x 1/(6N)) at M=%d: keep argmin M=%d"

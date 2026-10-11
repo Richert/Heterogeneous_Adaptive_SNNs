@@ -28,6 +28,8 @@ Stages (resumable; results in data_paths.MPMF/unimodal_kalpha):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python unimodal_kalpha.py sims [--procs N] [--dist NAME]
                                                                 [--chunks C] [--hold H]
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python unimodal_kalpha.py time     # timing probe
+    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python unimodal_kalpha.py lmmf_only [--procs N]
+        # recompute only the LMMF traces of existing ramp files (e.g. after changing KICK)
 """
 import os, sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -56,12 +58,29 @@ AUTO_DIR = "~/PycharmProjects/auto-07p"
 # ════════════════════════════════════════════════════════════════════════════
 #  distributions
 # ════════════════════════════════════════════════════════════════════════════
+N_RATIONAL = 8                                       # exponent of the rational density in the figure ("g8")
+
+
+def _gn(n):
+    """Skardal's rational density g_n (Δ = 1) and sampler; overflow of ω^{2n} far outside [−1, 1] is
+    benign (g_n -> 0 there)."""
+    def pdf(w):
+        with np.errstate(over="ignore"):
+            return SK.gn_density(np.atleast_1d(np.asarray(w, float)), n, 1.0)
+
+    def smp(k, r):
+        with np.errstate(over="ignore"):
+            return SK.sample_gn(n, 1.0, k, r)
+    return dict(pdf=pdf, sample=smp)
+
+
 def dists():
     g4 = lambda w: SK.gn_density(np.atleast_1d(np.asarray(w, float)), 4, 1.0)
     dg_pdf = lambda w: TAU * norm.pdf(w) + (1 - TAU) * norm.pdf(w, 0, DELTA_DG)
     return {
         "gauss": dict(pdf=lambda w: norm.pdf(w), sample=lambda n, r: r.normal(0, 1, n)),
         "g4": dict(pdf=g4, sample=lambda n, r: SK.sample_gn(4, 1.0, n, r)),
+        f"g{N_RATIONAL}": _gn(N_RATIONAL),
         "uniform": dict(pdf=lambda w: np.where(np.abs(w) <= 1, 0.5, 0.0), sample=lambda n, r: r.uniform(-1, 1, n)),
         "dgauss": dict(pdf=dg_pdf, sample=lambda n, r: np.where(r.random(n) < TAU, r.normal(0, 1, n),
                                                                  r.normal(0, DELTA_DG, n))),
@@ -126,17 +145,38 @@ def exact_boundary(name, n_om=400):
     return np.array(out)                                  # columns: K, α, Ω
 
 
-def run_loci():
-    a_fine = np.linspace(0.0, 1.45, 146)
-    for name in dists():
+A_FINE = np.linspace(0.0, 1.45, 146)
+K_FINE = np.linspace(0.02, 4.0, 200)
+
+
+def lmmf_stability_map(f):
+    """Largest real part of the linearisation at z = 0 on the (A_FINE × K_FINE) grid. Its zero contour
+    is the FULL incoherence boundary, including restabilisation (several K crossings per α) — unlike
+    lmmf_Kc, which only returns the first crossing."""
+    A0 = np.diag(1j * f["Om"] - f["De"]); P = 0.5 * np.outer(np.ones(f["M"]), f["w"])
+    G = np.empty((A_FINE.size, K_FINE.size))
+    for i, a in enumerate(A_FINE):
+        Pa = np.exp(-1j * a) * P
+        for j, K in enumerate(K_FINE):
+            G[i, j] = np.max(np.linalg.eigvals(A0 + K * Pa).real)
+    return G
+
+
+def run_loci(keys=None, names=None):
+    for name in (names or dists()):
         ex = exact_boundary(name)
         np.save(_f(name, "boundary_exact") + ".npy", ex)
-        for v in VARIANTS:
+        ks = keys or list(VARIANTS) + [k.split("_fit_")[1][:-4] for k in os.listdir(OUT)
+                                       if k.startswith(f"{name}_fit_M")]
+        for v in ks:
+            if not os.path.exists(_f(name, "fit", v) + ".npy"):
+                continue
             f = load_fit(name, v)
-            kc = np.array([lmmf_Kc(f, a) for a in a_fine])
-            np.save(_f(name, "boundary", v) + ".npy", dict(alpha=a_fine, K=kc[:, 0], freq=kc[:, 1]),
+            kc = np.array([lmmf_Kc(f, a) for a in A_FINE])
+            np.save(_f(name, "boundary", v) + ".npy",
+                    dict(alpha=A_FINE, K=kc[:, 0], freq=kc[:, 1], K_grid=K_FINE, G=lmmf_stability_map(f)),
                     allow_pickle=True)
-        print(f"[loci] {name}: exact boundary {len(ex)} pts, LMMF boundaries for {list(VARIANTS)}", flush=True)
+        print(f"[loci] {name}: exact boundary {len(ex)} pts, LMMF boundaries for {ks}", flush=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -175,7 +215,33 @@ def _corot_equations(f):
     return eqs
 
 
-def fold_curves(name, v, K0=4.0, a0=0.3):
+# α values at which the K-continuation looks for fold points, tried IN ORDER; the next one is only used
+# if the previous continuation found no fold to trace
+FOLD_SEEDS_A = (0.3, 0.8, 1.1)
+
+
+def _dedupe(curves, tol=1e-3):
+    """Drop fold curves that retrace an already found one (Auto lists LPs once per direction)."""
+    out = []
+    for c in curves:
+        if not any(abs(c[:, 0].min() - o[:, 0].min()) < tol and abs(c[:, 0].max() - o[:, 0].max()) < tol and
+                   abs(c[:, 1].min() - o[:, 1].min()) < tol and abs(c[:, 1].max() - o[:, 1].max()) < tol
+                   for o in out):
+            out.append(c)
+    return out
+
+
+def fold_curves(name, v, seeds=FOLD_SEEDS_A):
+    """Fold curves from the first seed α whose K-continuation finds any fold (single process; the
+    CLI path run_fold_one uses one Auto session per seed instead)."""
+    for a0 in seeds:
+        curves = _fold_curves_from(name, v, K0=4.0, a0=a0)
+        if curves:
+            return _dedupe(curves)
+    return []
+
+
+def _fold_curves_from(name, v, K0=4.0, a0=0.3):
     """Settle the locked state at (K0, α0), continue it in K (LP/HB), then trace every LP in (K, α)."""
     from pyrates import OperatorTemplate, NodeTemplate, CircuitTemplate, clear
     from pycobi import ODESystem
@@ -185,7 +251,8 @@ def fold_curves(name, v, K0=4.0, a0=0.3):
         var[f"x_{i}"] = "variable(0.8)"; var[f"y_{i}"] = "variable(0.0)"
     var["K"] = K0; var["alpha"] = a0
     op = OperatorTemplate(name="lk_op", equations=_corot_equations(f), variables=var)
-    circ = CircuitTemplate(name="kmo_lag", nodes={"p": NodeTemplate(name="lk_node", operators=[op])})
+    circ = CircuitTemplate(name=f"kmo_lag_{int(round(100 * a0))}",
+                           nodes={"p": NodeTemplate(name="lk_node", operators=[op])})
     ode = ODESystem.from_template(circ, auto_dir=AUTO_DIR, init_cont=False, analytical_jacobian=True,
                                   auto_constants=("ivp", "eq"))
     ode.run(c="ivp", name="time", DS=1e-3, DSMIN=1e-9, DSMAX=1.0, NMX=500000, EPSL=1e-8, EPSU=1e-8,
@@ -211,12 +278,12 @@ def fold_curves(name, v, K0=4.0, a0=0.3):
     return curves
 
 
-def run_folds():
-    """Sequential (one Auto session at a time), one subprocess per fit."""
-    for name in dists():
-        for v in VARIANTS:
+def run_folds(variants=None, only=None, redo=False):
+    """Sequential (one Auto session at a time), one subprocess per fit (and per seed α)."""
+    for name in ([only] if only else dists()):
+        for v in (variants or VARIANTS):
             out = _f(name, "folds", v) + ".npy"
-            if os.path.exists(out):
+            if os.path.exists(out) and not redo:
                 continue
             r = subprocess.run([sys.executable, os.path.abspath(__file__), "fold_one", name, v],
                                capture_output=True, text=True)
@@ -224,11 +291,30 @@ def run_folds():
                                               r.stdout.strip() else f"FAILED\n{r.stderr[-600:]}"), flush=True)
 
 
-def run_fold_one(name, v):
-    os.chdir(dp.ensure(os.path.join(OUT, "auto_work")))
-    curves = fold_curves(name, v)
+def run_fold_one(name, v, a0=None):
+    """One Auto session per process: with a0, trace the folds from that seed into a temporary file;
+    without a0, spawn one subprocess per seed and merge (deduplicated) into <name>_folds_<v>.npy."""
+    os.chdir(dp.local_work("unimodal_kalpha_auto"))       # executables must not live on the share
+    if a0 is not None:
+        curves = _fold_curves_from(name, v, a0=a0)
+        np.save(_f(name, "folds", v, f"seed{a0:g}") + ".npy", np.array(curves, dtype=object), allow_pickle=True)
+        print(f"{len(curves)} raw fold curve(s) from α0={a0:g}")
+        return
+    curves, used = [], None
+    for s0 in FOLD_SEEDS_A:                          # next seed only if the previous found no fold
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), "fold_one", name, v, str(s0)],
+                           capture_output=True, text=True)
+        tmp = _f(name, "folds", v, f"seed{s0:g}") + ".npy"
+        if os.path.exists(tmp):
+            curves = list(np.load(tmp, allow_pickle=True)); os.remove(tmp)
+        else:
+            print(f"   seed α0={s0:g} failed: {r.stderr[-300:]}")
+        if curves:
+            used = s0
+            break
+    curves = _dedupe(curves)
     np.save(_f(name, "folds", v) + ".npy", np.array(curves, dtype=object), allow_pickle=True)
-    print(f"{len(curves)} fold curve(s)")
+    print(f"{len(curves)} fold curve(s) (deduplicated; seed α0={used})")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -246,6 +332,11 @@ def _rk4(rhs, y, n_steps, stride, obs):
 
 
 HOLD = 100.0                                         # holding time per ramp step
+# finite-size seed: a network of N oscillators never has R = 0 but fluctuates around N^{-1/2}. The
+# deterministic LMMF instead decays to the exact incoherent fixed point z = 0 below threshold and then
+# needs ~ln(1/|z|)/growth-rate to leave it above threshold, which on a forward ramp mimics spurious
+# hysteresis. Kick every LMMF state by KICK at the start of each ramp step (negligible when synchronized).
+KICK = 1.0 / np.sqrt(N)
 DIRECTIONS = {"fwd": 0.05, "bwd": 0.9}               # ramp direction -> R0 of the wrapped-Cauchy start
 
 
@@ -284,10 +375,52 @@ def ramp(name, direction, ia_idx, hold=HOLD):
         Rn[:, ik] = _rk4_carry(_net_rhs(om, Kc), th, n_steps, stride,
                                lambda y: np.abs(np.exp(1j * y).mean(1)))
         th = _LAST[0]
-        for j, f in enumerate(fits):
-            Rl[j, :, ik] = _rk4_carry(_lmmf_rhs(f, Kc), zs[j], n_steps, stride, lambda y: np.abs(y @ f["w"]))
-            zs[j] = _LAST[0]
+        Rl[:, :, ik] = _lmmf_step(fits, zs, Kc, n_steps, stride)
     return Rn, Rl, R0_obs
+
+
+def _lmmf_step(fits, zs, Kc, n_steps, stride, kick=KICK):
+    """One ramp step for all LMMF fits (states in zs are updated in place), with the finite-size seed."""
+    out = []
+    for j, f in enumerate(fits):
+        z = zs[j] + kick
+        # keep |z| <= 1 (a local order parameter cannot exceed 1): zero-width nodes (the true-ρ continuum)
+        # sit exactly on |z| = 1 when locked, and the kick would push them outside the unit disc, where the
+        # dynamics are unstable. Acts only when |z| + kick > 1.
+        r = np.abs(z)
+        zs[j] = np.where(r > 1.0, z / np.maximum(r, 1e-300), z)
+        out.append(_rk4_carry(_lmmf_rhs(f, Kc), zs[j], n_steps, stride, lambda y: np.abs(y @ f["w"])))
+        zs[j] = _LAST[0]
+    return np.array(out)
+
+
+def lmmf_ramp_only(path, kick=KICK):
+    """Recompute ONLY the LMMF traces of an existing ramp file (network traces are reused)."""
+    d = dict(np.load(path)); name = os.path.basename(path).split("_ramp_")[0]
+    direction = "fwd" if "_ramp_fwd_" in path else "bwd"
+    alphas = A_GRID[d["ia"]][:, None]; hold = float(d["hold"])
+    fits = [load_fit(name, v) for v in VARIANTS]
+    zs = [np.full((alphas.size, f["M"]), float(d["R0"]) + 0j) for f in fits]
+    n_steps, stride = int(round(hold / DT)), int(round(DTS / DT))
+    Rl = np.zeros_like(d["R_lmmf"], dtype=float)
+    order = range(K_GRID.size) if direction == "fwd" else range(K_GRID.size - 1, -1, -1)
+    for ik in order:
+        Rl[:, :, ik] = _lmmf_step(fits, zs, K_GRID[ik] * np.exp(-1j * alphas), n_steps, stride, kick)
+    if "R_lmmf_nokick" not in d:                      # keep the original (unseeded) traces once
+        d["R_lmmf_nokick"] = d["R_lmmf"]
+    d["R_lmmf"] = Rl.astype(np.float32); d["kick"] = kick
+    np.savez_compressed(path, **d)
+    return path
+
+
+def run_lmmf_only(procs):
+    from multiprocessing import Pool
+    files = sorted(os.path.join(OUT, f) for f in os.listdir(OUT) if "_ramp_" in f and f.endswith(".npz"))
+    t0 = time.time()
+    with Pool(procs) as p:
+        for i, out in enumerate(p.imap_unordered(lmmf_ramp_only, files, chunksize=1), 1):
+            if i % 8 == 0 or i == len(files):
+                print(f"[lmmf] {i}/{len(files)} files ({(time.time() - t0) / 60:.1f} min)", flush=True)
 
 
 _LAST = [None]
@@ -362,10 +495,17 @@ if __name__ == "__main__":
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     mode = sys.argv[1]
     arg = lambda k, d, t=str: t(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d
-    if mode == "sims":
+    if mode == "lmmf_only":
+        run_lmmf_only(arg("--procs", os.cpu_count(), int))
+    elif mode == "sims":
         run_sims(arg("--procs", os.cpu_count(), int), arg("--dist", None), arg("--chunks", 1, int),
                  arg("--hold", HOLD, float))
+    elif mode == "folds":
+        run_folds(arg("--variants", None, lambda s_: s_.split(",")), arg("--dist", None),
+                  "--redo" in sys.argv)
+    elif mode == "loci":
+        run_loci(names=arg("--dist", None, lambda s_: s_.split(",")))
     elif mode == "fold_one":
-        run_fold_one(sys.argv[2], sys.argv[3])
+        run_fold_one(sys.argv[2], sys.argv[3], float(sys.argv[4]) if len(sys.argv) > 4 else None)
     else:
-        {"fits": run_fits, "loci": run_loci, "folds": run_folds, "time": run_time_probe}[mode]()
+        {"fits": run_fits, "time": run_time_probe}[mode]()

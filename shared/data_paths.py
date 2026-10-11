@@ -67,6 +67,13 @@ def ensure(directory):
     return directory
 
 
+def local_work(name):
+    """Local (non-shared) scratch directory for build artefacts, e.g. the Auto-07p/PyCoBi work
+    directory with its compiled executables: the shared drive is mounted without execute
+    permission (and is slow for many small files). Created if needed."""
+    return ensure(os.path.join(os.path.expanduser("~"), ".cache", "hasnn", name))
+
+
 def mpmf(*parts):
     """Path inside the ``mpmf_simulations`` output directory."""
     return os.path.join(MPMF, *parts)

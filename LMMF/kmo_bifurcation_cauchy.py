@@ -127,7 +127,7 @@ def load_fits():
 # ════════════════════════════════════════════════════════════════════════════
 def run_bif_one(idx):
     f = load_fits()[idx]
-    os.chdir(BA.dp.ensure(os.path.join(OUT, "auto_work")))
+    os.chdir(BA.dp.local_work("kmo_bif_cauchy_auto"))  # local: executables must not live on the share
     res = BA.auto_locked(f)
     res["K_H"] = BA.eig_KH(f)
     np.save(os.path.join(OUT, f"cauchy_bif_{idx:02d}.npy"), res, allow_pickle=True)

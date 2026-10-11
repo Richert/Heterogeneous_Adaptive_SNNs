@@ -63,3 +63,19 @@ Notes:
   §2: update after regeneration.
 * **Supplement Table S1 / Sec. S7.** These use `continuity/continuity_check.py` (standalone
   integrator, fixed-M fits). Either say so or regenerate with the final pipeline.
+
+## 4. Unimodal section (decisions, 2026-10-10)
+
+* **Loss: plain CvM** (warm start + noise-floor cap, λ = 1e-5). Tested alternatives were a lower
+  bound on the widths, a Cauchy-transform term and a density-matching term (`LMMF/unimodal/`). They
+  reduce the bias of the incoherence threshold, but every one worsens the network RMSE (all four
+  distributions, (K, α) ramps). Report the threshold bias as a characterised limitation: the onset
+  depends on the pointwise density, while finite-amplitude dynamics depend on CDF accuracy over the
+  locking window ~Kr.
+* (K, α) maps, ramps and figures: `LMMF/unimodal/unimodal_kalpha{,_figure}.py`; results in
+  `mpmf_simulations/unimodal_kalpha/` (`fig_<dist>_a.*` are the CvM figures).
+* LMMF ramps use a finite-size seed (KICK = N^{-1/2} per ramp step). Without it, forward ramps lag
+  far behind the threshold (spurious hysteresis).
+* Open: the double Gaussian with M = 3 misses the restabilisation of incoherence (α ≈ 1.02–1.16).
+  Test larger M. Fold curves (`folds` stage) are not yet computed.
+
