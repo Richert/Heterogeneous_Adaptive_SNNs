@@ -15,6 +15,11 @@ single lumped knob h (h=1 data, h->0 homogeneous; h scales BOTH the centre sprea
       large h_ombar).
   (f) average phase coherence R(t) under a transient h-pulse: microscopic Kuramoto vs ensemble MF.
 
+Panels (e)-(f) background: the NETWORK's fraction of oscillators in the largest locked cluster, with the
+number of macroscopic locked clusters (kmo_heterogeneity_locking.py; run it, then its `largest` stage)
+-> kmo_heterogeneity_figure_locking.* (--clusters: also the cluster-count regions); --all-locked: the overall locked fraction instead
+-> kmo_heterogeneity_figure_locking_all.*; --regions: the former LMMF region shading -> kmo_heterogeneity_figure.*
+
 Reads the pickled bif .npy, so run in the SAME env they were written in (``pycobi``):
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python kmo_heterogeneity_figure.py
 """
@@ -42,6 +47,9 @@ ENV_NPZ = os.path.join(_DATA, "kmo_het_envelope.npz")
 REGIONS_HK_NPZ = os.path.join(_DATA, "kmo_het_regions_hK.npz")
 REGIONS_DC_NPZ = os.path.join(_DATA, "kmo_het_regions_DC.npz")
 LUMPED_NPY = os.path.join(_HERE, "kmo_het_bif_lumped.npy")
+LOCK_HK_NPZ = os.path.join(_DATA, "kmo_het_locking", "hK_locking.npz")   # network locked fraction (e)
+LOCK_DC_NPZ = os.path.join(_DATA, "kmo_het_locking", "DC_locking.npz")   # (f); kmo_heterogeneity_locking.py
+ELL_FLOOR = 1e-3
 TWOKNOB_NPY = os.path.join(_HERE, "kmo_het_bif_twoknob.npy")
 # mono-stable region shading: -1 async (grey), 0 multistable/torus (white), +1 sync (blue), low alpha
 _REG_CMAP = ListedColormap([(0.5, 0.5, 0.5, 0.16), (1, 1, 1, 0.0), (0.12, 0.47, 0.71, 0.15)])
@@ -181,56 +189,133 @@ def _dedup_curves(curves, xlim, ylim, tol=0.08):
     return kept
 
 
-def plot_loci_styled(ax, loci, xlim, ylim):
-    """Plot fold/Hopf loci: colour = bifurcation TYPE, linestyle = distinct locus of that type."""
+def plot_loci_styled(ax, loci, xlim, ylim, stroke=False):
+    """Plot fold/Hopf loci: colour = bifurcation TYPE, linestyle = distinct locus of that type.
+    stroke: thin white outline (readable on the locked-fraction heatmap)."""
+    import matplotlib.patheffects as pe
+    pe_ = [pe.withStroke(linewidth=2.3, foreground="w")] if stroke else None
     for typ in ("fold", "hopf"):
         ded = _dedup_curves([(loc["x"], loc["y"]) for k, loc in loci.items()
                              if k.split("_")[0] == typ], xlim, ylim)
         for i, (x, y) in enumerate(ded):
-            ax.plot(x, y, color=TYPE_COL[typ], ls=LS[i % len(LS)], lw=1.3, zorder=3,
+            ax.plot(x, y, color=TYPE_COL[typ], ls=LS[i % len(LS)], lw=1.3, zorder=3, path_effects=pe_,
                     label=typ.capitalize() if i == 0 else None)   # one legend entry per type
 
 
-def _shade_regions(ax, reg):
-    """Shade mono-stable synchronized (blue) / asynchronous (grey) regions; multistable/torus white."""
-    ax.pcolormesh(np.asarray(reg["x"]), np.asarray(reg["y"]), np.asarray(reg["cls"]),
-                  cmap=_REG_CMAP, norm=_REG_NORM, shading="nearest", zorder=0, rasterized=True)
+def _shade_locking(ax, lk):
+    """Network locked fraction ℓ (linear 0-1, viridis) as background, with the boundaries between regions of
+    different numbers of macroscopic locked clusters (≥ 5 % of the oscillators; white lines) and the count
+    printed inside every region of ≥ MIN_REGION cells."""
+    from matplotlib.colors import Normalize
+    from scipy import ndimage
+    import matplotlib.patheffects as pe
+    x, y = np.asarray(lk["x"]), np.asarray(lk["y"])
+    im = ax.pcolormesh(x, y, np.asarray(lk[BG_KEY]), cmap="viridis", norm=Normalize(0.0, 1.0),
+                       shading="nearest", zorder=0, rasterized=True)
+    if not SHOW_CLUSTERS:
+        return im
+    ncl = _merge_islands(np.minimum(np.asarray(lk["n_clusters"]), 4))   # 4 = "≥ 4"
+    ax.contour(x, y, ncl, levels=[0.5, 1.5, 2.5, 3.5], colors="w", linewidths=0.5, zorder=1)
+    for c in np.unique(ncl):
+        lab, n = ndimage.label(ncl == c)
+        for k in range(1, n + 1):
+            cells = np.argwhere(lab == k)
+            if len(cells) < MIN_REGION:
+                continue
+            cy, cx = cells.mean(0)                                     # centroid -> nearest cell of the region
+            iy, ix = cells[np.argmin(((cells - [cy, cx]) ** 2).sum(1))]
+            ax.text(x[ix], y[iy], f"{c}" if c < 4 else r"$\geq$4", ha="center", va="center", fontsize=6,
+                    color="k", fontweight="bold", zorder=2,
+                    path_effects=[pe.withStroke(linewidth=1.5, foreground="w")])
+    return im
 
 
-def plot_hK(ax, d, reg=None):
+MIN_REGION = 12
+SHOW_CLUSTERS = "--clusters" in sys.argv                    # overlay cluster-count regions (off by default)
+BG_KEY = "ell" if "--all-locked" in sys.argv else "ell_max"   # background: largest locked cluster (default)
+                                                              # or the overall locked fraction (--all-locked)
+MIN_ISLAND = 6                    # connected regions of fewer cells are merged into their surroundings
+
+
+def _merge_islands(c, min_cells=MIN_ISLAND, n_iter=10):
+    """Replace connected regions of < min_cells cells by the most common value among their neighbours
+    (repeated until stable): removes single-cell noise from the cluster-count map before contouring."""
+    from scipy import ndimage
+    c = c.copy()
+    for _ in range(n_iter):
+        changed = False
+        for v in np.unique(c):
+            lab, n = ndimage.label(c == v)
+            for k in range(1, n + 1):
+                reg = lab == k
+                if reg.sum() >= min_cells:
+                    continue
+                ring = ndimage.binary_dilation(reg) & ~reg
+                if ring.any():
+                    vals, cnt = np.unique(c[ring], return_counts=True)
+                    c[reg] = vals[np.argmax(cnt)]; changed = True
+        if not changed:
+            break
+    return c
+
+
+def _annot_style(lk):
+    """Annotation colour + outline: readable on the heatmap (white text, dark outline) or plain grey."""
+    import matplotlib.patheffects as pe
+    if lk is None:
+        return "0.4", None
+    return "w", [pe.withStroke(linewidth=1.2, foreground="0.15")]
+
+
+def plot_hK(ax, d, reg=None, lk=None):
     """Fold / Hopf loci in the (h, K) plane (lumped heterogeneity vs global coupling)."""
     xlim, ylim = (0.0, 1.3), (0.2, 3.0)
-    if reg is not None:
+    im = None
+    if lk is not None:
+        im = _shade_locking(ax, lk)
+    elif reg is not None:
         _shade_regions(ax, reg)
-    plot_loci_styled(ax, d["loci"], xlim, ylim)
-    ax.axhline(d["K_fix"], color="0.6", ls=":", lw=0.8, zorder=1)
-    ax.text(1.29, d["K_fix"], " K=1", ha="right", va="bottom", fontsize=5.0, color="0.5")
-    ax.scatter([1.0], [float(d["K_fix"])], marker="*", s=28, color="0.3", zorder=6)   # data fit (h=1, K=1)
+    plot_loci_styled(ax, d["loci"], xlim, ylim, stroke=lk is not None)
+    tc = "w" if lk is not None else "0.4"
+    ac, st = _annot_style(lk)
+    ax.axhline(d["K_fix"], color="w" if lk is not None else "0.6", ls=":", lw=0.8, zorder=1)
+    ax.text(1.29, d["K_fix"], " K=1", ha="right", va="bottom", fontsize=5.0, color=ac, path_effects=st)
+    ax.scatter([1.0], [float(d["K_fix"])], marker="*", s=28, color="0.3", zorder=6,
+               edgecolors="w" if lk is not None else "none", linewidths=0.4)   # data fit (h=1, K=1)
     ax.annotate("data", xy=(1.0, float(d["K_fix"])), xytext=(-3, 2), textcoords="offset points",
-                ha="right", va="bottom", fontsize=5.0, color="0.4")
+                ha="right", va="bottom", fontsize=5.0, color=ac, path_effects=st)
     ax.set_xlim(*xlim); ax.set_ylim(*ylim)
     ax.set_xlabel(r"heterogeneity $h$", labelpad=1)
     ax.set_ylabel(r"coupling $K$", labelpad=2)
-    ax.text(0.04, 0.62, "coherent", transform=ax.transAxes, fontsize=5.5, color="0.4")
-    ax.text(0.58, 0.10, "incoherent", transform=ax.transAxes, fontsize=5.5, color="0.4")
+    if lk is None:                                    # with the heatmap the cluster counts label the regions
+        ax.text(0.04, 0.62, "coherent", transform=ax.transAxes, fontsize=5.5, color=tc)
+        ax.text(0.58, 0.10, "incoherent", transform=ax.transAxes, fontsize=5.5, color=tc)
     ax.legend(loc="upper left", fontsize=5.0, handlelength=1.6, borderaxespad=0.3)
+    return im
 
 
-def plot_DC(ax, d, reg=None):
+def plot_DC(ax, d, reg=None, lk=None):
     """Fold / Hopf loci in the (h_Delta, h_ombar) heterogeneity plane (synchronization boundary)."""
     xlim, ylim = (0.0, 1.3), (0.0, 1.3)
-    if reg is not None:
+    im = None
+    if lk is not None:
+        im = _shade_locking(ax, lk)
+    elif reg is not None:
         _shade_regions(ax, reg)
-    plot_loci_styled(ax, d["loci"], xlim, ylim)
-    ax.scatter([1.0], [1.0], marker="*", s=28, color="0.3", zorder=6)            # data fit (h=1)
+    plot_loci_styled(ax, d["loci"], xlim, ylim, stroke=lk is not None)
+    ac, st = _annot_style(lk)
+    ax.scatter([1.0], [1.0], marker="*", s=28, color="0.3", zorder=6,
+               edgecolors="w" if lk is not None else "none", linewidths=0.4)   # data fit (h=1)
     ax.annotate("data", xy=(1.0, 1.0), xytext=(-3, -2), textcoords="offset points",
-                ha="right", va="top", fontsize=5.0, color="0.4")
+                ha="right", va="top", fontsize=5.0, color=ac, path_effects=st)
     ax.set_xlim(*xlim); ax.set_ylim(*ylim)
     ax.set_xlabel(r"width scaling $h_\Delta$", labelpad=1)
     ax.set_ylabel(r"centre spread $h_{\bar\omega}$", labelpad=2)
-    ax.text(0.04, 0.10, "synchronized", transform=ax.transAxes, fontsize=5.5, color="0.4")
-    ax.text(0.40, 0.88, "asynchronous", transform=ax.transAxes, fontsize=5.5, color="0.4")
+    if lk is None:                                    # with the heatmap the cluster counts label the regions
+        ax.text(0.04, 0.10, "synchronized", transform=ax.transAxes, fontsize=5.5, color="0.4")
+        ax.text(0.40, 0.88, "asynchronous", transform=ax.transAxes, fontsize=5.5, color="0.4")
     ax.legend(loc="lower right", fontsize=5.0, handlelength=1.6, borderaxespad=0.3)
+    return im
 
 
 def plot_rate(ax, r):
@@ -275,12 +360,23 @@ def main():
     reg_dc = np.load(REGIONS_DC_NPZ, allow_pickle=False) if os.path.exists(REGIONS_DC_NPZ) else None
     plot_1d(c, lumped, env)
     plot_rate(d, rate)
-    plot_hK(e, lumped, reg_hk)
-    plot_DC(f, twoknob, reg_dc)
+    lk_hk = np.load(LOCK_HK_NPZ) if os.path.exists(LOCK_HK_NPZ) else None
+    lk_dc = np.load(LOCK_DC_NPZ) if os.path.exists(LOCK_DC_NPZ) else None
+    use_lock = lk_hk is not None and lk_dc is not None and "--regions" not in sys.argv
+    im = plot_hK(e, lumped, reg_hk, lk_hk if use_lock else None)
+    plot_DC(f, twoknob, reg_dc, lk_dc if use_lock else None)
+    if use_lock:
+        cb = fig.colorbar(im, ax=[e, f], orientation="horizontal", fraction=0.05, pad=0.02, aspect=40)
+        cb.set_label((r"network: fraction in the largest locked cluster" if BG_KEY == "ell_max" else
+                      r"network: locked fraction $\ell$")
+                     + (" (numbers: macroscopic locked clusters)" if SHOW_CLUSTERS else ""),
+                     fontsize=6, labelpad=1)
+        cb.ax.tick_params(labelsize=5.5)
     for ax, letter in zip([a, b, c, d, e, f], "abcdef"):
         _panel_label(ax, letter)
 
-    out = os.path.join(_HERE, "kmo_heterogeneity_figure")
+    out = os.path.join(_HERE, "kmo_heterogeneity_figure" + ("_locking" if use_lock else "")
+                       + ("_all" if use_lock and BG_KEY == "ell" else ""))
     fig.savefig(out + ".png", dpi=300, bbox_inches="tight")
     fig.savefig(out + ".svg", bbox_inches="tight")
     print(f"[saved] {os.path.basename(out)}.{{png,svg}}")

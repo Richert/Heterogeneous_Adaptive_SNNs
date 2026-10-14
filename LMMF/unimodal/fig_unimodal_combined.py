@@ -17,6 +17,9 @@ Reads only saved results; runtime < 1 min.
             [--dists gauss,g8,dgauss] [--mmax 64] [--width-k 10]
 Default (main figure): M_max = 64 with the width floor k = 10 for the sample fits -> fig_unimodal_combined.*;
 other fit sets are written with a tag (e.g. _mmax100).
+--illustration [--ramp-alpha 0.7]: the revised figure (main_illus) for the setup of LMMF/illustration.py
+(seed-searched N = 1000 samples, λ = 1e-6): fits with / without the noise floor, network locked fraction,
+and R(t) along the backward ramp -> illustration/fig_unimodal_illustration.*
 """
 import os, sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +33,8 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.ticker import LogLocator, NullFormatter
+from matplotlib.colors import Normalize
+import matplotlib.patheffects as pe
 from prl_style import set_prl_style, panel_label
 import lorentzian_mixture as LM
 import unimodal_kalpha as UK
@@ -48,6 +53,7 @@ CLS_NAMES = ["async.", "sync."]
 ALPHA2_DEFAULT = 0.7
 MMAX_MAIN, WIDTH_K_MAIN = 64, 10                             # fit set of the main figure (untagged file name)
 R_SYNC, R_OSC = 0.1, 0.05                                     # N = 1000: larger finite-size jitter
+ELL_FLOOR = 1e-3                                              # lower end of the log10 ℓ colour scale
 _lab = functools.partial(panel_label, dx=-20, dy=3, fontsize=8)
 
 
@@ -90,7 +96,31 @@ def rmse_row(net, other, ia, k=None):
     return 0.5 * (UF.spectral_rmse(net["fwd"][ia], sel("fwd")) + UF.spectral_rmse(net["bwd"][ia], sel("bwd")))
 
 
-def main(names, alpha2, mmax, width_k):
+def load_row(name, illus, mmax, width_k):
+    """Everything a row needs: fits (with stability map 'G'), sample, ramps of network / fits / continuum,
+    and the (K, α) grid of the stability maps."""
+    if illus:
+        IL = _illustration()
+        loci = np.load(IL.loci_file(name), allow_pickle=True).item()
+        fits = {s: dict(IL.load_fit(name, s), G=loci[s][0]) for s in SCEN}
+        R = {d: IL.load_ramps(name, d) for d in UK.DIRECTIONS}
+        return dict(fits=fits, x=IL.sample(name), net={d: R[d]["R_net"] for d in R}, lm={d: R[d]["R_fit"] for d in R},
+                    co={d: R[d]["R_cont"] for d in R}, KF=loci["K"], AF=loci["A"])
+    fits = {s: np.load(FS.fpath(name, s, i, N1.N_NET, mmax, width_k), allow_pickle=True).item()
+            for s, i in N1.SCEN_ORDER}
+    has_cont = any(f.startswith(f"{name}_cont_") for f in os.listdir(N1.OUT))
+    return dict(fits=fits, x=N1.network_sample(name), net=assemble(name, "net", "R_net"),
+                lm=assemble(name, "lmmf", "R_lmmf", mmax, width_k),
+                co=assemble(name, "cont", "R_cont") if has_cont else None, KF=UK.K_FINE, AF=UK.A_FINE)
+
+
+def _illustration():
+    sys.path.insert(0, os.path.join(_HERE, ".."))
+    import illustration as IL
+    return IL
+
+
+def main(names, alpha2, mmax, width_k, illus=False):
     set_prl_style("prl")
     fig = plt.figure(figsize=(7.0, 1.5 * len(names) + 0.5))
     gs = fig.add_gridspec(len(names) + 1, 4, height_ratios=[1.0] * len(names) + [0.24],
@@ -102,11 +132,11 @@ def main(names, alpha2, mmax, width_k):
     letters = iter("abcdefghijklmnop")
     for r, name in enumerate(names):
         ax = [fig.add_subplot(gs[r, j]) for j in range(4)]
-        fits = {s: np.load(FS.fpath(name, s, i, N1.N_NET, mmax, width_k), allow_pickle=True).item()
-                for s, i in N1.SCEN_ORDER}
+        D = load_row(name, illus, mmax, width_k)
+        fits = D["fits"]
         # (1) distribution, sample, fits
         a = ax[0]
-        x = N1.network_sample(name)
+        x = D["x"]
         lim = 2.5 if name == "dgauss" else 2.0 if name.startswith("g") else 3.0
         g = np.linspace(-lim, lim, 1201)
         a.hist(x, bins=50, range=(-lim, lim), density=True, color=C_HIST, edgecolor="none", zorder=1)
@@ -122,23 +152,35 @@ def main(names, alpha2, mmax, width_k):
                ha="right", va="top", fontsize=5.5, color="0.25")
         # (2) network classification + incoherence boundaries
         b = ax[1]
-        net = assemble(name, "net", "R_net")
+        net = D["net"]
+        if illus:                                # locked fraction of the network (backward ramp)
+            L = _illustration().locking_maps(name, "bwd")
+            ext_l = [UK.K_GRID[0] - 0.05, UK.K_GRID[-1] + 0.05, UK.A_GRID[0] - 0.025, UK.A_GRID[-1] + 0.025]
+            im_l = b.imshow(np.log10(np.maximum(L["ell_net"], ELL_FLOOR)), origin="lower", aspect="auto", extent=ext_l,
+                            cmap="viridis", norm=Normalize(np.log10(ELL_FLOOR), 0.0), interpolation="nearest")
+            ex = np.load(UK._f(name, "boundary_exact") + ".npy"); ex = ex[np.isfinite(ex[:, 0])]
+            b.plot(ex[:, 0], np.abs(ex[:, 1]), "--", color="w", lw=1.0)
+            for s in SCEN:
+                b.contour(D["KF"], D["AF"], fits[s]["G"], levels=[0.0], colors=[C_FIT[s]],
+                          linewidths=0.9).set_path_effects([pe.withStroke(linewidth=1.8, foreground="w")])
+            for a_ in alphas:
+                b.axhline(a_, color="w", lw=0.5, ls=(0, (1, 2)))
+            b.set_xlim(ext[:2]); b.set_ylim(ext[2:]); b.set_ylabel(r"phase lag $\alpha$", labelpad=2)
         cls = classify_binary(net)
         n4 = np.bincount(UF.combine(classify(net["fwd"]), classify(net["bwd"])).ravel() * 2 + cls.ravel(), minlength=8)
         print(f"{name}: 4-class -> (async, sync): mono-async {n4[0:2]}, mono-sync {n4[2:4]}, "
               f"multistable {n4[4:6]}, oscillatory {n4[6:8]}")
-        b.imshow(cls, origin="lower", aspect="auto", extent=ext, cmap=cmap, norm=norm, interpolation="nearest")
-        ex = np.load(UK._f(name, "boundary_exact") + ".npy"); ex = ex[np.isfinite(ex[:, 0])]
-        b.plot(ex[:, 0], np.abs(ex[:, 1]), "--", color=C_TRUE, lw=1.0)
-        for s in SCEN:
-            b.contour(UK.K_FINE, UK.A_FINE, fits[s]["G"], levels=[0.0], colors=[C_FIT[s]], linewidths=0.85)
-        for a_ in alphas:
-            b.axhline(a_, color="k", lw=0.5, ls=(0, (1, 2)))
-        b.set_xlim(ext[:2]); b.set_ylim(ext[2:]); b.set_ylabel(r"phase lag $\alpha$", labelpad=2)
+        if not illus:
+            b.imshow(cls, origin="lower", aspect="auto", extent=ext, cmap=cmap, norm=norm, interpolation="nearest")
+            ex = np.load(UK._f(name, "boundary_exact") + ".npy"); ex = ex[np.isfinite(ex[:, 0])]
+            b.plot(ex[:, 0], np.abs(ex[:, 1]), "--", color=C_TRUE, lw=1.0)
+            for s in SCEN:
+                b.contour(D["KF"], D["AF"], fits[s]["G"], levels=[0.0], colors=[C_FIT[s]], linewidths=0.85)
+            for a_ in alphas:
+                b.axhline(a_, color="k", lw=0.5, ls=(0, (1, 2)))
+            b.set_xlim(ext[:2]); b.set_ylim(ext[2:]); b.set_ylabel(r"phase lag $\alpha$", labelpad=2)
         # (3)-(4) RMSE vs K, shared y-limits within the row
-        lm = assemble(name, "lmmf", "R_lmmf", mmax, width_k)
-        has_cont = any(f.startswith(f"{name}_cont_") for f in os.listdir(N1.OUT))
-        co = assemble(name, "cont", "R_cont") if has_cont else None
+        lm, co = D["lm"], D["co"]
         vals = []
         for c, a_ in zip(ax[2:], alphas):
             ia = int(np.argmin(np.abs(UK.A_GRID - a_)))
@@ -166,24 +208,152 @@ def main(names, alpha2, mmax, width_k):
             _lab(axx, next(letters))
         if r == 0:
             ax[0].set_title(r"distribution, $N=1000$ sample, fits", pad=3)
-            ax[1].set_title(r"network ($N=1000$) and thresholds", pad=3)
+            ax[1].set_title(r"network ($N=1000$): locked fraction" if illus else
+                            r"network ($N=1000$) and thresholds", pad=3)
     # shared legend
     lg = fig.add_subplot(gs[-1, :]); lg.axis("off")
     h = [Line2D([], [], color=C_TRUE, lw=1.1, label=r"true $\rho$"), Patch(fc=C_HIST, label=r"sample ($N=1000$)")]
     h += [Line2D([], [], color=C_FIT[s], lw=0.9, label=L_FIT[s]) for s in SCEN]
     h += [Line2D([], [], color=C_TRUE, ls="--", lw=1.0, label=r"exact threshold (true $\rho$)"),
           Line2D([], [], color=C_REF, lw=1.0, label=r"network vs. true-$\rho$ mean field")]
-    h += [Patch(fc=c_, ec="0.6", lw=0.3, label=l_) for c_, l_ in zip(CLS_COLORS, CLS_NAMES)]
-    lg.legend(handles=h, loc="center", ncol=4, frameon=False, handlelength=1.6, columnspacing=1.2,
-              handletextpad=0.5, borderaxespad=0.0)
+    if illus:
+        lg.legend(handles=h, loc="center left", ncol=3, frameon=False, handlelength=1.6, columnspacing=1.2,
+                  handletextpad=0.5, borderaxespad=0.0, bbox_to_anchor=(0.0, 0.5))
+        cax = lg.inset_axes([0.80, 0.30, 0.18, 0.16])
+        cb = fig.colorbar(im_l, cax=cax, orientation="horizontal")
+        cb.set_label(r"$\log_{10}$ locked fraction $\ell$ (network)", fontsize=6, labelpad=2)
+        cb.ax.xaxis.set_label_position("top")
+        cb.ax.tick_params(labelsize=5.5)
+    else:
+        h += [Patch(fc=c_, ec="0.6", lw=0.3, label=l_) for c_, l_ in zip(CLS_COLORS, CLS_NAMES)]
+        lg.legend(handles=h, loc="center", ncol=4, frameon=False, handlelength=1.6, columnspacing=1.2,
+                  handletextpad=0.5, borderaxespad=0.0)
     tag = ("" if (mmax, width_k) == (MMAX_MAIN, WIDTH_K_MAIN) else
            f"_mmax{mmax}" + (f"_wk{width_k:g}" if width_k else ""))
-    out = os.path.join(UK.OUT, f"fig_unimodal_combined{tag}")
+    out = (os.path.join(_illustration().OUT, "fig_unimodal_illustration") if illus else
+           os.path.join(UK.OUT, f"fig_unimodal_combined{tag}"))
+    fig.savefig(out + ".png", dpi=300); fig.savefig(out + ".svg"); fig.savefig(out + ".pdf")
+    print(f"[saved] {out}.png/.svg/.pdf")
+
+
+C_ILL = {"floor": "#eb6834", "nofloor": "#2a78d6"}          # revised figure: noise floor orange, no floor blue
+L_ILL = {"floor": "LMMF, noise floor", "nofloor": "LMMF, no floor"}
+RAMP_ALPHA = {"gauss": 0.7, "g8": 0.4, "dgauss": 1.1}   # α of the ramp panel, per distribution
+
+
+def main_illus(names, ramp_alpha=RAMP_ALPHA):
+    """Revised unimodal figure (illustration setup). Per row: (1) true ρ, N = 1000 sample, LMMF fits with
+    (orange) and without (blue) the noise floor; (2) network locked fraction (backward ramp) with the exact
+    threshold (white, dashed) and the two LMMF thresholds; (3) R(t) along the whole backward K-ramp at
+    α = ramp_alpha[dist] for network and both LMMFs (LMMF traces recomputed with the finite-size kick applied
+    only when R < N^{-1/2}, i.e. near incoherence: no spikes in the coherent stretches, correct re-growth),
+    with a K strip inside the top of the panel."""
+    from matplotlib.colors import Normalize
+    import matplotlib.patheffects as pe
+    IL = _illustration()
+    set_prl_style("prl")
+    fig = plt.figure(figsize=(7.0, 1.5 * len(names) + 0.5))
+    gs = fig.add_gridspec(len(names) + 1, 3, height_ratios=[1.0] * len(names) + [0.24],
+                          width_ratios=[0.85, 1.0, 1.9], left=0.075, right=0.99, top=0.955,
+                          bottom=0.01, wspace=0.32, hspace=0.3)
+    ext = [UK.K_GRID[0] - 0.05, UK.K_GRID[-1] + 0.05, UK.A_GRID[0] - 0.025, UK.A_GRID[-1] + 0.025]
+    letters = iter("abcdefghijklmnop")
+    kinds = ("floor", "nofloor")
+    stroke = [pe.withStroke(linewidth=1.8, foreground="w")]
+    for r, name in enumerate(names):
+        ax = [fig.add_subplot(gs[r, j]) for j in range(3)]
+        fits = {k: IL.load_fit(name, k) for k in kinds}
+        loci = np.load(IL.loci_file(name), allow_pickle=True).item()
+        # (1) distribution
+        a = ax[0]; x = IL.sample(name)
+        lim = 2.5 if name == "dgauss" else 2.0 if name.startswith("g") else 3.0
+        g = np.linspace(-lim, lim, 1201)
+        a.hist(x, bins=50, range=(-lim, lim), density=True, color=C_HIST, edgecolor="none", zorder=1)
+        a.plot(g, np.asarray(UK.dists()[name]["pdf"](g), float).ravel(), color=C_TRUE, lw=1.1, zorder=2)
+        for k, z in (("nofloor", 3), ("floor", 4)):
+            f = fits[k]
+            a.plot(g, LM.LorentzianMixture(f["w"], f["Om"], f["De"]).pdf(g), color=C_ILL[k], lw=0.8, zorder=z)
+        a.set_xlim(-lim, lim); a.set_yticks([])
+        a.set_ylabel(label(name) + "\n" + r"$\rho(\omega)$", labelpad=2)
+        a.text(0.97, 0.97, r"$M$: " + "/".join(str(fits[k]["M"]) for k in kinds), transform=a.transAxes,
+               ha="right", va="top", fontsize=5.5, color="0.25")
+        # (2) network locked fraction + thresholds
+        b = ax[1]
+        L = IL.locking_maps(name, "bwd")
+        im_l = b.imshow(np.log10(np.maximum(L["ell_net"], ELL_FLOOR)), origin="lower", aspect="auto", extent=ext,
+                        cmap="viridis", norm=Normalize(np.log10(ELL_FLOOR), 0.0), interpolation="nearest")
+        ex = np.load(UK._f(name, "boundary_exact") + ".npy"); ex = ex[np.isfinite(ex[:, 0])]
+        b.plot(ex[:, 0], np.abs(ex[:, 1]), "--", color="w", lw=1.0)
+        for k in kinds:
+            b.contour(loci["K"], loci["A"], loci[k][0], levels=[0.0], colors=[C_ILL[k]],
+                      linewidths=0.9).set_path_effects(stroke)
+        a_r = ramp_alpha[name] if isinstance(ramp_alpha, dict) else ramp_alpha
+        b.axhline(a_r, color="w", lw=0.5, ls=(0, (1, 2)))
+        b.set_xlim(ext[:2]); b.set_ylim(ext[2:]); b.set_ylabel(r"phase lag $\alpha$", labelpad=2)
+        b.set_yticks(np.arange(0.0, 1.41, 0.2))
+        # (3) backward ramp at α = ramp_alpha
+        c = ax[2]
+        R = IL.load_ramps(name, "bwd"); kk = list(R["kinds"])
+        ia = int(np.argmin(np.abs(R["alpha"] - a_r)))
+        Ks = R["K"][::-1]                                         # ramp order: K decreasing
+        ns = R["R_net"].shape[-1]; Tw = (ns - 1) * R["dts"]
+        t = np.concatenate([i * Tw + np.arange(ns - 1) * R["dts"] for i in range(Ks.size)])
+        seg = lambda arr: np.concatenate([arr[ik, :-1] for ik in range(R["K"].size - 1, -1, -1)])
+        c.plot(t, seg(R["R_net"][ia]), color=C_TRUE, lw=0.35, zorder=2)
+        sys.path.insert(0, os.path.join(_HERE, ".."))
+        import illustration_ramps as IR                          # LMMF traces: kick only near incoherence
+        Rnk = IR.lmmf_ramp_nokick(name, float(R["alpha"][ia]), kinds)
+        for j, k in enumerate(kinds):
+            c.plot(t, seg(Rnk[j]), color=C_ILL[k], lw=0.6, zorder=3)
+        c.text(0.012, 0.04, rf"$\alpha = {R['alpha'][ia]:g}$", transform=c.transAxes, ha="left", va="bottom",
+               fontsize=6.5, bbox=dict(fc="w", ec="none", pad=1.0, alpha=0.85), zorder=5)
+        c.set_xlim(0, t[-1]); c.set_ylim(0, 1.12)
+        c.set_ylabel(r"$R(t)$", labelpad=2)
+        # K strip inside the top of the panel
+        strip = c.inset_axes([0.0, 0.905, 1.0, 0.095])
+        strip.imshow(Ks[None, :], aspect="auto", cmap="Greys", extent=[0, t[-1], 0, 1],
+                     norm=Normalize(-0.4 * Ks.max(), 1.25 * Ks.max()), interpolation="nearest")
+        for Kl in (3.5, 2.5, 1.5, 0.5):
+            i = int(np.argmin(np.abs(Ks - Kl)))
+            strip.text((i + 0.5) * Tw, 0.5, rf"$K\!=\!{Ks[i]:g}$", ha="center", va="center", fontsize=5,
+                       color="w" if Ks[i] > 2.0 else "k")
+        for Kb in (3.0, 2.0, 1.0):                               # K = 3, 2, 1 boundaries as thin ticks
+            strip.axvline((int(np.argmin(np.abs(Ks - Kb)))) * Tw, color="0.5", lw=0.4)
+        strip.set_xlim(0, t[-1]); strip.set_xticks([]); strip.set_yticks([])
+        for sp in strip.spines.values():
+            sp.set_linewidth(0.4)
+        if r == 0:
+            c.set_title(r"backward $K$-ramp ($100$ time units per $K$ step)", pad=3)
+            ax[0].set_title(r"distribution, $N=1000$ sample, fits", pad=3)
+            ax[1].set_title(r"network ($N=1000$): locked fraction", pad=3)
+        for j, axx in enumerate(ax):
+            if r == len(names) - 1:
+                axx.set_xlabel((r"$\omega$", r"coupling $K$", r"time along the ramp")[j], labelpad=1)
+            else:
+                axx.tick_params(labelbottom=False)
+            _lab(axx, next(letters))
+    lg = fig.add_subplot(gs[-1, :]); lg.axis("off")
+    h = [Line2D([], [], color=C_TRUE, lw=1.1, label=r"true $\rho$ / network $R(t)$"),
+         Patch(fc=C_HIST, label=r"sample ($N=1000$)")]
+    h += [Line2D([], [], color=C_ILL[k], lw=0.9, label=L_ILL[k]) for k in kinds]
+    h += [Line2D([], [], color="w", ls="--", lw=1.0, label=r"exact threshold (true $\rho$)",
+                 path_effects=[pe.withStroke(linewidth=2.0, foreground="0.5")])]
+    lg.legend(handles=h, loc="center left", ncol=3, frameon=False, handlelength=1.6, columnspacing=1.2,
+              handletextpad=0.5, borderaxespad=0.0, bbox_to_anchor=(0.0, 0.5))
+    cax = lg.inset_axes([0.80, 0.30, 0.18, 0.16])
+    cb = fig.colorbar(im_l, cax=cax, orientation="horizontal")
+    cb.set_label(r"$\log_{10}$ locked fraction $\ell$ (network)", fontsize=6, labelpad=2)
+    cb.ax.xaxis.set_label_position("top"); cb.ax.tick_params(labelsize=5.5)
+    out = os.path.join(IL.OUT, "fig_unimodal_illustration")
     fig.savefig(out + ".png", dpi=300); fig.savefig(out + ".svg"); fig.savefig(out + ".pdf")
     print(f"[saved] {out}.png/.svg/.pdf")
 
 
 if __name__ == "__main__":
     arg = lambda k, d, t=str: t(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d
-    main(arg("--dists", f"gauss,g{UK.N_RATIONAL},dgauss").split(","), arg("--alpha2", ALPHA2_DEFAULT, float),
-         arg("--mmax", MMAX_MAIN, int), arg("--width-k", WIDTH_K_MAIN, float))
+    if "--illustration" in sys.argv:
+        main_illus(arg("--dists", f"gauss,g{UK.N_RATIONAL},dgauss").split(","), arg("--ramp-alpha", RAMP_ALPHA, float))
+        # (--ramp-alpha A sets one α for all rows; default: RAMP_ALPHA per distribution)
+    else:
+        main(arg("--dists", f"gauss,g{UK.N_RATIONAL},dgauss").split(","), arg("--alpha2", ALPHA2_DEFAULT, float),
+             arg("--mmax", MMAX_MAIN, int), arg("--width-k", WIDTH_K_MAIN, float))

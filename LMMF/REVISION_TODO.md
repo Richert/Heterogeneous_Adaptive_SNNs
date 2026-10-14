@@ -79,3 +79,18 @@ Notes:
 * Open: the double Gaussian with M = 3 misses the restabilisation of incoherence (α ≈ 1.02–1.16).
   Test larger M. Fold curves (`folds` stage) are not yet computed.
 
+
+## 5. Revised figures (2026-10-13)
+
+* **Illustration setup** (`LMMF/illustration.py`, `illustration_ramps.py`): N = 1000 samples chosen by
+  `sample_size_scan.py` (gauss 17, g8 24, dgauss 4, bimodal 18), λ = 1e-6 everywhere, width floor k = 10,
+  fits with / without the noise floor (+ true ρ). Network regimes are characterised by frequency locking
+  (effective frequencies per holding window; LMMF side via test oscillators driven by the LMMF field),
+  which matches the LMMF transitions far better than R-based async/sync labels.
+* Figures: `unimodal/fig_unimodal_combined.py --illustration`, `bimodal/fig_bimodal.py --illustration`
+  (outputs in `mpmf_simulations/illustration/`). Bimodal LMMF critical lines are cluster-resolved
+  (largest Re λ among modes with Im λ < 0 / ≥ 0).
+* **Fig. 3 (e, f)**: background is now the NETWORK's fraction in the largest locked cluster with the
+  number of macroscopic locked clusters (`kmo_heterogeneity_locking.py` + `largest` stage;
+  `kmo_heterogeneity_figure.py` -> `kmo_heterogeneity_figure_locking.*`). This resolves the caption error
+  of §3 (the old shading came from LMMF simulations) — the caption must describe the new shading.
