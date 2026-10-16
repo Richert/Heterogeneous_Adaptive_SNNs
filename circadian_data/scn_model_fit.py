@@ -36,7 +36,10 @@ is a separate task of one process pool (scales to many cores):
   2 single mech.   reset / noise / quenched: the base optimum with the mechanism near 0 + --n-ext generic starts
   3 reset+noise    the reset, noise and base optima (missing mechanism near 0) + --n-ext generic starts
   4 base polish    base from every extended optimum with its mechanism switched off
-  5 refits         every extended model that ended above a model nested in it, from that model's optimum
+  5 refits         every model that ended above a model nested in it, from that model's optimum; the step
+                   coupling is nested in the profile (f_min → 1, f_max → 0), so profile models are also checked
+                   against (and restarted from) the same-mechanism step optimum (stage 4 also seeds the profile
+                   base from the step base)
 Each start is a Nelder–Mead run; the best run of each search is polished once (tighter tolerances). Every model
 is then at least as good as the models nested in it.
 --optimizer basinhopping: each search runs scipy basinhopping from its first --bh-starts starts (the warm starts
@@ -78,6 +81,7 @@ DT_FIT = 0.5
 MAXITER_PER_DIM = 300
 OPT = dict(optimizer="nm", bh_niter=20, bh_T=0.02, bh_step=0.75, bh_mpd=150, bh_starts=8, seed=1)  # --optimizer
 N_BASE, N_EXT = 16, 8          # generic starts per base / extended model (+ the nested warm starts); see --n-base
+REFIT_ROUNDS = 3               # stage-5 passes (stop early when no model is above a nested one)
 X_SPREAD = 2.5                 # random starts: uniform in the transformed space, |x| < X_SPREAD
 STEP = ("K_pre", "K_ttx", "K_wash", "alpha_s")
 PROF = ("K_pre", "f_ttx", "f_min", "tau_ttx", "K_wash", "f_max", "tau_wash", "alpha_s")
@@ -227,6 +231,14 @@ def loss(x, keys, d, model, prep, dt, detail=False):
 
 
 # ─── nested optimisation ─────────────────────────────────────────────────────────────────────────
+def step_to_profile(p):
+    """A step-coupling optimum as a profile start: K_ttx = f_ttx K_pre, no dip (f_min → 1), no rebound (f_max → 0)."""
+    q = dict(p)
+    q["f_ttx"] = float(np.clip(p["K_ttx"] / max(p["K_pre"], 1e-12), 1e-6, 1 - 1e-6))
+    q["f_min"], q["f_max"], q["tau_ttx"], q["tau_wash"] = 1 - 1e-6, 1e-6, 24.0, 24.0
+    return q
+
+
 def warm(p, add=(), drop=()):
     q = dict(p)
     for k in add:
@@ -346,7 +358,7 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
             st.add(u, b, generic_starts(MODELS[b], n_base, seed(u, "base")))
         res.update(st.run("base"))
         st = Stage(pool, mpd, dt)                          # 2: single mechanisms
-        singles = [(u, name(u, m)) for u in units for m in u[4] if mech_of(name(u, m)) not in ("base", "reset+noise")]
+        singles = [(u, n) for u in units for n in u[4] if mech_of(n) not in ("base", "reset+noise")]
         for u, n in singles:
             b = name(u, "base")
             _GQ_MAX[0] = gq[u[0], u[1]]
@@ -355,7 +367,7 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
         if singles:
             res.update(st.run("single mechanisms"))
         st = Stage(pool, mpd, dt)                          # 3: reset+noise (and other composite models)
-        comps = [(u, name(u, m)) for u in units for m in u[4] if mech_of(name(u, m)) == "reset+noise"]
+        comps = [(u, n) for u in units for n in u[4] if mech_of(n) == "reset+noise"]
         for u, n in comps:
             X = [conv(u, warm(P(u, name(u, "base")), add=extra(n, name(u, "base"))), n)]
             for s_ in ("reset", "noise"):
@@ -365,25 +377,38 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
             st.add(u, n, X + generic_starts(MODELS[n], n_ext, seed(u, mech_of(n))))
         if comps:
             res.update(st.run("reset+noise"))
+        step_unit = {(u[0], u[1], u[3]): u for u in units if not u[2]}   # the step family of each profile unit
         st = Stage(pool, mpd, dt)                          # 4: base re-polished from the extended optima
-        for u in units:
+        for u in units:                                    #    (profile base also from the step base optimum)
             b = name(u, "base")
             X = [res[u, b][0]] + [conv(u, warm(P(u, n), drop=extra(n, b)), b)
                                   for (uu, n) in res if uu == u and n != b]
+            us = step_unit.get((u[0], u[1], u[3]))
+            if u[2] and us is not None and (us, name(us, "base")) in res:
+                X.append(conv(u, step_to_profile(P(us, name(us, "base"))), b))
             st.add(u, b, X)
         for k_, v in st.run("base re-polish").items():
             if v[1] < res[k_][1]:
                 res[k_] = v
-        st = Stage(pool, mpd, dt)                          # 5: refit extended models above a nested model
-        todo = 0
-        for (u, n) in [k_ for k_ in res if mech_of(k_[1]) != "base"]:
-            nested = [name(u, "base")] + ([name(u, s_) for s_ in ("reset", "noise") if (u, name(u, s_)) in res]
-                                          if mech_of(n) == "reset+noise" else [])
-            m = min(nested, key=lambda q: res[u, q][1])
-            if res[u, n][1] > res[u, m][1]:
-                st.add(u, n, [conv(u, warm(P(u, m), add=extra(n, m)), n), res[u, n][0]]); todo += 1
-        if todo:
-            for k_, v in st.run(f"refits ({todo})").items():
+        for rnd in range(REFIT_ROUNDS):                    # 5: repeated until no model is above a nested one
+            st = Stage(pool, mpd, dt)                          # 5: refit models above a nested model; nested in a
+            todo = 0                                           #    model = its base / sub-mechanisms (same family)
+            for (u, n) in list(res):                           #    and, for profile models, the same step model
+                if mech_of(n) == "base" and not u[2]:
+                    continue
+                nested = [] if mech_of(n) == "base" else [name(u, "base")] + (
+                    [name(u, s_) for s_ in ("reset", "noise") if (u, name(u, s_)) in res]
+                    if mech_of(n) == "reset+noise" else [])
+                cand = [(res[u, q][1], conv(u, warm(P(u, q), add=extra(n, q)), n)) for q in nested]
+                us = step_unit.get((u[0], u[1], u[3]))
+                ns = n.replace("prof-", "")
+                if u[2] and us is not None and (us, ns) in res:
+                    cand.append((res[us, ns][1], conv(u, step_to_profile(P(us, ns)), n)))
+                if cand and res[u, n][1] > min(c[0] for c in cand) * (1 + 1e-6):
+                    st.add(u, n, [c[1] for c in sorted(cand, key=lambda c: c[0])] + [res[u, n][0]]); todo += 1
+            if not todo:
+                break
+            for k_, v in st.run(f"refits, round {rnd + 1} ({todo})").items():
                 if v[1] < res[k_][1]:
                     res[k_] = v
     print(f"[fit] all stages: {(time.time() - t_all) / 60:.1f} min", flush=True)
