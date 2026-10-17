@@ -8,7 +8,8 @@ Per slice (cells rhythmic under TTX, scn_common.process — the same cell set as
            against ground truth in scn_pipeline_validation.py (best of legacy / global peak / epoch peak).
   ω_i      intrinsic frequencies: least-squares slope of the peak phase over the TTX epoch without its first
            TRANSIENT_H hours (rad/h); cells whose period leaves S.BAND_H are dropped.
-  R        coherence of the slice and of the two lobes (scn_common.lobes), hourly.
+  R        coherence of the slice and of the two lobes (scn_common.lobes), hourly; the lobe mean fields Z_A, Z_B
+           and the inter-lobe phase difference dpsi = arg(Z_A Z̄_B) (rad, > 0: lobe A ahead).
   ceiling  measurement ceiling c(t): R of PERFECTLY synchronised synthetic traces (each cell's measured trend,
            envelope and noise; scn_pipeline_validation "sync") through the same pipeline, averaged over
            N_CEIL noise realisations; slice and lobes. The model is compared as c(t) |Z(t)|: the loss of
@@ -44,6 +45,12 @@ def _lobe_R(PH, lobe):
     return EP.coherence(PH), EP.coherence(PH[:, lobe == 0]), EP.coherence(PH[:, lobe == 1])
 
 
+def mean_field(PH):
+    """Complex mean field ⟨e^{iθ}⟩ over the cells with a defined phase."""
+    ok = np.isfinite(PH)
+    return np.where(ok, np.exp(1j * np.nan_to_num(PH)), 0).sum(1) / np.maximum(ok.sum(1), 1)
+
+
 def build(i):
     import scn_pipeline_validation as V                      # ground-truth generator (heavy imports)
     d = S.process(i); sel0 = d["rhythmic"]["ttx"]; T = d["T"]; ttx, wash = d["ttx"], d["wash"]
@@ -60,6 +67,8 @@ def build(i):
     sel = np.zeros(d["N"], bool); sel[cells] = True
     lobe = S.lobes(d["locs"])[sel]
     R, RA, RB = _lobe_R(PH, lobe)
+    ZA, ZB = mean_field(PH[:, lobe == 0]), mean_field(PH[:, lobe == 1])
+    dpsi = np.angle(ZA * np.conj(ZB))                       # inter-lobe phase difference (rad; > 0: lobe A ahead)
     # measurement ceiling (sync ground truth through the same pipeline), noise scale calibrated (c ≥ R)
     v0, v1 = S.valid_window(T)
     base = ((t >= v0) & (t < v1) & (np.abs(t - ttx) >= MASK_H) & (np.abs(t - wash) >= MASK_H)
@@ -80,6 +89,7 @@ def build(i):
     noise_scale = s
     mask = (base & np.isfinite(c)).astype(float)
     out = dict(slice=i, T=T, ttx=ttx, wash=wash, cells=cells, lobe=lobe, om=om, PH=PH, R=R, RA=RA, RB=RB,
+               ZA=ZA, ZB=ZB, dpsi=dpsi,
                c=c, cA=cA, cB=cB, mask=mask, epochs=np.array([d["epochs"][e] for e in ("pre", "ttx", "wash")]),
                valid=np.array([v0, v1]), mask_h=MASK_H, n_dropped=int((~keep).sum()), noise_scale=noise_scale)
     np.savez_compressed(os.path.join(OUT, f"scn{i}_target.npz"), **out)

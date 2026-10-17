@@ -10,8 +10,9 @@ Model (θ = PER2 phase), cell i in lobe L, TTX level u(t) ∈ [0, 1]:
       K_wash in the three time domains (steps, or first-order relaxations with --rate-ttx / --rate-wash), OR the
       spiking-rate PROFILE (--K-min and/or --K-max given):
           K_s = K_pre                                                   t < t_ttx
-          K_s = K_ttx + (K_min − K_ttx) e^{−(t − t_ttx)/τ_ttx}          t_ttx ≤ t < t_wash   (drop to K_min, partial
-                                                                                              recovery to K_ttx)
+          K_s = K_min + (K_ttx − K_min) σ((t − t_ttx − t_rec)/w_rec)    t_ttx ≤ t < t_wash   (drop to K_min, DELAYED
+                                                                         S-shaped partial recovery to K_ttx around
+                                                                         t_rec h after TTX application; σ = logistic)
           K_s = K_wash + (K_max − K_wash) e^{−(t − t_wash)/τ_wash}      t ≥ t_wash   (rebound to K_max, decay to the
                                                                                       post-washout level K_wash)
   TTX-insensitive coupling (gap junctions, glia): strength K_i, phase lag α_i, mean field Z_• = the cell's own
@@ -85,8 +86,9 @@ def parse():
     p.add_argument("--K-ttx", type=float, default=0.005, help="TTX-sensitive coupling under TTX (rad/h)")
     p.add_argument("--K-wash", type=float, default=0.06, help="TTX-sensitive coupling after washout (rad/h)")
     p.add_argument("--K-min", type=float, default=None,
-                   help="profile: coupling right after TTX application, relaxing to K_ttx with --tau-ttx")
-    p.add_argument("--tau-ttx", type=float, default=24.0, help="profile: relaxation time K_min -> K_ttx (h)")
+                   help="profile: coupling right after TTX application, recovering to K_ttx around --t-rec")
+    p.add_argument("--t-rec", type=float, default=72.0, help="profile: recovery time after TTX application (h)")
+    p.add_argument("--w-rec", type=float, default=12.0, help="profile: width of the S-shaped recovery (h)")
     p.add_argument("--K-max", type=float, default=None,
                    help="profile: rebound coupling right after washout, decaying to K_wash with --tau-wash")
     p.add_argument("--tau-wash", type=float, default=24.0, help="profile: decay time K_max -> K_wash (h)")
@@ -167,14 +169,15 @@ def coupling_input(K_pre, K_ttx, K_wash, t_ttx, t_wash, rate_ttx, rate_wash):
     return K
 
 
-def coupling_profile(K_pre, K_min, K_ttx, tau_ttx, K_max, K_post, tau_wash, t_ttx, t_wash):
-    """K_s(t) following the spiking rate: K_pre; at TTX application a drop to K_min relaxing to K_ttx (τ_ttx);
-    at washout a rebound to K_max decaying to K_post (τ_wash)."""
+def coupling_profile(K_pre, K_min, K_ttx, t_rec, w_rec, K_max, K_post, tau_wash, t_ttx, t_wash):
+    """K_s(t) following the spiking rate: K_pre; at TTX application a drop to K_min with a delayed S-shaped
+    recovery to K_ttx (logistic, centre t_rec h after application, width w_rec h); at washout a rebound to K_max
+    decaying to K_post (τ_wash)."""
     def K(t):
         if t < t_ttx:
             return K_pre
         if t < t_wash:
-            return K_ttx + (K_min - K_ttx) * np.exp(-(t - t_ttx) / tau_ttx)
+            return K_min + (K_ttx - K_min) / (1.0 + np.exp(-(t - t_ttx - t_rec) / w_rec))
         return K_post + (K_max - K_post) * np.exp(-(t - t_wash) / tau_wash)
     return K
 
@@ -199,6 +202,17 @@ def initial_state(model, PHt):
                      for m in range(model["Om"].size)])
 
 
+def _tabulate(f, tg):
+    """f on the grid tg: one vectorised call if f accepts arrays, else point by point."""
+    try:
+        v = np.asarray(f(tg), float)
+        if v.shape == tg.shape:
+            return v
+    except (ValueError, TypeError):
+        pass
+    return np.array([f(x) for x in tg], float)
+
+
 def simulate(model, z0, Kfun, ufun, K_i, alpha_s, alpha_i, insens_global, dw, gamma, t0, t1, gamma_q=0.0,
              resets=(), dt=DT):
     """RK4 (step dt, must divide 1 h) from t0 to t1 (h); hourly times and mean fields (slice, lobe A, lobe B).
@@ -208,7 +222,7 @@ def simulate(model, z0, Kfun, ufun, K_i, alpha_s, alpha_i, insens_global, dw, ga
     es, ei = np.exp(-1j * alpha_s), np.exp(-1j * alpha_i)
     sub = int(round(1.0 / dt)); n = int(round(t1 - t0)); ns = n * sub
     tg = t0 + 0.5 * dt * np.arange(2 * ns + 1)
-    Kg = np.array([Kfun(x) for x in tg]) * es; ug = np.array([ufun(x) for x in tg])
+    Kg = _tabulate(Kfun, tg) * es; ug = _tabulate(ufun, tg)
     lin_g = (1j * (Om[None] - dw * (1.0 - ug[:, None]))
              - (np.maximum(De[None] - gamma_q * (1.0 - ug[:, None]), DELTA_MIN) + gamma * ug[:, None]))
     wA = np.where(LA, w, 0.0) / p[0]; wB = np.where(LA, 0.0, w) / p[1]
@@ -245,7 +259,7 @@ def main():
     model = build(d, a.lam, floor, a.width_k)
     profile = a.K_min is not None or a.K_max is not None
     if profile:
-        Kfun = coupling_profile(a.K_pre, a.K_ttx if a.K_min is None else a.K_min, a.K_ttx, a.tau_ttx,
+        Kfun = coupling_profile(a.K_pre, a.K_ttx if a.K_min is None else a.K_min, a.K_ttx, a.t_rec, a.w_rec,
                                 a.K_wash if a.K_max is None else a.K_max, a.K_wash, a.tau_wash, d["ttx"], d["wash"])
     else:
         Kfun = coupling_input(a.K_pre, a.K_ttx, a.K_wash, d["ttx"], d["wash"], a.rate_ttx, a.rate_wash)
@@ -329,7 +343,7 @@ def main():
     ax2.legend(fontsize=5.5, frameon=False, loc="upper right", ncol=4)
     plt.setp(ax1.get_xticklabels(), visible=False)
     tag = (f"Kpre{a.K_pre:g}_Kttx{a.K_ttx:g}_Kwash{a.K_wash:g}_as{a.alpha_s:g}_Ki{a.K_i:g}_ai{a.alpha_i:g}"
-           + (f"_prof{a.K_min if a.K_min is not None else a.K_ttx:g}-{a.tau_ttx:g}-"
+           + (f"_prof{a.K_min if a.K_min is not None else a.K_ttx:g}-{a.t_rec:g}-{a.w_rec:g}-"
               f"{a.K_max if a.K_max is not None else a.K_wash:g}-{a.tau_wash:g}" if profile else "")
            + ("_iglob" if a.insens_global else "")
            + (f"_dw{a.dw_ttx:g}" if a.dw_ttx else "") + (f"_g{a.gamma_ttx:g}" if a.gamma_ttx else "")

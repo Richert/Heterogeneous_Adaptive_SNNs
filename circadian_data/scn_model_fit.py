@@ -6,13 +6,24 @@ Model = scn_lmmf_sim (identical build and integrator), for a cell i in lobe L, T
     θ̇_i = ω_i − δω (1 − u) + K_s(t) Im(e^{−iα_s} Z e^{−iθ_i}) + K_i Im(e^{−iα_i} Z_L e^{−iθ_i})  [+ Cauchy noise γ u]
     phase scrambling z_m → e^{−σ} z_m at TTX application (σ_ttx) / washout (σ_wash);
     TTX-induced quenched disorder γ_q (contained in the measured distribution, absent outside TTX).
-Two shapes of the TTX-sensitive coupling K_s(t) (scn_lmmf_sim.coupling_profile):
+TTX level in the tissue u(t) (scn_homeostatic_coupling.tissue_level), SHARED by all shapes: 0 before TTX, fast
+rise (τ_on = 0.5 h) to 1, gradual decline (τ_off) to the residual u_res after washout. The noise is γ u(t) in every
+shape (an extra Lorentzian width; some noise remains after an incomplete washout). In the step and profile shapes
+u(t) enters only through the noise, so u_res and τ_off are free only in their noise versions.
+Three shapes of the TTX-sensitive coupling K_s(t):
     step     K_pre | K_ttx | K_wash                                       (K_min = K_ttx, K_max = K_wash)
-    profile  K_pre | K_min → K_ttx (τ_ttx) | K_max → K_post (τ_wash):  K_s follows the spiking rate — a sudden drop
-             at TTX application with partial recovery under TTX, a rebound at washout that decays to a (possibly
+    profile  K_pre | K_min → K_ttx, delayed S-shaped recovery (logistic centred t_rec h after TTX application,
+             width w_rec h) | K_max → K_post (τ_wash):  K_s follows the spiking rate — a sudden drop at TTX
+             application, a delayed partial recovery under TTX, a rebound at washout that decays to a (possibly
              lower) post-washout level. K_post is stored as K_wash. Parametrised as K_ttx = f_ttx K_pre,
-             K_min = f_min K_ttx (so K_min < K_ttx < K_pre), K_max = K_post + f_max (K_MAX − K_post) (K_max > K_post),
-             f ∈ (0, 1), τ ∈ (TAU_MIN, TAU_MAX) h (log-uniform transform); K_post vs K_pre is free.
+             K_min = f_min K_ttx (so K_min < K_ttx < K_pre), K_max = K_post + f_max (K_REB_MAX − K_post)
+             (K_max > K_post), f ∈ (0, 1), t_rec ∈ (0, T_REC_MAX) h, w_rec ∈ (W_MIN, W_MAX) h and
+             τ_wash ∈ (TAU_MIN, TAU_MAX) h (log-uniform); K_post vs K_pre is free. (The exponential recovery
+             K_min → K_ttx of 2026-10-16 is dropped.)
+    homeo    homeostatic controller (scn_homeostatic_coupling): r = σ(g − θ_0 − Δθ u), τ_g ġ = (r* − r) − λ g,
+             K_s = K_pre r / r*, driven by the same tissue TTX level u(t). Parameters K_pre, r* ∈ (0.02, 0.8),
+             Δθ ∈ (1, 12), τ_g ∈ (0.2, 24) h (log), λ = f_λ r*/Δθ with f_λ ∈ (0, 1) (recovery under TTX stays
+             possible), u_res ∈ (0, 0.8), τ_off ∈ (0.5, 48) h (log), α_s. Not nested with the other shapes.
 LMMF from one Lorentzian mixture per lobe (scn_lmmf_sim.build; noise floor or not), started from the measured
 state at the first hour with ≥ 90 % defined phases and run continuously to the end of the valid window.
 
@@ -23,9 +34,10 @@ mask (valid window without ±MASK_H h around the treatment changes):
 (ν = collective frequency in the pre-TTX and post-washout stretches outside the mask).
 
 Models (MODELS; all parameters not listed fixed at 0; ONE harmonic coupling term unless +Ki):
-    base         step: K_pre, K_ttx, K_wash, α_s          prof-base   profile: K_pre, f_ttx, f_min, τ_ttx, K_wash,
-    reset        base + σ_ttx                                                  f_max, τ_wash, α_s
-    noise        base + γ                                 prof-<mech> the profile + the same mechanisms
+    base         step: K_pre, K_ttx, K_wash, α_s       prof-base    K_pre, f_ttx, f_min, t_rec, w_rec, K_wash, f_max,
+    noise        base + γ, u_res, τ_off                             τ_wash, α_s
+    reset        base + σ_ttx                          homeo-base   K_pre, r*, Δθ, τ_g, f_λ, u_res, τ_off, α_s
+                                                       <shape>-noise  + γ (and u_res, τ_off where not yet free)
     quenched     base + γ_q  (γ_q < GQ_FRAC × the narrowest component width, so no width is clipped)
     reset+noise  base + σ_ttx + γ
     shift, full, <name>+Ki   (not in the defaults) base + δω | σ_ttx, σ_wash, γ, δω | + lobe-local K_i
@@ -52,7 +64,9 @@ space, --bh-maxiter-per-dim for the local Nelder–Mead); results in model_fit/n
         [--bh-maxiter-per-dim 150] [--bh-starts 8]
     e.g. the optimiser check:  ... fit figure --optimizer basinhopping --models prof-base,prof-reset+noise
     (time a single loss evaluation: python scn_model_fit.py time --slices 1)
-Results: data_paths.MPMF/circadian_data/model_fit/nested/{scn<i>_<kind>_<model>.npy, scn_model_fit.{png,pdf},
+Default --models: base, noise, prof-base, prof-noise, homeo-base, homeo-noise (the phase reset is dropped: its
+discontinuous jump in R disagrees with the data).
+Results: data_paths.MPMF/circadian_data/model_fit/shapes/{scn<i>_<kind>_<model>.npy, scn_model_fit.{png,pdf},
          scn_model_fit_summary.csv}   (mixtures cached in model_fit/)
 """
 import os, sys
@@ -69,11 +83,19 @@ import data_paths as dp
 import scn_common as S
 import scn_lmmf_sim as SIM
 import scn_targets as TG
+import scn_homeostatic_coupling as HC
 
 MIX = dp.ensure(os.path.join(S.OUT, "model_fit"))
-OUT = dp.ensure(os.path.join(MIX, "nested"))
+OUT = dp.ensure(os.path.join(MIX, "shapes"))               # step / sigmoid profile / homeostatic (old: nested/)
 K_MAX, DW_MAX, G_MAX, S_MAX = 0.3, 0.03, 0.05, 3.0
+K_REB_MAX = 1.0                # upper bound of the washout rebound K_max (phase model: large K = fast resync only)
 TAU_MIN, TAU_MAX = 1.0, 240.0
+T_REC_MAX = 150.0              # recovery centre after TTX application (h; TTX epochs are 129–145 h)
+W_MIN, W_MAX = 1.0, 48.0       # width of the S-shaped recovery (h)
+BOUNDS_HOMEO = dict(r_star=(0.02, 0.8), d_theta=(1.0, 12.0), tau_g=(0.2, 24.0), f_lam=(0.0, 1.0),
+                    u_res=(0.0, 0.8), tau_off=(0.5, 48.0))   # τ_g, τ_off log-uniform
+LOG_KEYS = ("tau_wash", "w_rec", "tau_g", "tau_off")
+DT_HOMEO = 0.1                 # controller grid (h)
 GQ_FRAC = 0.95
 SIGMA_NU = 0.005
 LAM, WIDTH_K = 1e-6, 10.0
@@ -84,29 +106,39 @@ N_BASE, N_EXT = 16, 8          # generic starts per base / extended model (+ the
 REFIT_ROUNDS = 3               # stage-5 passes (stop early when no model is above a nested one)
 X_SPREAD = 2.5                 # random starts: uniform in the transformed space, |x| < X_SPREAD
 STEP = ("K_pre", "K_ttx", "K_wash", "alpha_s")
-PROF = ("K_pre", "f_ttx", "f_min", "tau_ttx", "K_wash", "f_max", "tau_wash", "alpha_s")
-MECH = {"base": (), "reset": ("reset_ttx",), "noise": ("gamma",), "quenched": ("gamma_q",),
-        "reset+noise": ("reset_ttx", "gamma"), "shift": ("dw",), "full": ("reset_ttx", "reset_wash", "gamma", "dw")}
+PROF = ("K_pre", "f_ttx", "f_min", "t_rec", "w_rec", "K_wash", "f_max", "tau_wash", "alpha_s")
+HOMEO = ("K_pre", "r_star", "d_theta", "tau_g", "f_lam", "u_res", "tau_off", "alpha_s")
+SHAPES = {"": STEP, "prof-": PROF, "homeo-": HOMEO}
+PREFIXES = ("prof-", "homeo-")
+SHAPE_NAME = {"": "step", "prof-": "sigmoid profile", "homeo-": "homeostatic"}
+NOISE = ("gamma", "u_res", "tau_off")                      # noise γ u(t) with the tissue TTX level u(t)
+MECH = {"base": (), "reset": ("reset_ttx",), "noise": NOISE, "quenched": ("gamma_q",),
+        "reset+noise": ("reset_ttx",) + NOISE, "shift": ("dw",), "full": ("reset_ttx", "reset_wash", "dw") + NOISE}
 MODELS = {}
 for _m, _x in MECH.items():
-    MODELS[_m] = STEP + _x
-    MODELS["prof-" + _m] = PROF + _x
+    for _pre, _keys in SHAPES.items():
+        MODELS[_pre + _m] = _keys + tuple(k for k in _x if k not in _keys)
     MODELS[_m + "+Ki"] = STEP + ("K_i",) + _x + (("alpha_i",) if _m == "full" else ())
-DEFAULT_MODELS = tuple(p + m for p in ("", "prof-") for m in ("base", "reset", "noise", "reset+noise", "quenched"))
+DEFAULT_MODELS = ("base", "noise", "prof-base", "prof-noise", "homeo-base", "homeo-noise")
 DEFAULT_SLICES = (1, 2, 3, 4)                              # SCN5 set aside (outlier) for now
 DEFAULTS = dict(K_pre=0.0, K_ttx=0.0, K_wash=0.0, K_i=0.0, alpha_s=0.0, alpha_i=0.0, dw=0.0, gamma=0.0,
-                gamma_q=0.0, reset_ttx=0.0, reset_wash=0.0, f_ttx=1.0, f_min=1.0, tau_ttx=24.0, f_max=0.0,
-                tau_wash=24.0)
-SMALL = dict(reset_ttx=1e-3, reset_wash=1e-3, gamma=1e-4, gamma_q=1e-5, dw=0.0, K_i=1e-4)
-STARTS = [dict(K_pre=0.10, K_ttx=0.006, K_wash=0.08, alpha_s=0.0, f_ttx=0.1, f_min=0.2, tau_ttx=48.0, f_max=0.3,
+                gamma_q=0.0, reset_ttx=0.0, reset_wash=0.0, f_ttx=1.0, f_min=1.0, t_rec=72.0, w_rec=12.0, f_max=0.0,
+                tau_wash=24.0, r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.0, tau_off=HC.TAU_ON)
+SMALL = dict(reset_ttx=1e-3, reset_wash=1e-3, gamma=1e-4, gamma_q=1e-5, dw=0.0, K_i=1e-4, u_res=1e-3, tau_off=1.0)
+STARTS = [dict(K_pre=0.10, K_ttx=0.006, K_wash=0.08, alpha_s=0.0, f_ttx=0.1, f_min=0.2, t_rec=72.0, w_rec=12.0, f_max=0.3,
                tau_wash=12.0, reset_ttx=0.3, gamma=0.003, gamma_q=0.3),
-          dict(K_pre=0.25, K_ttx=0.02, K_wash=0.15, alpha_s=0.2, f_ttx=0.3, f_min=0.1, tau_ttx=96.0, f_max=0.5,
+          dict(K_pre=0.25, K_ttx=0.02, K_wash=0.15, alpha_s=0.2, f_ttx=0.3, f_min=0.1, t_rec=96.0, w_rec=24.0, f_max=0.5,
                tau_wash=24.0, reset_ttx=0.7, gamma=0.01, gamma_q=0.6),
-          dict(K_pre=0.06, K_ttx=0.002, K_wash=0.05, alpha_s=-0.2, f_ttx=0.05, f_min=0.5, tau_ttx=24.0, f_max=0.1,
+          dict(K_pre=0.06, K_ttx=0.002, K_wash=0.05, alpha_s=-0.2, f_ttx=0.05, f_min=0.5, t_rec=36.0, w_rec=6.0, f_max=0.1,
                tau_wash=48.0, reset_ttx=0.1, gamma=0.001, gamma_q=0.1),
-          dict(K_pre=0.28, K_ttx=0.05, K_wash=0.2, alpha_s=0.0, f_ttx=0.5, f_min=0.05, tau_ttx=150.0, f_max=0.7,
+          dict(K_pre=0.28, K_ttx=0.05, K_wash=0.2, alpha_s=0.0, f_ttx=0.5, f_min=0.05, t_rec=120.0, w_rec=36.0, f_max=0.7,
                tau_wash=6.0, reset_ttx=0.5, gamma=0.02, gamma_q=0.8)]
-for _s in STARTS:                                           # common defaults of the remaining parameters
+_HSTARTS = [dict(r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.1, tau_off=6.0),
+            dict(r_star=0.1, d_theta=4.0, tau_g=1.0, f_lam=0.1, u_res=0.3, tau_off=12.0),
+            dict(r_star=0.4, d_theta=8.0, tau_g=6.0, f_lam=0.6, u_res=0.05, tau_off=2.0),
+            dict(r_star=0.3, d_theta=3.0, tau_g=0.5, f_lam=0.8, u_res=0.5, tau_off=24.0)]
+for _s, _h in zip(STARTS, _HSTARTS):                       # common defaults of the remaining parameters
+    _s.update(_h)
     for _k, _v in dict(K_i=0.01, alpha_i=0.0, dw=0.0, reset_wash=0.1).items():
         _s.setdefault(_k, _v)
 KINDS = ("floor", "nofloor")
@@ -115,16 +147,23 @@ C_MODEL = {"base": "0.35", "reset": "#b2182b", "noise": "#2166ac", "shift": "#5a
 _GQ_MAX = [G_MAX]                                          # set per job from the mixture (γ_q < narrowest width)
 
 
+def prefix_of(name):
+    return next((p for p in PREFIXES if name.startswith(p)), "")
+
+
 def mech_of(name):
-    return name.replace("prof-", "").replace("+Ki", "")
+    return name[len(prefix_of(name)):].replace("+Ki", "")
 
 
 def family_of(name):
-    return ("prof-" if name.startswith("prof-") else "") + ("|+Ki" if name.endswith("+Ki") else "")
+    return prefix_of(name) + ("|+Ki" if name.endswith("+Ki") else "")
 
 
 # ─── parameter transforms ────────────────────────────────────────────────────────────────────────
 def _bounds(k):
+    if k in BOUNDS_HOMEO:
+        lo, hi = BOUNDS_HOMEO[k]
+        return (np.log(lo), np.log(hi)) if k in LOG_KEYS else (lo, hi)
     if k.startswith("K_"):
         return 0.0, K_MAX
     if k.startswith("alpha"):
@@ -139,13 +178,17 @@ def _bounds(k):
         return 0.0, 1.0
     if k.startswith("tau"):
         return np.log(TAU_MIN), np.log(TAU_MAX)
+    if k == "w_rec":
+        return np.log(W_MIN), np.log(W_MAX)
+    if k == "t_rec":
+        return 0.0, T_REC_MAX
     return 0.0, S_MAX
 
 
 def to_x(p, keys):
     x = []
     for k in keys:
-        lo, hi = _bounds(k); v = np.log(p[k]) if k.startswith("tau") else p[k]
+        lo, hi = _bounds(k); v = np.log(p[k]) if k in LOG_KEYS else p[k]
         q = np.clip((v - lo) / (hi - lo), 1e-6, 1 - 1e-6)
         x.append(np.log(q / (1 - q)))
     return np.array(x)
@@ -156,12 +199,15 @@ def from_x(x, keys):
     p = dict(DEFAULTS)
     for k, v in zip(keys, x):
         lo, hi = _bounds(k); q = lo + (hi - lo) / (1 + np.exp(-v))
-        p[k] = np.exp(q) if k.startswith("tau") else q
-    if "f_ttx" in keys:
+        p[k] = np.exp(q) if k in LOG_KEYS else q
+    p["lam"] = p["f_lam"] * p["r_star"] / p["d_theta"]
+    if "r_star" in keys:                                    # homeostatic shape: K_s from the controller
+        p["shape"] = "homeo"
+    elif "f_ttx" in keys:
         p["K_ttx"] = p["f_ttx"] * p["K_pre"]
         p["K_min"] = p["f_min"] * p["K_ttx"]
-        p["K_max"] = p["K_wash"] + p["f_max"] * (K_MAX - p["K_wash"])
-    else:
+        p["K_max"] = p["K_wash"] + p["f_max"] * (K_REB_MAX - p["K_wash"])
+    if "r_star" not in keys and "f_ttx" not in keys:
         p["K_min"], p["K_max"] = p["K_ttx"], p["K_wash"]
     return p
 
@@ -198,13 +244,25 @@ def prepare(d):
 
 
 def Kfun(p, d):
-    return SIM.coupling_profile(p["K_pre"], p["K_min"], p["K_ttx"], p["tau_ttx"], p["K_max"], p["K_wash"],
+    """K_s(t) of the parameters p (step, sigmoid profile or homeostatic controller)."""
+    if p.get("shape") == "homeo":
+        tc, Kc, *_ = HC.homeostatic_coupling(p["K_pre"], p["r_star"], p["d_theta"], p["tau_g"], p["lam"],
+                                             p["u_res"], float(d["ttx"]), float(d["wash"]), float(d["T"]),
+                                             tau_off=p["tau_off"], dt=DT_HOMEO)
+        return lambda t: np.interp(t, tc, Kc)
+    return SIM.coupling_profile(p["K_pre"], p["K_min"], p["K_ttx"], p["t_rec"], p["w_rec"], p["K_max"], p["K_wash"],
                                 p["tau_wash"], int(d["ttx"]), int(d["wash"]))
+
+
+def ufun(p, d):
+    """Tissue TTX level u(t) (noise γ u): fast application, gradual washout (τ_off) to u_res."""
+    ttx, wash, ur, toff = float(d["ttx"]), float(d["wash"]), p["u_res"], p["tau_off"]
+    return lambda t: HC.tissue_level(t, ttx, wash, ur, toff)
 
 
 def predict(p, d, model, prep, dt):
     ttx, wash = int(d["ttx"]), int(d["wash"])
-    uf = SIM.ttx_level(ttx, wash, np.inf, np.inf)
+    uf = ufun(p, d)
     t0, t1 = prep["t0"], prep["t1"]
     return SIM.simulate(model, SIM.initial_state(model, d["PH"][t0]), Kfun(p, d), uf, p["K_i"], p["alpha_s"],
                         p["alpha_i"], False, p["dw"], p["gamma"], t0, t1, p["gamma_q"],
@@ -235,7 +293,7 @@ def step_to_profile(p):
     """A step-coupling optimum as a profile start: K_ttx = f_ttx K_pre, no dip (f_min → 1), no rebound (f_max → 0)."""
     q = dict(p)
     q["f_ttx"] = float(np.clip(p["K_ttx"] / max(p["K_pre"], 1e-12), 1e-6, 1 - 1e-6))
-    q["f_min"], q["f_max"], q["tau_ttx"], q["tau_wash"] = 1 - 1e-6, 1e-6, 24.0, 24.0
+    q["f_min"], q["f_max"], q["t_rec"], q["w_rec"], q["tau_wash"] = 1 - 1e-6, 1e-6, 72.0, 12.0, 24.0
     return q
 
 
@@ -334,7 +392,7 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
     for i in slices:
         for k in kinds:
             for f, ms in fams.items():
-                pre = "prof-" if f.startswith("prof-") else ""; suf = "+Ki" if f.endswith("+Ki") else ""
+                pre = prefix_of(f); suf = "+Ki" if f.endswith("+Ki") else ""
                 units.append((i, k, pre, suf, tuple(ms)))
     name = lambda u, m: u[2] + m + u[3]
     seed = lambda u, m: (1000 * u[0] + 10 * KINDS.index(u[1]) + sum(map(ord, name(u, m)))) % (2 ** 31)
@@ -378,13 +436,14 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
         if comps:
             res.update(st.run("reset+noise"))
         step_unit = {(u[0], u[1], u[3]): u for u in units if not u[2]}   # the step family of each profile unit
+        is_prof = lambda u: u[2] == "prof-"                 # step ⊂ sigmoid profile; homeo is not nested
         st = Stage(pool, mpd, dt)                          # 4: base re-polished from the extended optima
         for u in units:                                    #    (profile base also from the step base optimum)
             b = name(u, "base")
             X = [res[u, b][0]] + [conv(u, warm(P(u, n), drop=extra(n, b)), b)
                                   for (uu, n) in res if uu == u and n != b]
             us = step_unit.get((u[0], u[1], u[3]))
-            if u[2] and us is not None and (us, name(us, "base")) in res:
+            if is_prof(u) and us is not None and (us, name(us, "base")) in res:
                 X.append(conv(u, step_to_profile(P(us, name(us, "base"))), b))
             st.add(u, b, X)
         for k_, v in st.run("base re-polish").items():
@@ -394,7 +453,7 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
             st = Stage(pool, mpd, dt)                          # 5: refit models above a nested model; nested in a
             todo = 0                                           #    model = its base / sub-mechanisms (same family)
             for (u, n) in list(res):                           #    and, for profile models, the same step model
-                if mech_of(n) == "base" and not u[2]:
+                if mech_of(n) == "base" and not is_prof(u):
                     continue
                 nested = [] if mech_of(n) == "base" else [name(u, "base")] + (
                     [name(u, s_) for s_ in ("reset", "noise") if (u, name(u, s_)) in res]
@@ -402,7 +461,7 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
                 cand = [(res[u, q][1], conv(u, warm(P(u, q), add=extra(n, q)), n)) for q in nested]
                 us = step_unit.get((u[0], u[1], u[3]))
                 ns = n.replace("prof-", "")
-                if u[2] and us is not None and (us, ns) in res:
+                if is_prof(u) and us is not None and (us, ns) in res:
                     cand.append((res[us, ns][1], conv(u, step_to_profile(P(us, ns)), n)))
                 if cand and res[u, n][1] > min(c[0] for c in cand) * (1 + 1e-6):
                     st.add(u, n, [c[1] for c in sorted(cand, key=lambda c: c[0])] + [res[u, n][0]]); todo += 1
@@ -422,14 +481,15 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
                  gq_max=g, optimizer=dict(OPT), n_base=n_base, n_ext=n_ext)
         np.save(os.path.join(OUT, f"scn{i}_{k}_{n}.npy"), r, allow_pickle=True)
         p = r["params"]
-        shown = list(r["keys"]) + (["K_ttx", "K_min", "K_max"] if "f_ttx" in r["keys"] else [])
+        shown = list(r["keys"]) + (["K_ttx", "K_min", "K_max"] if "f_ttx" in r["keys"] else []) + \
+            (["lam"] if "r_star" in r["keys"] else [])
         print(f"[fit] SCN{i} {k:7s} {n:16s} RMSE {r['rmse']:.3f} (A {r['rmse_A']:.3f}, B {r['rmse_B']:.3f}) "
               f"loss {r['loss']:.6f} | " + ", ".join(f"{q} {p[q]:.4g}" for q in shown), flush=True)
 
 
 def timing(i, dt, kind="floor"):
     d = TG.load(i); model = mixture(i, kind, d); prep = prepare(d); _GQ_MAX[0] = GQ_FRAC * float(model["De"].min())
-    keys = MODELS["prof-reset+noise"]; x = to_x(start_params(STARTS[0]), keys)
+    keys = MODELS["homeo-noise"]; x = to_x(start_params(STARTS[0]), keys)
     t0 = time.time()
     for _ in range(5):
         loss(x, keys, d, model, prep, dt)
@@ -455,11 +515,11 @@ def collect(slices, kinds, models):
 def summary(R, slices, kinds, models):
     print("\nRMSE (slice, masked, ceiling-corrected) per slice  [loss]")
     for k in kinds:
-        for pre in ("", "prof-"):
-            ms = [m for m in models if m.startswith(pre) and (pre or not m.startswith("prof-"))]
+        for pre in SHAPES:
+            ms = [m for m in models if prefix_of(m) == pre]
             if not ms:
                 continue
-            print(f"  ── {k}, {'profile' if pre else 'step'}:  " + "  ".join(f"{mech_of(m):>18s}" for m in ms))
+            print(f"  ── {k}, {SHAPE_NAME[pre]}:  " + "  ".join(f"{mech_of(m):>18s}" for m in ms))
             for i in slices:
                 print(f"  SCN{i}  " + "  ".join(f"{R[i, k, m]['rmse']:7.3f} [{R[i, k, m]['loss']:.5f}]"
                                               if (i, k, m) in R else f"{'—':>18s}" for m in ms))
@@ -467,64 +527,70 @@ def summary(R, slices, kinds, models):
     for (i, k, m), r in R.items():
         rows.append(dict(slice=i, kind=k, model=m, n_free=r["n_free"], loss=r["loss"], rmse=r["rmse"],
                          rmse_A=r["rmse_A"], rmse_B=r["rmse_B"],
-                         **{p: r["params"][p] for p in list(DEFAULTS) + ["K_min", "K_max"]}))
+                         **{p: r["params"].get(p, np.nan) for p in list(DEFAULTS) + ["K_min", "K_max", "lam"]}))
     if rows:
         with open(os.path.join(OUT, "scn_model_fit_summary.csv"), "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
 
 
 def figure(R, slices, kinds, models):
+    """Rows: slice R for each coupling shape | K_s(t) of all fits | lobe A, lobe B of the best fit."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     kind = "floor" if "floor" in kinds else kinds[0]
-    fig, axs = plt.subplots(5, len(slices), figsize=(3.2 * len(slices), 11.0), layout="constrained", squeeze=False)
-    CL = ["#1b7837", "#762a83"]
+    shapes = [pre for pre in SHAPES if any(prefix_of(m) == pre for m in models)]
+    nr = len(shapes) + 3
+    fig, axs = plt.subplots(nr, len(slices), figsize=(3.2 * len(slices), 2.2 * nr), layout="constrained",
+                            squeeze=False)
+    CL = ["#1b7837", "#762a83"]; LS = {"": ":", "prof-": "--", "homeo-": "-"}
     for j, i in enumerate(slices):
         d = TG.load(i); T = int(d["T"]); td = np.arange(T) / 24; v0, v1 = S.valid_window(T)
         vw = lambda x: np.where((np.arange(T) >= v0) & (np.arange(T) < v1), x, np.nan)
         fits = {m: R[i, kind, m] for m in models if (i, kind, m) in R}
         best = min(fits, key=lambda m: fits[m]["loss"]) if fits else None
-        for row in range(5):
+        kr = len(shapes)                                    # K_s row
+        for row in range(nr):
             a = axs[row, j]
             a.axvspan(d["ttx"] / 24, d["wash"] / 24, color="0.92", zorder=0)
-            if row != 2:
+            if row != kr:
                 for t_c in (d["ttx"], d["wash"]):
                     a.axvspan((t_c - d["mask_h"]) / 24, (t_c + d["mask_h"]) / 24, color="none", hatch="////",
                               ec="0.75", lw=0, zorder=0)
                 a.set_ylim(0, 1.02)
-        for row, pre in ((0, ""), (1, "prof-")):
+        for row, pre in enumerate(shapes):
             a = axs[row, j]
             a.plot(td, vw(d["R"]), color="k", lw=1.3, label="data")
             for m, r in fits.items():
-                if (m.startswith("prof-")) != bool(pre):
+                if prefix_of(m) != pre:
                     continue
                 ti = r["tm"].astype(int)
                 a.plot(r["tm"] / 24, d["c"][ti] * np.abs(r["Zg"]), color=C_MODEL[mech_of(m)], lw=0.9,
                        label=f"{mech_of(m)} ({r['rmse']:.3f})")
-            a.set_title(f"SCN{i}: slice R, {'profile' if pre else 'step'} K_s ({kind})", fontsize=8)
+            a.set_title(f"SCN{i}: slice R, {SHAPE_NAME[pre]} K_s ({kind})", fontsize=8)
             a.legend(fontsize=5, frameon=False, loc="lower left")
-        a = axs[2, j]
+            if j == 0:
+                a.set_ylabel(r"$R$ vs $c(t)|Z|$")
+        a = axs[kr, j]
         tt = np.arange(T, dtype=float)
         for m, r in fits.items():
-            if m.startswith("prof-") or m == "base":
-                K = Kfun(r["params"], d)
-                a.plot(tt / 24, [K(x) for x in tt], color=C_MODEL[mech_of(m)], lw=0.9,
-                       ls="-" if m.startswith("prof-") else ":", label=("" if m.startswith("prof-") else "step ")
-                       + mech_of(m))
+            K = Kfun(r["params"], d)
+            a.plot(tt / 24, [float(K(x)) for x in tt], color=C_MODEL[mech_of(m)], lw=0.9, ls=LS[prefix_of(m)],
+                   label=f"{SHAPE_NAME[prefix_of(m)]}, {mech_of(m)}")
+        a.set_yscale("log"); a.set_ylim(1e-4, 1.2)
         a.set_ylabel(r"$K_s(t)$ (rad/h)" if j == 0 else ""); a.set_title("TTX-sensitive coupling", fontsize=8)
-        a.legend(fontsize=5, frameon=False, loc="upper right")
-        for row, (lab, key, ck, zk) in ((3, ("lobe A", "RA", "cA", "ZA")), (4, ("lobe B", "RB", "cB", "ZB"))):
+        a.legend(fontsize=4.5, frameon=False, loc="lower right")
+        for row, (lab, key, ck, zk) in ((kr + 1, ("lobe A", "RA", "cA", "ZA")), (kr + 2, ("lobe B", "RB", "cB", "ZB"))):
             a = axs[row, j]
-            a.plot(td, vw(d[key]), color=CL[row - 3], lw=1.2, label=f"data, {lab}")
+            a.plot(td, vw(d[key]), color=CL[row - kr - 1], lw=1.2, label=f"data, {lab}")
             if best:
                 r = fits[best]; ti = r["tm"].astype(int)
                 a.plot(r["tm"] / 24, d[ck][ti] * np.abs(r[zk]), color=C_MODEL[mech_of(best)], lw=0.9, ls="--",
                        label=f"best: {best}")
             a.set_title(f"SCN{i}: {lab}", fontsize=8); a.legend(fontsize=5.5, frameon=False, loc="lower left")
-        axs[4, j].set_xlabel("time (days)")
-    axs[0, 0].set_ylabel(r"$R$ vs $c(t)|Z|$"); axs[1, 0].set_ylabel(r"$R$ vs $c(t)|Z|$")
-    axs[3, 0].set_ylabel("lobe A"); axs[4, 0].set_ylabel("lobe B")
+            if j == 0:
+                a.set_ylabel(lab)
+        axs[-1, j].set_xlabel("time (days)")
     out = os.path.join(OUT, f"scn_model_fit_{kind}")
     fig.savefig(out + ".png", dpi=200); fig.savefig(out + ".pdf")
     print(f"[saved] {out}.png/.pdf")
