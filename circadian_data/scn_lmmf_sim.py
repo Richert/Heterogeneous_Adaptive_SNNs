@@ -214,9 +214,11 @@ def _tabulate(f, tg):
 
 
 def simulate(model, z0, Kfun, ufun, K_i, alpha_s, alpha_i, insens_global, dw, gamma, t0, t1, gamma_q=0.0,
-             resets=(), dt=DT):
+             resets=(), dt=DT, wfun=None):
     """RK4 (step dt, must divide 1 h) from t0 to t1 (h); hourly times and mean fields (slice, lobe A, lobe B).
     resets: (t_r, σ) pairs; z → e^{−σ} z when t crosses t_r (wrapped-Cauchy phase scrambling).
+    wfun: optional extra, component-specific Lorentzian width wfun(t_array) -> (len(t), M) (rad/h), e.g. a
+    lobe-specific transient noise.
     K_s(t) and u(t) are tabulated on the half-step grid once (no Python calls inside the integrator)."""
     Om, De = model["Om"], model["De"]; w = model["w"]; cl = model["lobe"]; p = model["p"]; LA = cl == 0
     es, ei = np.exp(-1j * alpha_s), np.exp(-1j * alpha_i)
@@ -225,6 +227,8 @@ def simulate(model, z0, Kfun, ufun, K_i, alpha_s, alpha_i, insens_global, dw, ga
     Kg = _tabulate(Kfun, tg) * es; ug = _tabulate(ufun, tg)
     lin_g = (1j * (Om[None] - dw * (1.0 - ug[:, None]))
              - (np.maximum(De[None] - gamma_q * (1.0 - ug[:, None]), DELTA_MIN) + gamma * ug[:, None]))
+    if wfun is not None:
+        lin_g = lin_g - np.asarray(wfun(tg), float)
     wA = np.where(LA, w, 0.0) / p[0]; wB = np.where(LA, 0.0, w) / p[1]
     Kie = K_i * ei
     kicks = {}

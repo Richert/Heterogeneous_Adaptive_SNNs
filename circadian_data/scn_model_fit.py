@@ -64,7 +64,16 @@ space, --bh-maxiter-per-dim for the local Nelder–Mead); results in model_fit/n
         [--bh-maxiter-per-dim 150] [--bh-starts 8]
     e.g. the optimiser check:  ... fit figure --optimizer basinhopping --models prof-base,prof-reset+noise
     (time a single loss evaluation: python scn_model_fit.py time --slices 1)
-Default --models: base, noise, prof-base, prof-noise, homeo-base, homeo-noise (the phase reset is dropped: its
+SETUPS A–C (2026-10-16; --models A,B,C, the defaults), all homeostatic K_s with α_s = 0 ("h0-") + noise γ u(t):
+    A  h0-noise+anchor            8 params: K_pre, r*, Δθ, τ_g, f_λ, u_res, τ_off, γ; the mixture state is
+                                  re-anchored to the measured phases at t_ttx + 24 h (the lobe-specific first-day
+                                  transient is taken from the data, not modelled)
+    B  h0-noise+transient        11 params: no anchoring; + a lobe-specific transient noise after TTX application,
+                                  extra width γ_tr,L e^{−(t − t_ttx)/τ_tr} on the components of lobe L (γ_tr,A, γ_tr,B,
+                                  τ_tr ∈ (1, 72) h)
+    C  h0-noise+transient+local  12 params: B + a TTX-insensitive lobe-local coupling K_loc (= K_i, no lag)
+  Their warm-start ancestors (h0-base, h0-noise) are fitted along. Nesting: h0-noise ⊂ B ⊂ C; A is not nested.
+Earlier defaults: base, noise, prof-base, prof-noise, homeo-base, homeo-noise (the phase reset is dropped: its
 discontinuous jump in R disagrees with the data).
 Results: data_paths.MPMF/circadian_data/model_fit/shapes/{scn<i>_<kind>_<model>.npy, scn_model_fit.{png,pdf},
          scn_model_fit_summary.csv}   (mixtures cached in model_fit/)
@@ -92,9 +101,10 @@ K_REB_MAX = 1.0                # upper bound of the washout rebound K_max (phase
 TAU_MIN, TAU_MAX = 1.0, 240.0
 T_REC_MAX = 150.0              # recovery centre after TTX application (h; TTX epochs are 129–145 h)
 W_MIN, W_MAX = 1.0, 48.0       # width of the S-shaped recovery (h)
-BOUNDS_HOMEO = dict(r_star=(0.02, 0.8), d_theta=(1.0, 12.0), tau_g=(0.2, 24.0), f_lam=(0.0, 1.0),
-                    u_res=(0.0, 0.8), tau_off=(0.5, 48.0))   # τ_g, τ_off log-uniform
-LOG_KEYS = ("tau_wash", "w_rec", "tau_g", "tau_off")
+BOUNDS_HOMEO = dict(r_star=(0.005, 0.8), d_theta=(1.0, 20.0), tau_g=(0.05, 24.0), f_lam=(0.0, 1.0),
+                    u_res=(0.0, 0.8), tau_off=(0.1, 48.0),    # τ_g, τ_off, τ_tr log-uniform; widened 2026-10-16
+                    g_trA=(0.0, 0.2), g_trB=(0.0, 0.2), tau_tr=(1.0, 72.0))   # after hits of the first bounds
+LOG_KEYS = ("tau_wash", "w_rec", "tau_g", "tau_off", "tau_tr")
 DT_HOMEO = 0.1                 # controller grid (h)
 GQ_FRAC = 0.95
 SIGMA_NU = 0.005
@@ -108,23 +118,53 @@ X_SPREAD = 2.5                 # random starts: uniform in the transformed space
 STEP = ("K_pre", "K_ttx", "K_wash", "alpha_s")
 PROF = ("K_pre", "f_ttx", "f_min", "t_rec", "w_rec", "K_wash", "f_max", "tau_wash", "alpha_s")
 HOMEO = ("K_pre", "r_star", "d_theta", "tau_g", "f_lam", "u_res", "tau_off", "alpha_s")
-SHAPES = {"": STEP, "prof-": PROF, "homeo-": HOMEO}
-PREFIXES = ("prof-", "homeo-")
-SHAPE_NAME = {"": "step", "prof-": "sigmoid profile", "homeo-": "homeostatic"}
+H0 = HOMEO[:-1]                                             # homeostatic with α_s = 0 (no fit needed a lag)
+SHAPES = {"": STEP, "prof-": PROF, "homeo-": HOMEO, "h0-": H0}
+PREFIXES = ("prof-", "homeo-", "h0-")
+SHAPE_NAME = {"": "step", "prof-": "sigmoid profile", "homeo-": "homeostatic", "h0-": "homeostatic, α_s = 0"}
 NOISE = ("gamma", "u_res", "tau_off")                      # noise γ u(t) with the tissue TTX level u(t)
+TRANSIENT = ("g_trA", "g_trB", "tau_tr")                 # lobe-specific transient noise after TTX application
 MECH = {"base": (), "reset": ("reset_ttx",), "noise": NOISE, "quenched": ("gamma_q",),
-        "reset+noise": ("reset_ttx",) + NOISE, "shift": ("dw",), "full": ("reset_ttx", "reset_wash", "dw") + NOISE}
+        "reset+noise": ("reset_ttx",) + NOISE, "shift": ("dw",), "full": ("reset_ttx", "reset_wash", "dw") + NOISE,
+        "noise+anchor": NOISE + ("@anchor",), "noise+transient": NOISE + TRANSIENT,
+        "noise+transient+local": NOISE + TRANSIENT + ("K_i",)}
+# warm starts (from these optima, missing parameters near 0) and strict nesting (refit if worse than these)
+WARM = {"reset+noise": ["reset", "noise", "base"], "noise+anchor": ["noise", "base"],
+        "noise+transient": ["noise", "base"], "noise+transient+local": ["noise+transient", "noise"]}
+NESTED = {"reset+noise": ["reset", "noise", "base"], "noise+anchor": [],          # anchoring changes the
+          "noise+transient": ["noise", "base"],                                   # dynamics: not nested
+          "noise+transient+local": ["noise+transient", "noise", "base"]}
+ALIASES = {"A": "h0-noise+anchor", "B": "h0-noise+transient", "C": "h0-noise+transient+local"}
+
+
+def ancestors(m):
+    out = []
+    for q in WARM.get(m, ["base"] if m != "base" else []):
+        out += [q] + ancestors(q)
+    return out
+
+
+def depth(m):
+    return 0 if m == "base" else 1 + max(depth(q) for q in WARM.get(m, ["base"]))
+
+
+def free(keys):
+    """Fitted parameters (keys starting with '@' are model flags, e.g. '@anchor')."""
+    return [k for k in keys if not k.startswith("@")]
 MODELS = {}
 for _m, _x in MECH.items():
     for _pre, _keys in SHAPES.items():
         MODELS[_pre + _m] = _keys + tuple(k for k in _x if k not in _keys)
     MODELS[_m + "+Ki"] = STEP + ("K_i",) + _x + (("alpha_i",) if _m == "full" else ())
-DEFAULT_MODELS = ("base", "noise", "prof-base", "prof-noise", "homeo-base", "homeo-noise")
+DEFAULT_MODELS = ("A", "B", "C")                          # 2026-10-16: setups A–C (ALIASES); earlier: base,
+                                                            # noise, prof-base, prof-noise, homeo-base, homeo-noise
 DEFAULT_SLICES = (1, 2, 3, 4)                              # SCN5 set aside (outlier) for now
 DEFAULTS = dict(K_pre=0.0, K_ttx=0.0, K_wash=0.0, K_i=0.0, alpha_s=0.0, alpha_i=0.0, dw=0.0, gamma=0.0,
                 gamma_q=0.0, reset_ttx=0.0, reset_wash=0.0, f_ttx=1.0, f_min=1.0, t_rec=72.0, w_rec=12.0, f_max=0.0,
-                tau_wash=24.0, r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.0, tau_off=HC.TAU_ON)
-SMALL = dict(reset_ttx=1e-3, reset_wash=1e-3, gamma=1e-4, gamma_q=1e-5, dw=0.0, K_i=1e-4, u_res=1e-3, tau_off=1.0)
+                tau_wash=24.0, r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.0, tau_off=HC.TAU_ON,
+                g_trA=0.0, g_trB=0.0, tau_tr=12.0)
+SMALL = dict(reset_ttx=1e-3, reset_wash=1e-3, gamma=1e-4, gamma_q=1e-5, dw=0.0, K_i=1e-4, u_res=1e-3, tau_off=1.0,
+             g_trA=1e-4, g_trB=1e-4, tau_tr=12.0)
 STARTS = [dict(K_pre=0.10, K_ttx=0.006, K_wash=0.08, alpha_s=0.0, f_ttx=0.1, f_min=0.2, t_rec=72.0, w_rec=12.0, f_max=0.3,
                tau_wash=12.0, reset_ttx=0.3, gamma=0.003, gamma_q=0.3),
           dict(K_pre=0.25, K_ttx=0.02, K_wash=0.15, alpha_s=0.2, f_ttx=0.3, f_min=0.1, t_rec=96.0, w_rec=24.0, f_max=0.5,
@@ -133,17 +173,22 @@ STARTS = [dict(K_pre=0.10, K_ttx=0.006, K_wash=0.08, alpha_s=0.0, f_ttx=0.1, f_m
                tau_wash=48.0, reset_ttx=0.1, gamma=0.001, gamma_q=0.1),
           dict(K_pre=0.28, K_ttx=0.05, K_wash=0.2, alpha_s=0.0, f_ttx=0.5, f_min=0.05, t_rec=120.0, w_rec=36.0, f_max=0.7,
                tau_wash=6.0, reset_ttx=0.5, gamma=0.02, gamma_q=0.8)]
-_HSTARTS = [dict(r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.1, tau_off=6.0),
-            dict(r_star=0.1, d_theta=4.0, tau_g=1.0, f_lam=0.1, u_res=0.3, tau_off=12.0),
-            dict(r_star=0.4, d_theta=8.0, tau_g=6.0, f_lam=0.6, u_res=0.05, tau_off=2.0),
-            dict(r_star=0.3, d_theta=3.0, tau_g=0.5, f_lam=0.8, u_res=0.5, tau_off=24.0)]
+_HSTARTS = [dict(r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.1, tau_off=6.0, g_trA=0.03, g_trB=0.01,
+                 tau_tr=12.0),
+            dict(r_star=0.1, d_theta=4.0, tau_g=1.0, f_lam=0.1, u_res=0.3, tau_off=12.0, g_trA=0.01, g_trB=0.03,
+                 tau_tr=24.0),
+            dict(r_star=0.4, d_theta=8.0, tau_g=6.0, f_lam=0.6, u_res=0.05, tau_off=2.0, g_trA=0.05, g_trB=0.05,
+                 tau_tr=6.0),
+            dict(r_star=0.03, d_theta=12.0, tau_g=0.2, f_lam=0.8, u_res=0.5, tau_off=0.5, g_trA=0.002, g_trB=0.002,
+                 tau_tr=36.0)]
 for _s, _h in zip(STARTS, _HSTARTS):                       # common defaults of the remaining parameters
     _s.update(_h)
     for _k, _v in dict(K_i=0.01, alpha_i=0.0, dw=0.0, reset_wash=0.1).items():
         _s.setdefault(_k, _v)
 KINDS = ("floor", "nofloor")
 C_MODEL = {"base": "0.35", "reset": "#b2182b", "noise": "#2166ac", "shift": "#5aae61", "quenched": "#e08214",
-           "reset+noise": "#762a83", "full": "#01665e"}
+           "reset+noise": "#762a83", "full": "#01665e", "noise+anchor": "#d6604d", "noise+transient": "#4393c3",
+           "noise+transient+local": "#1b7837"}
 _GQ_MAX = [G_MAX]                                          # set per job from the mixture (γ_q < narrowest width)
 
 
@@ -187,7 +232,7 @@ def _bounds(k):
 
 def to_x(p, keys):
     x = []
-    for k in keys:
+    for k in free(keys):
         lo, hi = _bounds(k); v = np.log(p[k]) if k in LOG_KEYS else p[k]
         q = np.clip((v - lo) / (hi - lo), 1e-6, 1 - 1e-6)
         x.append(np.log(q / (1 - q)))
@@ -197,7 +242,8 @@ def to_x(p, keys):
 def from_x(x, keys):
     """Raw parameters (the fitted ones) and the derived couplings K_min, K_ttx (profile), K_max."""
     p = dict(DEFAULTS)
-    for k, v in zip(keys, x):
+    p["anchor"] = "@anchor" in keys
+    for k, v in zip(free(keys), x):
         lo, hi = _bounds(k); q = lo + (hi - lo) / (1 + np.exp(-v))
         p[k] = np.exp(q) if k in LOG_KEYS else q
     p["lam"] = p["f_lam"] * p["r_star"] / p["d_theta"]
@@ -260,13 +306,32 @@ def ufun(p, d):
     return lambda t: HC.tissue_level(t, ttx, wash, ur, toff)
 
 
+def wfun(p, d, model):
+    """Lobe-specific transient noise after TTX application: extra width γ_tr,L e^{−(t − t_ttx)/τ_tr} (t ≥ t_ttx)."""
+    if not (p["g_trA"] or p["g_trB"]):
+        return None
+    ttx = float(d["ttx"]); gl = np.where(model["lobe"] == 0, p["g_trA"], p["g_trB"])
+    def w(t):
+        t = np.asarray(t, float)[:, None]
+        return np.where(t >= ttx, np.exp(-np.clip(t - ttx, 0, None) / p["tau_tr"]), 0.0) * gl[None]
+    return w
+
+
 def predict(p, d, model, prep, dt):
+    """One continuous run from the measured state; with p['anchor'] the mixture state is RE-ANCHORED to the
+    measured phases at t_ttx + TRANSIENT_H (the lobe-specific first-day transient is taken from the data)."""
     ttx, wash = int(d["ttx"]), int(d["wash"])
-    uf = ufun(p, d)
+    uf = ufun(p, d); Kf = Kfun(p, d); wf = wfun(p, d, model)
     t0, t1 = prep["t0"], prep["t1"]
-    return SIM.simulate(model, SIM.initial_state(model, d["PH"][t0]), Kfun(p, d), uf, p["K_i"], p["alpha_s"],
-                        p["alpha_i"], False, p["dw"], p["gamma"], t0, t1, p["gamma_q"],
-                        resets=((ttx, p["reset_ttx"]), (wash, p["reset_wash"])), dt=dt)
+    run = lambda z0, a, b: SIM.simulate(model, z0, Kf, uf, p["K_i"], p["alpha_s"], p["alpha_i"], False, p["dw"],
+                                        p["gamma"], a, b, p["gamma_q"],
+                                        resets=((ttx, p["reset_ttx"]), (wash, p["reset_wash"])), dt=dt, wfun=wf)
+    if not p.get("anchor"):
+        return run(SIM.initial_state(model, d["PH"][t0]), t0, t1)
+    ta = ttx + S.TRANSIENT_H
+    s1 = run(SIM.initial_state(model, d["PH"][t0]), t0, ta)
+    s2 = run(SIM.initial_state(model, d["PH"][ta]), ta, t1)
+    return tuple(np.concatenate([a[:-1], b]) for a, b in zip(s1, s2))
 
 
 def loss(x, keys, d, model, prep, dt, detail=False):
@@ -323,7 +388,7 @@ def generic_starts(keys, n, seed):
     X = [to_x(start_params(s), keys) for s in STARTS][:n]
     rng = np.random.default_rng(seed)
     while len(X) < n:
-        X.append(rng.uniform(-X_SPREAD, X_SPREAD, len(keys)))
+        X.append(rng.uniform(-X_SPREAD, X_SPREAD, len(free(keys))))
     return X
 
 
@@ -337,13 +402,13 @@ def _task(args):
         L0 = loss(x0, keys, *ctx)
         r = basinhopping(loss, x0, niter=OPT["bh_niter"], T=OPT["bh_T"] * L0, stepsize=OPT["bh_step"],
                          minimizer_kwargs=dict(args=(keys,) + ctx, method="Nelder-Mead",
-                                               options=dict(maxiter=OPT["bh_mpd"] * len(keys), xatol=1e-3,
+                                               options=dict(maxiter=OPT["bh_mpd"] * len(free(keys)), xatol=1e-3,
                                                             fatol=1e-7)),
                          seed=OPT["seed"] + 7919 * tag[2] + 31 * i)
         return tag, r.x, r.fun
     tol = (1e-4, 1e-8) if mode == "polish" else (1e-3, 1e-7)
     r = minimize(loss, x0, args=(keys,) + ctx, method="Nelder-Mead",
-                 options=dict(maxiter=mpd * len(keys), xatol=tol[0], fatol=tol[1]))
+                 options=dict(maxiter=mpd * len(free(keys)), xatol=tol[0], fatol=tol[1]))
     return tag, r.x, r.fun
 
 
@@ -393,7 +458,12 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
         for k in kinds:
             for f, ms in fams.items():
                 pre = prefix_of(f); suf = "+Ki" if f.endswith("+Ki") else ""
-                units.append((i, k, pre, suf, tuple(ms)))
+                need = list(ms)                            # add the warm-start ancestors of every model
+                for n in ms:
+                    for q in ancestors(mech_of(n)):
+                        if q != "base" and pre + q + suf not in need:
+                            need.append(pre + q + suf)
+                units.append((i, k, pre, suf, tuple(need)))
     name = lambda u, m: u[2] + m + u[3]
     seed = lambda u, m: (1000 * u[0] + 10 * KINDS.index(u[1]) + sum(map(ord, name(u, m)))) % (2 ** 31)
 
@@ -415,33 +485,27 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
             _GQ_MAX[0] = gq[u[0], u[1]]
             st.add(u, b, generic_starts(MODELS[b], n_base, seed(u, "base")))
         res.update(st.run("base"))
-        st = Stage(pool, mpd, dt)                          # 2: single mechanisms
-        singles = [(u, n) for u in units for n in u[4] if mech_of(n) not in ("base", "reset+noise")]
-        for u, n in singles:
-            b = name(u, "base")
-            _GQ_MAX[0] = gq[u[0], u[1]]
-            st.add(u, n, [conv(u, warm(P(u, b), add=extra(n, b)), n)]
-                   + generic_starts(MODELS[n], n_ext, seed(u, mech_of(n))))
-        if singles:
-            res.update(st.run("single mechanisms"))
-        st = Stage(pool, mpd, dt)                          # 3: reset+noise (and other composite models)
-        comps = [(u, n) for u in units for n in u[4] if mech_of(n) == "reset+noise"]
-        for u, n in comps:
-            X = [conv(u, warm(P(u, name(u, "base")), add=extra(n, name(u, "base"))), n)]
-            for s_ in ("reset", "noise"):
-                if (u, name(u, s_)) in res:
-                    X.insert(0, conv(u, warm(P(u, name(u, s_)), add=extra(n, name(u, s_))), n))
-            _GQ_MAX[0] = gq[u[0], u[1]]
-            st.add(u, n, X + generic_starts(MODELS[n], n_ext, seed(u, mech_of(n))))
-        if comps:
-            res.update(st.run("reset+noise"))
+        ext = [(u, n) for u in units for n in u[4] if mech_of(n) != "base"]
+        for lev in range(1, 1 + max([depth(mech_of(n)) for _, n in ext], default=0)):   # 2…: by nesting depth
+            st = Stage(pool, mpd, dt); todo = 0
+            for u, n in ext:
+                m = mech_of(n)
+                if depth(m) != lev:
+                    continue
+                X = [conv(u, warm(P(u, name(u, q)), add=extra(n, name(u, q))), n)
+                     for q in WARM.get(m, ["base"]) if (u, name(u, q)) in res]
+                _GQ_MAX[0] = gq[u[0], u[1]]
+                st.add(u, n, X + generic_starts(MODELS[n], n_ext, seed(u, m))); todo += 1
+            if todo:
+                res.update(st.run(f"nesting level {lev} ({todo})"))
         step_unit = {(u[0], u[1], u[3]): u for u in units if not u[2]}   # the step family of each profile unit
         is_prof = lambda u: u[2] == "prof-"                 # step ⊂ sigmoid profile; homeo is not nested
         st = Stage(pool, mpd, dt)                          # 4: base re-polished from the extended optima
         for u in units:                                    #    (profile base also from the step base optimum)
             b = name(u, "base")
             X = [res[u, b][0]] + [conv(u, warm(P(u, n), drop=extra(n, b)), b)
-                                  for (uu, n) in res if uu == u and n != b]
+                                  for (uu, n) in res if uu == u and n != b and b in [name(u, q) for q in
+                                                                                     NESTED.get(mech_of(n), ["base"])]]
             us = step_unit.get((u[0], u[1], u[3]))
             if is_prof(u) and us is not None and (us, name(us, "base")) in res:
                 X.append(conv(u, step_to_profile(P(us, name(us, "base"))), b))
@@ -455,9 +519,8 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
             for (u, n) in list(res):                           #    and, for profile models, the same step model
                 if mech_of(n) == "base" and not is_prof(u):
                     continue
-                nested = [] if mech_of(n) == "base" else [name(u, "base")] + (
-                    [name(u, s_) for s_ in ("reset", "noise") if (u, name(u, s_)) in res]
-                    if mech_of(n) == "reset+noise" else [])
+                nested = [name(u, q) for q in NESTED.get(mech_of(n), ["base"]) if (u, name(u, q)) in res] \
+                    if mech_of(n) != "base" else []
                 cand = [(res[u, q][1], conv(u, warm(P(u, q), add=extra(n, q)), n)) for q in nested]
                 us = step_unit.get((u[0], u[1], u[3]))
                 ns = n.replace("prof-", "")
@@ -473,15 +536,13 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
     print(f"[fit] all stages: {(time.time() - t_all) / 60:.1f} min", flush=True)
     for (u, n), (x, f) in sorted(res.items(), key=lambda kv: (kv[0][0][0], kv[0][0][1], kv[0][1])):
         i, k = u[0], u[1]
-        if n not in u[4] and not (mech_of(n) == "base" and name(u, "base") == n):
-            continue
         d, model, prep, _, g = context(i, k, dt); _GQ_MAX[0] = g
         L, r = loss(x, MODELS[n], d, model, prep, dt, detail=True)
-        r.update(slice=i, kind=k, model_name=n, keys=MODELS[n], x=x, n_free=len(MODELS[n]), model=model, dt=dt,
+        r.update(slice=i, kind=k, model_name=n, keys=MODELS[n], x=x, n_free=len(free(MODELS[n])), model=model, dt=dt,
                  gq_max=g, optimizer=dict(OPT), n_base=n_base, n_ext=n_ext)
         np.save(os.path.join(OUT, f"scn{i}_{k}_{n}.npy"), r, allow_pickle=True)
         p = r["params"]
-        shown = list(r["keys"]) + (["K_ttx", "K_min", "K_max"] if "f_ttx" in r["keys"] else []) + \
+        shown = free(r["keys"]) + (["K_ttx", "K_min", "K_max"] if "f_ttx" in r["keys"] else []) + \
             (["lam"] if "r_star" in r["keys"] else [])
         print(f"[fit] SCN{i} {k:7s} {n:16s} RMSE {r['rmse']:.3f} (A {r['rmse_A']:.3f}, B {r['rmse_B']:.3f}) "
               f"loss {r['loss']:.6f} | " + ", ".join(f"{q} {p[q]:.4g}" for q in shown), flush=True)
@@ -543,7 +604,7 @@ def figure(R, slices, kinds, models):
     nr = len(shapes) + 3
     fig, axs = plt.subplots(nr, len(slices), figsize=(3.2 * len(slices), 2.2 * nr), layout="constrained",
                             squeeze=False)
-    CL = ["#1b7837", "#762a83"]; LS = {"": ":", "prof-": "--", "homeo-": "-"}
+    CL = ["#1b7837", "#762a83"]; LS = {"": ":", "prof-": "--", "homeo-": "-", "h0-": "-."}
     for j, i in enumerate(slices):
         d = TG.load(i); T = int(d["T"]); td = np.arange(T) / 24; v0, v1 = S.valid_window(T)
         vw = lambda x: np.where((np.arange(T) >= v0) & (np.arange(T) < v1), x, np.nan)
@@ -600,7 +661,8 @@ if __name__ == "__main__":
     arg = lambda k, d_, t=str: t(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d_
     lst = lambda s_: [v for v in s_.split(",")]
     slices = arg("--slices", list(DEFAULT_SLICES), lambda s_: [int(v) for v in s_.split(",")])
-    models = arg("--models", list(DEFAULT_MODELS), lst); kinds = arg("--kinds", ["floor"], lst)
+    models = [ALIASES.get(m, m) for m in arg("--models", list(DEFAULT_MODELS), lst)]
+    kinds = arg("--kinds", ["floor"], lst)
     dt = arg("--dt", DT_FIT, float); mpd = arg("--maxiter-per-dim", MAXITER_PER_DIM, int)
     OPT.update(optimizer=arg("--optimizer", "nm"), bh_niter=arg("--bh-niter", OPT["bh_niter"], int),
                bh_T=arg("--bh-T", OPT["bh_T"], float), bh_step=arg("--bh-step", OPT["bh_step"], float),
