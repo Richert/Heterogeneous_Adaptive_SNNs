@@ -64,15 +64,17 @@ space, --bh-maxiter-per-dim for the local Nelder–Mead); results in model_fit/n
         [--bh-maxiter-per-dim 150] [--bh-starts 8]
     e.g. the optimiser check:  ... fit figure --optimizer basinhopping --models prof-base,prof-reset+noise
     (time a single loss evaluation: python scn_model_fit.py time --slices 1)
-SETUPS A–C (2026-10-16; --models A,B,C, the defaults), all homeostatic K_s with α_s = 0 ("h0-") + noise γ u(t):
-    A  h0-noise+anchor            8 params: K_pre, r*, Δθ, τ_g, f_λ, u_res, τ_off, γ; the mixture state is
+SETUPS A–C (2026-10-16; --models A,B,C, the defaults), all homeostatic K_s with r* fixed at R_STAR_FIX and α_s
+free ("hf-"; the first run used "h0-": α_s = 0, r* free — the lag is needed for the collective frequency and r*
+ran to its bound) + noise γ u(t):
+    A  hf-noise+anchor            8 params: K_pre, Δθ, τ_g, f_λ, u_res, τ_off, α_s, γ; the mixture state is
                                   re-anchored to the measured phases at t_ttx + 24 h (the lobe-specific first-day
                                   transient is taken from the data, not modelled)
-    B  h0-noise+transient        11 params: no anchoring; + a lobe-specific transient noise after TTX application,
+    B  hf-noise+transient        11 params: no anchoring; + a lobe-specific transient noise after TTX application,
                                   extra width γ_tr,L e^{−(t − t_ttx)/τ_tr} on the components of lobe L (γ_tr,A, γ_tr,B,
                                   τ_tr ∈ (1, 72) h)
-    C  h0-noise+transient+local  12 params: B + a TTX-insensitive lobe-local coupling K_loc (= K_i, no lag)
-  Their warm-start ancestors (h0-base, h0-noise) are fitted along. Nesting: h0-noise ⊂ B ⊂ C; A is not nested.
+    C  hf-noise+transient+local  12 params: B + a TTX-insensitive lobe-local coupling K_loc (= K_i, no lag)
+  Their warm-start ancestors (hf-base, hf-noise) are fitted along. Nesting: hf-noise ⊂ B ⊂ C; A is not nested.
 Earlier defaults: base, noise, prof-base, prof-noise, homeo-base, homeo-noise (the phase reset is dropped: its
 discontinuous jump in R disagrees with the data).
 Results: data_paths.MPMF/circadian_data/model_fit/shapes/{scn<i>_<kind>_<model>.npy, scn_model_fit.{png,pdf},
@@ -118,10 +120,14 @@ X_SPREAD = 2.5                 # random starts: uniform in the transformed space
 STEP = ("K_pre", "K_ttx", "K_wash", "alpha_s")
 PROF = ("K_pre", "f_ttx", "f_min", "t_rec", "w_rec", "K_wash", "f_max", "tau_wash", "alpha_s")
 HOMEO = ("K_pre", "r_star", "d_theta", "tau_g", "f_lam", "u_res", "tau_off", "alpha_s")
-H0 = HOMEO[:-1]                                             # homeostatic with α_s = 0 (no fit needed a lag)
-SHAPES = {"": STEP, "prof-": PROF, "homeo-": HOMEO, "h0-": H0}
-PREFIXES = ("prof-", "homeo-", "h0-")
-SHAPE_NAME = {"": "step", "prof-": "sigmoid profile", "homeo-": "homeostatic", "h0-": "homeostatic, α_s = 0"}
+H0 = HOMEO[:-1]                                             # homeostatic with α_s = 0 (run of 2026-10-16: the
+                                                            # lag IS needed for the collective frequency)
+HF = tuple(k for k in HOMEO if k != "r_star")              # homeostatic with r* fixed at R_STAR_FIX, α_s free
+R_STAR_FIX = 0.05                                           # (r* alone is not identifiable: it ran to its bound)
+SHAPES = {"": STEP, "prof-": PROF, "homeo-": HOMEO, "h0-": H0, "hf-": HF}
+PREFIXES = ("prof-", "homeo-", "h0-", "hf-")
+SHAPE_NAME = {"": "step", "prof-": "sigmoid profile", "homeo-": "homeostatic", "h0-": "homeostatic, α_s = 0",
+              "hf-": f"homeostatic, r* = {R_STAR_FIX:g}"}
 NOISE = ("gamma", "u_res", "tau_off")                      # noise γ u(t) with the tissue TTX level u(t)
 TRANSIENT = ("g_trA", "g_trB", "tau_tr")                 # lobe-specific transient noise after TTX application
 MECH = {"base": (), "reset": ("reset_ttx",), "noise": NOISE, "quenched": ("gamma_q",),
@@ -134,7 +140,7 @@ WARM = {"reset+noise": ["reset", "noise", "base"], "noise+anchor": ["noise", "ba
 NESTED = {"reset+noise": ["reset", "noise", "base"], "noise+anchor": [],          # anchoring changes the
           "noise+transient": ["noise", "base"],                                   # dynamics: not nested
           "noise+transient+local": ["noise+transient", "noise", "base"]}
-ALIASES = {"A": "h0-noise+anchor", "B": "h0-noise+transient", "C": "h0-noise+transient+local"}
+ALIASES = {"A": "hf-noise+anchor", "B": "hf-noise+transient", "C": "hf-noise+transient+local"}
 
 
 def ancestors(m):
@@ -173,11 +179,12 @@ STARTS = [dict(K_pre=0.10, K_ttx=0.006, K_wash=0.08, alpha_s=0.0, f_ttx=0.1, f_m
                tau_wash=48.0, reset_ttx=0.1, gamma=0.001, gamma_q=0.1),
           dict(K_pre=0.28, K_ttx=0.05, K_wash=0.2, alpha_s=0.0, f_ttx=0.5, f_min=0.05, t_rec=120.0, w_rec=36.0, f_max=0.7,
                tau_wash=6.0, reset_ttx=0.5, gamma=0.02, gamma_q=0.8)]
-_HSTARTS = [dict(r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.1, tau_off=6.0, g_trA=0.03, g_trB=0.01,
+# τ_g of the starts chosen so that t_rec ≈ τ_g Δθ / r* ≈ 2–6 days for r* = R_STAR_FIX
+_HSTARTS = [dict(r_star=0.2, d_theta=6.0, tau_g=0.6, f_lam=0.3, u_res=0.1, tau_off=6.0, g_trA=0.03, g_trB=0.01,
                  tau_tr=12.0),
-            dict(r_star=0.1, d_theta=4.0, tau_g=1.0, f_lam=0.1, u_res=0.3, tau_off=12.0, g_trA=0.01, g_trB=0.03,
+            dict(r_star=0.1, d_theta=4.0, tau_g=0.6, f_lam=0.1, u_res=0.3, tau_off=12.0, g_trA=0.01, g_trB=0.03,
                  tau_tr=24.0),
-            dict(r_star=0.4, d_theta=8.0, tau_g=6.0, f_lam=0.6, u_res=0.05, tau_off=2.0, g_trA=0.05, g_trB=0.05,
+            dict(r_star=0.4, d_theta=8.0, tau_g=0.8, f_lam=0.6, u_res=0.05, tau_off=2.0, g_trA=0.05, g_trB=0.05,
                  tau_tr=6.0),
             dict(r_star=0.03, d_theta=12.0, tau_g=0.2, f_lam=0.8, u_res=0.5, tau_off=0.5, g_trA=0.002, g_trB=0.002,
                  tau_tr=36.0)]
@@ -246,14 +253,18 @@ def from_x(x, keys):
     for k, v in zip(free(keys), x):
         lo, hi = _bounds(k); q = lo + (hi - lo) / (1 + np.exp(-v))
         p[k] = np.exp(q) if k in LOG_KEYS else q
-    p["lam"] = p["f_lam"] * p["r_star"] / p["d_theta"]
-    if "r_star" in keys:                                    # homeostatic shape: K_s from the controller
+    p["lam"] = 0.0
+    if "d_theta" in keys:                                   # homeostatic shape: K_s from the controller
         p["shape"] = "homeo"
+        if "r_star" not in keys:
+            p["r_star"] = R_STAR_FIX
     elif "f_ttx" in keys:
         p["K_ttx"] = p["f_ttx"] * p["K_pre"]
         p["K_min"] = p["f_min"] * p["K_ttx"]
         p["K_max"] = p["K_wash"] + p["f_max"] * (K_REB_MAX - p["K_wash"])
-    if "r_star" not in keys and "f_ttx" not in keys:
+    if "d_theta" in keys:
+        p["lam"] = p["f_lam"] * p["r_star"] / p["d_theta"]
+    if "d_theta" not in keys and "f_ttx" not in keys:
         p["K_min"], p["K_max"] = p["K_ttx"], p["K_wash"]
     return p
 
@@ -543,7 +554,7 @@ def run(slices, kinds, models, procs, dt, mpd, n_base, n_ext):
         np.save(os.path.join(OUT, f"scn{i}_{k}_{n}.npy"), r, allow_pickle=True)
         p = r["params"]
         shown = free(r["keys"]) + (["K_ttx", "K_min", "K_max"] if "f_ttx" in r["keys"] else []) + \
-            (["lam"] if "r_star" in r["keys"] else [])
+            (["lam"] if "d_theta" in r["keys"] else [])
         print(f"[fit] SCN{i} {k:7s} {n:16s} RMSE {r['rmse']:.3f} (A {r['rmse_A']:.3f}, B {r['rmse_B']:.3f}) "
               f"loss {r['loss']:.6f} | " + ", ".join(f"{q} {p[q]:.4g}" for q in shown), flush=True)
 
@@ -604,7 +615,7 @@ def figure(R, slices, kinds, models):
     nr = len(shapes) + 3
     fig, axs = plt.subplots(nr, len(slices), figsize=(3.2 * len(slices), 2.2 * nr), layout="constrained",
                             squeeze=False)
-    CL = ["#1b7837", "#762a83"]; LS = {"": ":", "prof-": "--", "homeo-": "-", "h0-": "-."}
+    CL = ["#1b7837", "#762a83"]; LS = {"": ":", "prof-": "--", "homeo-": "-", "h0-": "-.", "hf-": "-"}
     for j, i in enumerate(slices):
         d = TG.load(i); T = int(d["T"]); td = np.arange(T) / 24; v0, v1 = S.valid_window(T)
         vw = lambda x: np.where((np.arange(T) >= v0) & (np.arange(T) < v1), x, np.nan)
