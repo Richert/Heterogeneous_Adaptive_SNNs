@@ -128,26 +128,27 @@ def slice_data(i):
     return TG.load(i)
 
 
-def fit_mixture(om, lam, floor, width_k):
+def fit_mixture(om, lam, floor, width_k, M_max=64):
     mu, sd = om.mean(), om.std()
     x = (om - mu) / sd                                     # fit on standardised frequencies (affine-invariant)
     dmin = 1e-4
     if width_k > 0:
         g = np.linspace(x.min(), x.max(), 2001)
         dmin = max(dmin, width_k / (x.size * float(gaussian_kde(x)(g).max())))
-    r = LM.fit(x, (dmin, 1e2), lambda_M=lam, M_max=64, floor_c=1.0 if floor else 0.0, patience=3,
+    r = LM.fit(x, (dmin, 1e2), lambda_M=lam, M_max=M_max, floor_c=1.0 if floor else 0.0, patience=3,
                n_restarts=10, seed=1, method="slsqp", large_M=16)
     m = r["model"]
     return dict(w=np.asarray(m.w), Om=mu + sd * np.asarray(m.Omega), De=sd * np.asarray(m.Delta), M=int(m.M))
 
 
-def build(d, lam, floor, width_k):
-    """One mixture per lobe; global weights = lobe fraction × lobe weights; cell -> component assignment."""
+def build(d, lam, floor, width_k, M_max=64):
+    """One mixture per lobe (at most M_max components); global weights = lobe fraction × lobe weights;
+    cell -> component assignment."""
     om, lobe = d["om"], d["lobe"]
     Om, De, w, cl, assign = [], [], [], [], np.zeros(om.size, int)
     for k in (0, 1):
         idx = np.where(lobe == k)[0]
-        f = fit_mixture(om[idx], lam, floor, width_k)
+        f = fit_mixture(om[idx], lam, floor, width_k, M_max)
         resp = f["w"][None] * f["De"][None] / ((om[idx, None] - f["Om"][None]) ** 2 + f["De"][None] ** 2)
         assign[idx] = len(Om) + np.argmax(resp, axis=1)
         Om += list(f["Om"]); De += list(f["De"]); w += list(idx.size / om.size * f["w"]); cl += [k] * f["M"]

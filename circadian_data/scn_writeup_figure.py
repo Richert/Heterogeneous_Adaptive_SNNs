@@ -5,19 +5,19 @@ Two-column PRL figure + statistics of the SCN LMMF fits (write-up)
 Winning dynamics (setup C): homeostatic TTX-sensitive coupling + TTX noise γ u(t) + lobe-specific transient noise
 after TTX application + TTX-insensitive lobe-local coupling, in the identifiable parametrisation (scn_model_fit
 "hr-noise+transient+local": block depth ρ_min, plateau ρ_ttx, recovery time t_hom). Three FREQUENCY DISTRIBUTIONS
-with the same dynamics (scn_model_fit.mixture kinds; noise-floor Lorentzian mixtures):
-  SCN & lobe-specific  one mixture per slice and lobe ("floor")
-  lobes pooled         one mixture per slice, the same for both lobes ("lobelump")
-  slices pooled        one mixture of the frequencies pooled over SCN1–4, the same for every slice ("lumped")
-lobe-specific vs lobes pooled: how much the frequency differences between the lobes matter; lobes pooled vs slices
-pooled: how much the differences between the slices' distributions matter. (Before 2026-10-17 the figure compared the winning model with the minimal
+with the same dynamics, at decreasing LEVEL OF DETAIL (scn_model_fit.mixture kinds; per slice and lobe):
+  no floor           Lorentzian mixture without the noise floor (most components; "nofloor")
+  noise floor        Lorentzian mixture with the noise floor (the winning model; "floor")
+  single Lorentzian  one Lorentzian (M_max = 1; "single")
+How the level of detail at which the frequency distribution is captured translates into the predicted coherence
+dynamics. (Before 2026-10-17 the figure compared the winning model with the minimal
 3-level coupling model; --legacy restores that comparison.)
 
 Panels:
   (a) intrinsic (TTX-epoch) frequency distributions per slice: histogram of all cells, mixture density
       (black) and its lobe parts (lobe colours, weighted by the lobe fractions)
   (b) slice coherence R(t): data (epoch-peak pipeline) vs c(t)|Z| of the three models
-  (c) K_s(t)/K_pre of the SCN & lobe-specific model vs time since TTX application (washout marked)
+  (c) K_s(t)/K_pre of the noise-floor model vs time since TTX application (washout marked)
   (d) DESYNCHRONISATION rate κ_d = −d ln R/dt over [t_ttx + 24 h, t_ttx + 72 h] (1/day), data vs model,
       slice and lobes
   (e) RESYNCHRONISATION time t_½: time relative to washout at which R first exceeds the midpoint between its
@@ -41,8 +41,8 @@ OUT = dp.ensure(os.path.join(S.OUT, "writeup"))
 FIT = os.path.join(S.OUT, "model_fit", "shapes")
 SLICES = tuple(int(v) for v in sys.argv[sys.argv.index("--slices") + 1].split(",")) if "--slices" in sys.argv else (1, 2, 3, 4)
 WIN = "hr-noise+transient+local"
-SHOW = [("floor", WIN, "SCN & lobe-specific", "#c0392b", "-"), ("lobelump", WIN, "lobes pooled", "#2166ac", "--"),
-        ("lumped", WIN, "slices pooled", "0.45", ":")]
+SHOW = [("nofloor", WIN, "no floor", "#2166ac", "--"), ("floor", WIN, "noise floor", "#c0392b", "-"),
+        ("single", WIN, "single Lorentzian", "0.45", ":")]
 LEGACY = [("floor", "hf-noise+transient+local", "winning", "#c0392b", "-"), ("floor", "base", "minimal", "0.5", "--")]
 MARK = ["o", "s", "D", "^"]                                  # slices 1–4 in the statistics panels
 C_SL = ["#2a6fdb", "#e0782b", "#3a9e5c", "#b8418f"]          # slices 1–4 (fixed order)
@@ -155,7 +155,7 @@ def figure(st):
     # (c) K_s(t) / K_pre
     a = fig.add_subplot(gs[2, 0])
     for j, i in enumerate(SLICES):
-        d = TG.load(i); r = load(i, SHOW[0][1], SHOW[0][0])
+        d = TG.load(i); r = load(i, WIN, "floor")
         if r is None:
             continue
         p = r["params"]; tt = np.arange(0, int(d["T"]), 0.25)

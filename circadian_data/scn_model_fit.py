@@ -78,7 +78,7 @@ one with Δθ, λ, τ_g; earlier runs: "h0-" with α_s = 0 and r* free, "hf-" wi
 Earlier defaults: base, noise, prof-base, prof-noise, homeo-base, homeo-noise (the phase reset is dropped: its
 discontinuous jump in R disagrees with the data).
 FREQUENCY-DISTRIBUTION VARIANTS (--kinds; mixture()), all with the noise floor unless nofloor: floor = SCN- and
-lobe-specific mixtures; lobelump = one mixture per slice with the lobes pooled, the same for both lobes; lumped = one
+lobe-specific mixtures; single = one Lorentzian per slice and lobe (M_max = 1); lobelump = one mixture per slice with the lobes pooled, the same for both lobes; lumped = one
 mixture of the frequencies pooled over SCN1–4 (and lobes), the same for every slice and lobe; nofloor = floor without
 the noise floor.
 Results: data_paths.MPMF/circadian_data/model_fit/shapes/{scn<i>_<kind>_<model>.npy, scn_model_fit.{png,pdf},
@@ -202,7 +202,7 @@ for _s, _h in zip(STARTS, _HSTARTS):                       # common defaults of 
     _s.update(_h)
     for _k, _v in dict(K_i=0.01, alpha_i=0.0, dw=0.0, reset_wash=0.1).items():
         _s.setdefault(_k, _v)
-KINDS = ("floor", "nofloor", "lobelump", "lumped")           # frequency-distribution variants, see mixture()
+KINDS = ("floor", "nofloor", "lobelump", "lumped", "single")           # frequency-distribution variants, see mixture()
 LUMP_SLICES = (1, 2, 3, 4)
 C_MODEL = {"base": "0.35", "reset": "#b2182b", "noise": "#2166ac", "shift": "#5aae61", "quenched": "#e08214",
            "reset+noise": "#762a83", "full": "#01665e", "noise+anchor": "#d6604d", "noise+transient": "#4393c3",
@@ -346,6 +346,7 @@ def lumped_fit():
 def mixture(i, kind, d):
     """Mixture model of slice i for the frequency-distribution variant `kind` (all noise-floor fits except nofloor):
       floor / nofloor  SCN- and lobe-specific Lorentzian mixtures (with / without the noise floor)
+      single           ONE Lorentzian per slice and lobe (M_max = 1; with the noise floor)
       lobelump         one mixture of the slice's frequencies with the lobes POOLED, the same for both lobes
       lumped           one mixture of the frequencies pooled over the slices LUMP_SLICES (and lobes), the same for
                        every slice and lobe"""
@@ -354,6 +355,8 @@ def mixture(i, kind, d):
         return _cached(f, lambda: SIM.build(d, LAM, kind == "floor", WIDTH_K))
     if kind == "lumped":
         return _cached(f, lambda: SIM.build_shared(d, lumped_fit()))
+    if kind == "single":
+        return _cached(f, lambda: SIM.build(d, LAM, True, WIDTH_K, M_max=1))
     if kind == "lobelump":
         return _cached(f, lambda: SIM.build_shared(d, SIM.fit_mixture(d["om"], LAM, True, WIDTH_K)))
     raise ValueError(kind)
