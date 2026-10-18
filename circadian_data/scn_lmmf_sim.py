@@ -156,6 +156,23 @@ def build(d, lam, floor, width_k):
                 p=np.array([w[cl == k].sum() for k in (0, 1)]))
 
 
+def build_shared(d, f):
+    """The SAME mixture f (dict w, Om, De, M; absolute rad/h) for both lobes of the slice: one copy per lobe,
+    weights × lobe fraction; each cell assigned to the most likely component of its lobe's copy. Used for
+    frequency distributions that are not slice- or lobe-specific (lumped over slices, Gaussian)."""
+    om, lobe = d["om"], d["lobe"]
+    Om, De, w, cl, assign = [], [], [], [], np.zeros(om.size, int)
+    for k in (0, 1):
+        idx = np.where(lobe == k)[0]
+        resp = f["w"][None] * f["De"][None] / ((om[idx, None] - f["Om"][None]) ** 2 + f["De"][None] ** 2)
+        assign[idx] = len(Om) + np.argmax(resp, axis=1)
+        Om += list(f["Om"]); De += list(f["De"]); w += list(idx.size / om.size * np.asarray(f["w"]))
+        cl += [k] * int(f["M"])
+    cl, w = np.array(cl), np.array(w)
+    return dict(Om=np.array(Om), De=np.array(De), w=w, lobe=cl, assign=assign,
+                p=np.array([w[cl == k].sum() for k in (0, 1)]))
+
+
 # ─── inputs ──────────────────────────────────────────────────────────────────────────────────────
 def coupling_input(K_pre, K_ttx, K_wash, t_ttx, t_wash, rate_ttx, rate_wash):
     """K_syn(t): steps (rate = inf) or first-order relaxations towards the level of each time domain."""

@@ -64,19 +64,23 @@ space, --bh-maxiter-per-dim for the local Nelder–Mead); results in model_fit/n
         [--bh-maxiter-per-dim 150] [--bh-starts 8]
     e.g. the optimiser check:  ... fit figure --optimizer basinhopping --models prof-base,prof-reset+noise
     (time a single loss evaluation: python scn_model_fit.py time --slices 1)
-SETUPS A–C (2026-10-16; --models A,B,C, the defaults), all homeostatic K_s with r* fixed at R_STAR_FIX and α_s
-free ("hf-"; the first run used "h0-": α_s = 0, r* free — the lag is needed for the collective frequency and r*
-ran to its bound) + noise γ u(t):
-    A  hf-noise+anchor            8 params: K_pre, Δθ, τ_g, f_λ, u_res, τ_off, α_s, γ; the mixture state is
+SETUPS A–C (--models A,B,C, the defaults), all homeostatic K_s with r* fixed at R_STAR_FIX and α_s free, in the
+IDENTIFIABLE parametrisation "hr-" (block depth ρ_min, plateau fraction f_rec → ρ_ttx, recovery time t_hom; one-to-
+one with Δθ, λ, τ_g; earlier runs: "h0-" with α_s = 0 and r* free, "hf-" with Δθ, τ_g, f_λ) + noise γ u(t):
+    A  hr-noise+anchor            8 params: K_pre, ρ_min, f_rec, t_hom, u_res, τ_off, α_s, γ; the mixture state is
                                   re-anchored to the measured phases at t_ttx + 24 h (the lobe-specific first-day
                                   transient is taken from the data, not modelled)
-    B  hf-noise+transient        11 params: no anchoring; + a lobe-specific transient noise after TTX application,
+    B  hr-noise+transient        11 params: no anchoring; + a lobe-specific transient noise after TTX application,
                                   extra width γ_tr,L e^{−(t − t_ttx)/τ_tr} on the components of lobe L (γ_tr,A, γ_tr,B,
                                   τ_tr ∈ (1, 72) h)
-    C  hf-noise+transient+local  12 params: B + a TTX-insensitive lobe-local coupling K_loc (= K_i, no lag)
-  Their warm-start ancestors (hf-base, hf-noise) are fitted along. Nesting: hf-noise ⊂ B ⊂ C; A is not nested.
+    C  hr-noise+transient+local  12 params: B + a TTX-insensitive lobe-local coupling K_loc (= K_i, no lag)
+  Their warm-start ancestors (hr-base, hr-noise) are fitted along. Nesting: hr-noise ⊂ B ⊂ C; A is not nested.
 Earlier defaults: base, noise, prof-base, prof-noise, homeo-base, homeo-noise (the phase reset is dropped: its
 discontinuous jump in R disagrees with the data).
+FREQUENCY-DISTRIBUTION VARIANTS (--kinds; mixture()), all with the noise floor unless nofloor: floor = SCN- and
+lobe-specific mixtures; lobelump = one mixture per slice with the lobes pooled, the same for both lobes; lumped = one
+mixture of the frequencies pooled over SCN1–4 (and lobes), the same for every slice and lobe; nofloor = floor without
+the noise floor.
 Results: data_paths.MPMF/circadian_data/model_fit/shapes/{scn<i>_<kind>_<model>.npy, scn_model_fit.{png,pdf},
          scn_model_fit_summary.csv}   (mixtures cached in model_fit/)
 """
@@ -105,8 +109,9 @@ T_REC_MAX = 150.0              # recovery centre after TTX application (h; TTX e
 W_MIN, W_MAX = 1.0, 48.0       # width of the S-shaped recovery (h)
 BOUNDS_HOMEO = dict(r_star=(0.005, 0.8), d_theta=(1.0, 20.0), tau_g=(0.05, 24.0), f_lam=(0.0, 1.0),
                     u_res=(0.0, 0.8), tau_off=(0.1, 48.0),    # τ_g, τ_off, τ_tr log-uniform; widened 2026-10-16
-                    g_trA=(0.0, 0.2), g_trB=(0.0, 0.2), tau_tr=(1.0, 72.0))   # after hits of the first bounds
-LOG_KEYS = ("tau_wash", "w_rec", "tau_g", "tau_off", "tau_tr")
+                    g_trA=(0.0, 0.2), g_trB=(0.0, 0.2), tau_tr=(1.0, 72.0),   # after hits of the first bounds
+                    rho_min=(1e-10, 0.5), f_rec=(0.0, 1.0), t_hom=(6.0, 1e4))   # complete block, no recovery
+LOG_KEYS = ("tau_wash", "w_rec", "tau_g", "tau_off", "tau_tr", "rho_min", "t_hom")
 DT_HOMEO = 0.1                 # controller grid (h)
 GQ_FRAC = 0.95
 SIGMA_NU = 0.005
@@ -123,11 +128,16 @@ HOMEO = ("K_pre", "r_star", "d_theta", "tau_g", "f_lam", "u_res", "tau_off", "al
 H0 = HOMEO[:-1]                                             # homeostatic with α_s = 0 (run of 2026-10-16: the
                                                             # lag IS needed for the collective frequency)
 HF = tuple(k for k in HOMEO if k != "r_star")              # homeostatic with r* fixed at R_STAR_FIX, α_s free
+HR = ("K_pre", "rho_min", "f_rec", "t_hom", "u_res", "tau_off", "alpha_s")   # the same controller, IDENTIFIABLE
+# parameters (r* = R_STAR_FIX): block depth ρ_min = K_min/K_pre, plateau under sustained TTX
+# ρ_ttx = ρ_min + f_rec (1 − ρ_min) = K_ttx/K_pre, recovery time t_hom (h) = τ_g g_ss / r*; mapped one-to-one onto
+# Δθ, λ, τ_g in homeo_from_identifiable
 R_STAR_FIX = 0.05                                           # (r* alone is not identifiable: it ran to its bound)
-SHAPES = {"": STEP, "prof-": PROF, "homeo-": HOMEO, "h0-": H0, "hf-": HF}
-PREFIXES = ("prof-", "homeo-", "h0-", "hf-")
+SHAPES = {"": STEP, "prof-": PROF, "homeo-": HOMEO, "h0-": H0, "hf-": HF, "hr-": HR}
+PREFIXES = ("prof-", "homeo-", "h0-", "hf-", "hr-")
 SHAPE_NAME = {"": "step", "prof-": "sigmoid profile", "homeo-": "homeostatic", "h0-": "homeostatic, α_s = 0",
-              "hf-": f"homeostatic, r* = {R_STAR_FIX:g}"}
+              "hf-": f"homeostatic, r* = {R_STAR_FIX:g}",
+              "hr-": f"homeostatic (identifiable), r* = {R_STAR_FIX:g}"}
 NOISE = ("gamma", "u_res", "tau_off")                      # noise γ u(t) with the tissue TTX level u(t)
 TRANSIENT = ("g_trA", "g_trB", "tau_tr")                 # lobe-specific transient noise after TTX application
 MECH = {"base": (), "reset": ("reset_ttx",), "noise": NOISE, "quenched": ("gamma_q",),
@@ -140,7 +150,7 @@ WARM = {"reset+noise": ["reset", "noise", "base"], "noise+anchor": ["noise", "ba
 NESTED = {"reset+noise": ["reset", "noise", "base"], "noise+anchor": [],          # anchoring changes the
           "noise+transient": ["noise", "base"],                                   # dynamics: not nested
           "noise+transient+local": ["noise+transient", "noise", "base"]}
-ALIASES = {"A": "hf-noise+anchor", "B": "hf-noise+transient", "C": "hf-noise+transient+local"}
+ALIASES = {"A": "hr-noise+anchor", "B": "hr-noise+transient", "C": "hr-noise+transient+local"}
 
 
 def ancestors(m):
@@ -168,7 +178,7 @@ DEFAULT_SLICES = (1, 2, 3, 4)                              # SCN5 set aside (out
 DEFAULTS = dict(K_pre=0.0, K_ttx=0.0, K_wash=0.0, K_i=0.0, alpha_s=0.0, alpha_i=0.0, dw=0.0, gamma=0.0,
                 gamma_q=0.0, reset_ttx=0.0, reset_wash=0.0, f_ttx=1.0, f_min=1.0, t_rec=72.0, w_rec=12.0, f_max=0.0,
                 tau_wash=24.0, r_star=0.2, d_theta=6.0, tau_g=2.4, f_lam=0.3, u_res=0.0, tau_off=HC.TAU_ON,
-                g_trA=0.0, g_trB=0.0, tau_tr=12.0)
+                g_trA=0.0, g_trB=0.0, tau_tr=12.0, rho_min=1e-3, f_rec=0.3, t_hom=72.0)
 SMALL = dict(reset_ttx=1e-3, reset_wash=1e-3, gamma=1e-4, gamma_q=1e-5, dw=0.0, K_i=1e-4, u_res=1e-3, tau_off=1.0,
              g_trA=1e-4, g_trB=1e-4, tau_tr=12.0)
 STARTS = [dict(K_pre=0.10, K_ttx=0.006, K_wash=0.08, alpha_s=0.0, f_ttx=0.1, f_min=0.2, t_rec=72.0, w_rec=12.0, f_max=0.3,
@@ -181,18 +191,19 @@ STARTS = [dict(K_pre=0.10, K_ttx=0.006, K_wash=0.08, alpha_s=0.0, f_ttx=0.1, f_m
                tau_wash=6.0, reset_ttx=0.5, gamma=0.02, gamma_q=0.8)]
 # τ_g of the starts chosen so that t_rec ≈ τ_g Δθ / r* ≈ 2–6 days for r* = R_STAR_FIX
 _HSTARTS = [dict(r_star=0.2, d_theta=6.0, tau_g=0.6, f_lam=0.3, u_res=0.1, tau_off=6.0, g_trA=0.03, g_trB=0.01,
-                 tau_tr=12.0),
+                 tau_tr=12.0, rho_min=1e-3, f_rec=0.3, t_hom=72.0),
             dict(r_star=0.1, d_theta=4.0, tau_g=0.6, f_lam=0.1, u_res=0.3, tau_off=12.0, g_trA=0.01, g_trB=0.03,
-                 tau_tr=24.0),
+                 tau_tr=24.0, rho_min=1e-2, f_rec=0.6, t_hom=48.0),
             dict(r_star=0.4, d_theta=8.0, tau_g=0.8, f_lam=0.6, u_res=0.05, tau_off=2.0, g_trA=0.05, g_trB=0.05,
-                 tau_tr=6.0),
+                 tau_tr=6.0, rho_min=1e-4, f_rec=0.1, t_hom=120.0),
             dict(r_star=0.03, d_theta=12.0, tau_g=0.2, f_lam=0.8, u_res=0.5, tau_off=0.5, g_trA=0.002, g_trB=0.002,
-                 tau_tr=36.0)]
+                 tau_tr=36.0, rho_min=0.05, f_rec=0.8, t_hom=24.0)]
 for _s, _h in zip(STARTS, _HSTARTS):                       # common defaults of the remaining parameters
     _s.update(_h)
     for _k, _v in dict(K_i=0.01, alpha_i=0.0, dw=0.0, reset_wash=0.1).items():
         _s.setdefault(_k, _v)
-KINDS = ("floor", "nofloor")
+KINDS = ("floor", "nofloor", "lobelump", "lumped")           # frequency-distribution variants, see mixture()
+LUMP_SLICES = (1, 2, 3, 4)
 C_MODEL = {"base": "0.35", "reset": "#b2182b", "noise": "#2166ac", "shift": "#5aae61", "quenched": "#e08214",
            "reset+noise": "#762a83", "full": "#01665e", "noise+anchor": "#d6604d", "noise+transient": "#4393c3",
            "noise+transient+local": "#1b7837"}
@@ -254,7 +265,12 @@ def from_x(x, keys):
         lo, hi = _bounds(k); q = lo + (hi - lo) / (1 + np.exp(-v))
         p[k] = np.exp(q) if k in LOG_KEYS else q
     p["lam"] = 0.0
-    if "d_theta" in keys:                                   # homeostatic shape: K_s from the controller
+    if "rho_min" in keys:                                   # identifiable homeostatic parameters
+        p["r_star"] = R_STAR_FIX
+        p["d_theta"], p["lam"], p["tau_g"], p["rho_ttx"] = homeo_from_identifiable(
+            p["rho_min"], p["f_rec"], p["t_hom"], R_STAR_FIX)
+        p["f_lam"] = p["lam"] * p["d_theta"] / p["r_star"]
+    if "d_theta" in keys or "rho_min" in keys:              # homeostatic shape: K_s from the controller
         p["shape"] = "homeo"
         if "r_star" not in keys:
             p["r_star"] = R_STAR_FIX
@@ -264,9 +280,47 @@ def from_x(x, keys):
         p["K_max"] = p["K_wash"] + p["f_max"] * (K_REB_MAX - p["K_wash"])
     if "d_theta" in keys:
         p["lam"] = p["f_lam"] * p["r_star"] / p["d_theta"]
-    if "d_theta" not in keys and "f_ttx" not in keys:
+    if p.get("shape") != "homeo" and "f_ttx" not in keys:
         p["K_min"], p["K_max"] = p["K_ttx"], p["K_wash"]
     return p
+
+
+def _logit(x):
+    return np.log(x / (1 - x))
+
+
+def homeo_from_identifiable(rho_min, f_rec, t_hom, r_star):
+    """(Δθ, λ, τ_g, ρ_ttx) of the controller from block depth ρ_min = K_min/K_pre, plateau fraction
+    ρ_ttx = ρ_min + f_rec (1 − ρ_min) = K_ttx/K_pre (steady state under sustained TTX) and recovery time
+    t_hom = τ_g g_ss / r* (time to climb to the steady-state excitability at the initial rate r*/τ_g):
+        Δθ = logit r* − logit(ρ_min r*),   g_ss = logit(ρ_ttx r*) − logit(ρ_min r*),
+        λ = r* (1 − ρ_ttx) / g_ss,         τ_g = t_hom r* / g_ss."""
+    rho_ttx = rho_min + f_rec * (1 - rho_min)
+    d_theta = _logit(r_star) - _logit(rho_min * r_star)
+    g_ss = max(_logit(min(rho_ttx, 1 - 1e-9) * r_star) - _logit(rho_min * r_star), 1e-9)
+    return d_theta, r_star * (1 - rho_ttx) / g_ss, t_hom * r_star / g_ss, rho_ttx
+
+
+def identifiable(p, d=None):
+    """Identifiable summary of any homeostatic fit p: block depth ρ_min, plateau ρ_ttx under sustained TTX,
+    recovery time t_hom (h); with the target d also the rebound peak K_max / K_pre and its 1/e decay time (h)."""
+    from scipy.optimize import brentq
+    r, dth, lam, tg = p["r_star"], p["d_theta"], p["lam"], p["tau_g"]
+    th = -_logit(r) + dth                                   # threshold under full block
+    f = lambda g: (r - 1 / (1 + np.exp(-(g - th)))) - lam * g
+    g_hi = min(r / lam, th + 60.0) if lam > 0 else th + 60.0   # σ saturates far above the threshold
+    g_ss = brentq(f, 0.0, g_hi) if f(g_hi) < 0 else g_hi        # (λ ≈ 0: full recovery, ρ_ttx → 1)
+    out = dict(rho_min=1 / (1 + np.exp(-(_logit(r) - dth))) / r,
+               rho_ttx=1 / (1 + np.exp(-(g_ss - th))) / r, t_hom=tg * g_ss / r)
+    if d is not None:
+        tc, Kc, *_ = HC.homeostatic_coupling(p["K_pre"], r, dth, tg, lam, p["u_res"], float(d["ttx"]),
+                                             float(d["wash"]), float(d["T"]), tau_off=p["tau_off"], dt=0.05)
+        m = tc >= float(d["wash"]); k = np.argmax(np.where(m, Kc, -np.inf)); Kpost = Kc[-1]
+        thr = Kpost + (Kc[k] - Kpost) / np.e
+        dn = np.where((np.arange(tc.size) > k) & (Kc <= thr))[0]
+        out.update(K_max_rel=Kc[k] / p["K_pre"], t_rebound=(tc[dn[0]] - tc[k]) if dn.size else np.nan,
+                   K_post_rel=Kpost / p["K_pre"], t_peak=tc[k] - float(d["wash"]))
+    return out
 
 
 def start_params(s):
@@ -276,13 +330,33 @@ def start_params(s):
 
 
 # ─── data, model, loss ───────────────────────────────────────────────────────────────────────────
-def mixture(i, kind, d):
-    f = os.path.join(MIX, f"scn{i}_{kind}_mixture.npy")
+def _cached(f, make):
     if os.path.exists(f):
         return np.load(f, allow_pickle=True).item()
-    m = SIM.build(d, LAM, kind == "floor", WIDTH_K)
-    np.save(f, m, allow_pickle=True)
+    m = make(); np.save(f, m, allow_pickle=True)
     return m
+
+
+def lumped_fit():
+    """One noise-floor Lorentzian mixture of the POOLED intrinsic frequencies of LUMP_SLICES (absolute rad/h)."""
+    om = np.concatenate([TG.load(j)["om"] for j in LUMP_SLICES])
+    return _cached(os.path.join(MIX, "lumped_floor_fit.npy"), lambda: SIM.fit_mixture(om, LAM, True, WIDTH_K))
+
+
+def mixture(i, kind, d):
+    """Mixture model of slice i for the frequency-distribution variant `kind` (all noise-floor fits except nofloor):
+      floor / nofloor  SCN- and lobe-specific Lorentzian mixtures (with / without the noise floor)
+      lobelump         one mixture of the slice's frequencies with the lobes POOLED, the same for both lobes
+      lumped           one mixture of the frequencies pooled over the slices LUMP_SLICES (and lobes), the same for
+                       every slice and lobe"""
+    f = os.path.join(MIX, f"scn{i}_{kind}_mixture.npy")
+    if kind in ("floor", "nofloor"):
+        return _cached(f, lambda: SIM.build(d, LAM, kind == "floor", WIDTH_K))
+    if kind == "lumped":
+        return _cached(f, lambda: SIM.build_shared(d, lumped_fit()))
+    if kind == "lobelump":
+        return _cached(f, lambda: SIM.build_shared(d, SIM.fit_mixture(d["om"], LAM, True, WIDTH_K)))
+    raise ValueError(kind)
 
 
 def collective_frequency(Z):
