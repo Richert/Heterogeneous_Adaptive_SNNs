@@ -115,7 +115,7 @@ LOG_KEYS = ("tau_wash", "w_rec", "tau_g", "tau_off", "tau_tr", "rho_min", "t_hom
 DT_HOMEO = 0.1                 # controller grid (h)
 GQ_FRAC = 0.95
 SIGMA_NU = 0.005
-LAM, WIDTH_K = 1e-6, 10.0
+LAM, WIDTH_K = 1e-5, 10.0           # λ = 1e-5 for all mixtures (2026-10-18; floor/single unchanged vs 1e-6)
 DT_FIT = 0.5
 MAXITER_PER_DIM = 300
 OPT = dict(optimizer="nm", bh_niter=20, bh_T=0.02, bh_step=0.75, bh_mpd=150, bh_starts=8, seed=1)  # --optimizer

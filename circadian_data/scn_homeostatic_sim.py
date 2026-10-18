@@ -28,7 +28,7 @@ difference | inputs K_s(t) (log), spike rate r, TTX level u and noise γu.
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_homeostatic_sim.py --slice 1 --K-pre 0.15 --r-star 0.2 \
         --d-theta 6 --tau-g 2.4 --lam 0.015 --u-res 0.1 --tau-off 12 --alpha-s 0.0 --gamma 0.01 [--tau-on 0.5] \
-        [--no-floor] [--lam-mix 1e-6] \
+        [--no-floor] [--lam-mix 1e-5] \
         [--width-k 10] [--no-ceiling] [--show]
 Units: rates, couplings and γ in rad/h; τ in h; Δθ, λ, r*, u_res dimensionless.
 (The figure's input panel shows u(t): fast rise at application, gradual decline over ~τ_off after washout.)
@@ -63,7 +63,7 @@ def parse():
     p.add_argument("--tau-on", type=float, default=HC.TAU_ON, help="application time constant τ_on (h)")
     p.add_argument("--alpha-s", type=float, default=0.0, help="phase lag of the coupling (rad)")
     p.add_argument("--gamma", type=float, default=0.0, help="Cauchy noise scale at full TTX (rad/h); noise = γ u(t)")
-    p.add_argument("--lam-mix", type=float, default=1e-6, help="per-component penalty λ of the mixture fits")
+    p.add_argument("--lam-mix", type=float, default=1e-5, help="per-component penalty λ of the mixture fits")
     p.add_argument("--no-floor", action="store_true", help="mixture fits without the noise floor")
     p.add_argument("--width-k", type=float, default=10.0, help="width floor k (0 = off)")
     p.add_argument("--no-ceiling", action="store_true", help="compare |Z| instead of c(t)|Z| with the data")

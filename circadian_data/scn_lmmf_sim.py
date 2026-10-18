@@ -56,7 +56,7 @@ Units: time in hours, frequencies, couplings, δω and γ in rad/h, phase lags i
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_lmmf_sim.py --slice 1 --K-pre 0.08 --K-ttx 0.005 \
         --K-wash 0.06 --alpha-s 0.2 --K-i 0.01 --alpha-i 0.0 [--insens-global] [--dw-ttx 0.0] [--gamma-ttx 0.0] \
         [--gamma-q 0.0] [--reset-ttx 0.0] [--reset-wash 0.0] \
-        --lam 1e-6 [--no-floor] [--width-k 10] [--rate-ttx 1.0] [--rate-wash 0.2] [--t-start 24] [--no-ceiling] [--show]
+        --lam 1e-5 [--no-floor] [--width-k 10] [--rate-ttx 1.0] [--rate-wash 0.2] [--t-start 24] [--no-ceiling] [--show]
 (Old option names --alpha and --K-gap are accepted for --alpha-s and --K-i. The pulse-coupling variant is kept
 in scn_pulse_fit.py.)
 Output: data_paths.MPMF/circadian_data/sim/scn<slice>_<tag>.{png,pdf}
@@ -109,7 +109,7 @@ def parse():
                    help="phase scrambling at TTX application: wrapped-Cauchy kick scale σ (rad), z_m → e^{−σ} z_m")
     p.add_argument("--reset-wash", type=float, default=0.0,
                    help="phase scrambling at washout: wrapped-Cauchy kick scale σ (rad)")
-    p.add_argument("--lam", type=float, default=1e-6, help="per-component penalty λ of the mixture fits")
+    p.add_argument("--lam", type=float, default=1e-5, help="per-component penalty λ of the mixture fits")
     p.add_argument("--no-floor", action="store_true", help="fit without the noise floor")
     p.add_argument("--width-k", type=float, default=10.0, help="width floor k (0 = off)")
     p.add_argument("--rate-ttx", type=float, default=np.inf, help="rate (1/h) of the TTX-application transition")
