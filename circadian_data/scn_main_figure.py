@@ -12,24 +12,17 @@ fitted parameters instead.
   (a) SCN3: intrinsic-frequency histogram of all cells (lobes pooled) and the three model distributions (slice level:
       lobe mixtures weighted by the lobe fractions)
   (b) SCN3: coherence R(t), data and c(t)|Z(t)| of the empirical reference and the three models
-  (c) DESYNCHRONISATION rate κ_d = −d ln R/dt over [t_ttx + 24 h, t_ttx + 72 h] (1/day): model vs data, SCN1–4
-  (d) RESYNCHRONISATION rate 1/w (1/day) of a logistic fit R(t) = a + b σ((t − t_0)/w) over [t_wash − 72 h,
-      t_wash + 96 h]; the onset t_0 is free, so the rate does not depend on when resynchronisation starts. The data
-      rise lies largely inside the masked window, where the peak pipeline smears abrupt changes over about ±1 cycle:
-      data rates are lower bounds.
-  (e) error of the coherence fit vs error of the frequency-distribution fit, per slice and model:
+  (c) approximation error vs distribution error, per slice and model:
       x  Cramér–von Mises distance D = W²/N between each lobe's model distribution and its cells' frequencies,
          averaged over the lobes (cell-weighted); the dashed line is the SAMPLING NOISE FLOOR E[D] = 1/(6N),
          averaged over the lobes of SCN1–4 (expected distance of an exact model, finite N)
-      y  frozen: APPROXIMATION ERROR, RMSE of c|Z| vs the empirical reference's c|Z_ref| over the mask (slice and both
-         lobes combined); the dotted line is the reference's own error vs the data (mean over slices)
-         --refit: RMSE of c|Z| vs R (slice and lobes combined)
+      y  frozen: RMSE of c|Z| vs the empirical reference's c|Z_ref| over the mask (slice and both lobes combined);
+         dotted: the reference's own error vs the data (mean over slices); --refit: RMSE of c|Z| vs R
       grey lines connect the three models of a slice
-  (f) SCN3: critical coupling of the incoherent state, K_c(γ), for each distribution (frozen: all with the reference's
-      lag α_s and lobe-local coupling K_loc, and ONE shared trajectory): smallest K_s at which the linearised LMMF
-          ż_m = (iΩ_m − Δ_m − γ) z_m + ½ [K_s e^{−iα_s} Σ_n w_n z_n + K_loc Σ_{n ∈ L(m)} w_n z_n / p_L(m)]
-      has an eigenvalue with Re λ = 0; and the fitted trajectory (K_s(t), γ u(t)) of each model, with the pre-TTX
-      state (circle), the TTX plateau (triangle) and the post-washout state (square). --plane alpha: (K_s, α) instead.
+  (d) LOBE-SPECIFIC DESYNCHRONISATION rate κ_d = −d ln R_L/dt over [t_ttx + 24 h, t_ttx + 72 h] (1/day), model vs
+      data, SCN1–4; filled = lobe A, open = lobe B; colour = model (incl. the empirical reference)
+  (old panels: resynchronisation rate and critical coupling, removed 2026-10-19; the helpers resync_rate and K_crit
+  are kept for the planned bifurcation panels)
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_main_figure.py [--example 3] [--plane gamma|alpha] [--refit]
 Output: data_paths.MPMF/circadian_data/writeup/scn_lmmf_main.{pdf,png}, scn_lmmf_main_stats.json
@@ -126,7 +119,8 @@ def stats():
     out = {}
     for i in SLICES:
         d = TG.load(i); ttx, wash = int(d["ttx"]), int(d["wash"]); t = np.arange(int(d["T"]), dtype=float)
-        o = {"data": dict(kd=kappa_d(t, d["R"], ttx), kr=resync_rate(t, d["R"], wash)),
+        o = {"data": dict(kd=kappa_d(t, d["R"], ttx), kr=resync_rate(t, d["R"], wash),
+                          kd_lobes=[kappa_d(t, d["RA"], ttx), kappa_d(t, d["RB"], ttx)]),
              "N": [int((d["lobe"] == k).sum()) for k in (0, 1)]}
         for kind, lab, *_ in shown():
             r = res_of(i, kind)
@@ -134,8 +128,9 @@ def stats():
             Dk = [cvm(d["om"][d["lobe"] == k], mod, k) for k in (0, 1)]
             o[kind] = dict(D=float(np.average(Dk, weights=o["N"])), D_lobes=Dk)
             if r is not None:
-                tm, Rg, *_ = model_R(r, d)
+                tm, Rg, RA, RB = model_R(r, d)
                 o[kind].update(kd=kappa_d(tm, Rg, ttx), kr=resync_rate(tm, Rg, wash),
+                               kd_lobes=[kappa_d(tm, RA, ttx), kappa_d(tm, RB, ttx)],
                                rmse=float(np.sqrt((r["rmse"] ** 2 + r["rmse_A"] ** 2 + r["rmse_B"] ** 2) / 3)),
                                rmse_ref=float(r.get("rmse_ref_comb", np.nan)), loss=float(r["loss"]))
         out[i] = o
@@ -151,8 +146,8 @@ def figure(st, floor, ex, plane):
     from matplotlib.lines import Line2D
     from prl_style import set_prl_style, panel_label, COL_SINGLE
     set_prl_style("prl", **{"axes.titleweight": "bold", "axes.titlelocation": "center"})
-    fig, axs = plt.subplots(3, 2, figsize=(COL_SINGLE, 4.5),
-                            gridspec_kw=dict(hspace=0.62, wspace=0.42, left=0.13, right=0.98, top=0.97, bottom=0.08))
+    fig, axs = plt.subplots(2, 2, figsize=(COL_SINGLE, 3.1),
+                            gridspec_kw=dict(hspace=0.62, wspace=0.42, left=0.13, right=0.98, top=0.96, bottom=0.11))
     d = TG.load(ex); T = int(d["T"]); v0, v1 = S.valid_window(T)
     # (a) frequency distribution, lobes pooled
     a = axs[0, 0]; f = d["om"] * CPD
@@ -179,30 +174,8 @@ def figure(st, floor, ex, plane):
     if FROZEN:
         a.legend(loc="lower right", fontsize=4.4, handlelength=1.6, borderaxespad=0.1)
     a.set_ylim(0, 1.02); a.set_xlabel("time (days)"); a.set_ylabel(r"coherence $R$")
-    # (c), (d) rates
-    for a, key, lab, lims in ((axs[1, 0], "kd", r"$\kappa_d$", (0, 0.8)), (axs[1, 1], "kr", r"$\kappa_r$", "log")):
-        xs, ys = [], []
-        for j, i in enumerate(SLICES):
-            xd = st[i]["data"][key]; xd = xd[0] if isinstance(xd, (tuple, list)) else xd
-            for kind, _, col, _ in shown():
-                if key in st[i][kind]:
-                    y = st[i][kind][key]; y = y[0] if isinstance(y, (tuple, list)) else y
-                    a.plot(xd, y, MARK[j], color=col, ms=3.2, mec="k", mew=0.3); xs.append(xd); ys.append(y)
-        if lims == "log":                                  # resync rates span an order of magnitude
-            v = np.array(xs + ys, float); v = v[np.isfinite(v) & (v > 0)]
-            lo_, hi = 0.7 * v.min(), 1.4 * v.max()
-            a.set_xscale("log"); a.set_yscale("log"); a.plot([lo_, hi], [lo_, hi], color="0.6", lw=0.5, zorder=0)
-            a.set_xlim(lo_, hi); a.set_ylim(lo_, hi)
-        else:
-            hi = lims[1]
-            a.plot([0, hi], [0, hi], color="0.6", lw=0.5, zorder=0); a.set_xlim(0, hi); a.set_ylim(0, hi)
-        a.set_xlabel(f"data {lab} (1/day)"); a.set_ylabel(f"model {lab} (1/day)")
-    axs[1, 0].set_title("desynchronisation"); axs[1, 1].set_title("resynchronisation")
-    axs[1, 0].legend(handles=[Line2D([], [], marker=MARK[j], color="0.4", ls="none", ms=3, label=f"SCN{i}")
-                              for j, i in enumerate(SLICES)], loc="upper left", fontsize=4.6, handletextpad=0.1,
-                     borderaxespad=0.2)
-    # (e) error vs error
-    a = axs[2, 0]
+    # (c) approximation error vs distribution error (old panel e)
+    a = axs[1, 0]
     yk = "rmse_ref" if FROZEN else "rmse"
     for j, i in enumerate(SLICES):
         pts = [(st[i][k]["D"], st[i][k][yk]) for k, *_ in VARIANTS if yk in st[i][k]]
@@ -211,41 +184,40 @@ def figure(st, floor, ex, plane):
         for kind, _, col, _ in VARIANTS:
             if yk in st[i][kind]:
                 a.plot(st[i][kind]["D"], st[i][kind][yk], MARK[j], color=col, ms=3.2, mec="k", mew=0.3, zorder=2)
-    if FROZEN:
-        e_ref = np.nanmean([st[i]["empirical"]["rmse"] for i in SLICES if "rmse" in st[i]["empirical"]])
-        a.axhline(e_ref, color="#7b3294", ls=":", lw=0.7)
-        a.text(0.03, e_ref, " reference vs data", transform=a.get_yaxis_transform(), va="bottom", fontsize=4.4,
-               color="#7b3294")
-        a.set_yscale("log")
     a.axvline(floor, color="0.3", ls="--", lw=0.6)
     a.text(floor, 0.03, "noise floor ", transform=a.get_xaxis_transform(), ha="right", va="bottom", fontsize=4.6,
            color="0.3")
+    if FROZEN:
+        e_ref = np.nanmean([st[i]["empirical"]["rmse"] for i in SLICES if "rmse" in st[i]["empirical"]])
+        a.axhline(e_ref, color=REF[2], ls=":", lw=0.7)
+        a.text(0.03, e_ref, " reference vs data", transform=a.get_yaxis_transform(), va="bottom", fontsize=4.4,
+               color=REF[2])
+        a.set_yscale("log")
     a.set_xscale("log"); a.set_xlabel(r"distribution error $D$")
     a.set_ylabel("approximation error" if FROZEN else "coherence RMSE")
-    # (f) critical coupling and trajectories
-    a = axs[2, 1]
-    g_fit = [res_of(ex, k)["params"]["gamma"] for k, *_ in shown() if res_of(ex, k) is not None]
-    gam = np.linspace(0, max(2.5 * max(g_fit + [0.0]), 0.005), 31) if plane == "gamma" else None
-    al = np.linspace(-0.6, 0.6, 31) if plane == "alpha" else None
-    for kind, lab, col, ls in shown():
-        r = res_of(ex, kind); mod = r["model"] if r is not None else F.mixture(ex, kind, d)
-        p = r["params"] if r is not None else dict(alpha_s=0.0, K_i=0.0)
-        if plane == "gamma":
-            Kc = [K_crit(mod, p["alpha_s"], p["K_i"], x) for x in gam]; a.plot(Kc, gam * 1e3, color=col, ls=ls, lw=0.9)
-        else:
-            Kc = [K_crit(mod, x, p["K_i"], 0.0) for x in al]; a.plot(Kc, al, color=col, ls=ls, lw=0.9)
-        if r is not None and (not FROZEN or kind == "empirical"):     # frozen: one shared trajectory
-            tt = np.arange(v0, v1, 0.5); K = F.Kfun(p, d)(tt); u = F.ufun(p, d)(tt)
-            y = p["gamma"] * u * 1e3 if plane == "gamma" else np.full(tt.size, p["alpha_s"])
-            tc = "k" if FROZEN else col
-            a.plot(np.maximum(K, 1e-4), y, color=tc, lw=0.5, alpha=0.6)
-            for t_, mk in ((d["ttx"] - 24, "o"), (d["wash"] - 1, "v"), (v1 - 1, "s")):
-                k_ = np.argmin(np.abs(tt - t_)); a.plot(max(K[k_], 1e-4), y[k_], mk, color=tc, ms=3, mec="k", mew=0.3)
-    a.set_xscale("log"); a.set_xlim(1e-3, 3)
-    a.set_xlabel(r"coupling $K_s$ (rad/h)")
-    a.set_ylabel(r"noise $\gamma u$ ($10^{-3}$ rad/h)" if plane == "gamma" else r"phase lag $\alpha_s$ (rad)")
-    a.set_title("critical coupling")
-    for a_, l in zip(axs.flat, "abcdef"):
+    a.legend(handles=[Line2D([], [], marker=MARK[j], color="0.4", ls="none", ms=3, label=f"SCN{i}")
+                      for j, i in enumerate(SLICES)], loc="upper left", fontsize=4.4, handletextpad=0.1,
+             borderaxespad=0.2, ncol=2, columnspacing=0.6)
+    # (d) lobe-specific desynchronisation rates: filled = lobe A, open = lobe B
+    a = axs[1, 1]; hi = 0.0
+    for j, i in enumerate(SLICES):
+        xd = st[i]["data"]["kd_lobes"]
+        for kind, _, col, _ in shown():
+            if "kd_lobes" not in st[i][kind]:
+                continue
+            for k_ in (0, 1):
+                y = st[i][kind]["kd_lobes"][k_]
+                a.plot(xd[k_], y, MARK[j], color=col, mfc=col if k_ == 0 else "white", ms=3.2, mec=col if k_ else "k",
+                       mew=0.3 if k_ == 0 else 0.7, zorder=3 - k_)
+                hi = max(hi, xd[k_], y)
+    hi = 1.08 * hi
+    a.plot([0, hi], [0, hi], color="0.6", lw=0.5, zorder=0); a.set_xlim(0, hi); a.set_ylim(0, hi)
+    a.set_xlabel(r"data $\kappa_d$ (1/day)"); a.set_ylabel(r"model $\kappa_d$ (1/day)")
+    a.set_title("desynchronisation (lobes)")
+    a.legend(handles=[Line2D([], [], marker="o", color="0.3", ls="none", ms=3, label="lobe A"),
+                      Line2D([], [], marker="o", color="0.3", mfc="white", ls="none", ms=3, label="lobe B")],
+             loc="upper left", fontsize=4.4, handletextpad=0.1, borderaxespad=0.2)
+    for a_, l in zip(axs.flat, "abcd"):
         panel_label(a_, l, dx=-20, dy=3)
     out = os.path.join(OUT, "scn_lmmf_main" + ("" if FROZEN else "_refit"))
     fig.savefig(out + ".pdf", bbox_inches="tight"); fig.savefig(out + ".png", dpi=400, bbox_inches="tight")
