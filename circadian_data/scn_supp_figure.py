@@ -8,18 +8,22 @@ frequency distribution per slice and lobe captured by
     no floor           Lorentzian mixture without the noise floor (λ = 1e-5)         solid
     noise floor        Lorentzian mixture with the noise floor (λ = 1e-5)            dashed
     single Lorentzian  one Lorentzian (M_max = 1)                                    dotted
+FROZEN comparison (default): the dynamical parameters are those of the fit with the EMPIRICAL distribution (one narrow
+Lorentzian per cell; scn_model_fit kind "empirical"), not refitted for the mixtures (scn_model_fit frozen); the
+empirical reference is shown in purple. --refit: each mixture with its own fitted parameters.
 Two-column PRL figure, columns = SCN1–4, rows:
   (a) lobe A: intrinsic-frequency histogram (grey) and the three model distributions (normalised per lobe);
       N = cells, M = components (no floor / noise floor / single)
   (b) lobe B: the same
-  (c) slice coherence R(t): data (black) and c(t)|Z(t)| of the three models; TTX shaded, masked ±24 h hatched
+  (c) slice coherence R(t): data (black), the empirical reference (frozen) and c(t)|Z(t)| of the three models; TTX
+      shaded, masked ±24 h hatched
   (d) lobe difference R_A(t) − R_B(t): data and models (c_A|Z_A| − c_B|Z_B|)
-  (e) fitted TTX-sensitive coupling K_s(t) (rad/h, log scale) of the three models; thin horizontal lines: the
-      TTX-insensitive lobe-local coupling K_loc
+  (e) fitted TTX-sensitive coupling K_s(t) (rad/h, log scale): frozen, the one shared K_s(t) of the reference fit;
+      --refit, that of each model; thin horizontal lines: the TTX-insensitive lobe-local coupling K_loc
 Missing fits are skipped (preview); fits of the older "hf-" parametrisation are used if the "hr-" fit is absent.
 
-    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_supp_figure.py
-Output: data_paths.MPMF/circadian_data/writeup/scn_lmmf_fits_supp.{pdf,png}
+    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_supp_figure.py [--refit]
+Output: data_paths.MPMF/circadian_data/writeup/scn_lmmf_fits_supp{,_refit}.{pdf,png}
 """
 import os, sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,6 +41,13 @@ NAMES = ("hr-noise+transient+local", "hf-noise+transient+local")      # preferre
 VARIANTS = [("nofloor", "no floor", "#2166ac", "-"), ("floor", "noise floor", "#c0392b", "--"),
             ("single", "single Lorentzian", "0.35", ":")]
 CPD = 24 / (2 * np.pi)
+REF = ("empirical", "empirical (reference)", "#7b3294", "-")
+
+
+def load_frozen(i, kind):
+    """Frozen evaluation of `kind` at the empirical reference fit (scn_model_fit frozen)."""
+    f = os.path.join(FIT, f"scn{i}_{kind}_frozen-empirical-{NAMES[0]}.npy")
+    return np.load(f, allow_pickle=True).item() if os.path.exists(f) else None
 
 
 def load(i, kind):
@@ -72,11 +83,14 @@ def main():
         axs[1, j] = fig.add_subplot(g1[1, j]); axs[0, j] = fig.add_subplot(g1[0, j], sharex=axs[1, j])
         axs[4, j] = fig.add_subplot(g2[2, j])
         axs[2, j] = fig.add_subplot(g2[0, j], sharex=axs[4, j]); axs[3, j] = fig.add_subplot(g2[1, j], sharex=axs[4, j])
+    frozen = "--refit" not in sys.argv
+    get = load_frozen if frozen else load
+    curves = ([REF] if frozen else []) + VARIANTS                # models drawn in rows c–e
     missing = []
     for j, i in enumerate(SLICES):
         d = TG.load(i); T = int(d["T"]); v0, v1 = S.valid_window(T); td = np.arange(T) / 24
         vw = lambda x: np.where((np.arange(T) >= v0) & (np.arange(T) < v1), x, np.nan)
-        fits = {kind: load(i, kind) for kind, *_ in VARIANTS}
+        fits = {kind: get(i, kind) for kind, *_ in curves}
         missing += [f"SCN{i} {k}" for k, r in fits.items() if r is None]
         # (a), (b) lobe frequency distributions
         f_all = d["om"] * CPD
@@ -109,14 +123,18 @@ def main():
         axs[3, j].plot(td, vw(d["RA"] - d["RB"]), color="k", lw=1.1, zorder=3, label="data")
         axs[3, j].axhline(0, color="0.6", lw=0.5, zorder=1)
         tt = np.arange(0, T, 0.25)
-        for kind, lab, col, ls in VARIANTS:
+        for kind, lab, col, ls in curves:
             r = fits[kind]
             if r is None:
                 continue
-            ti = r["tm"].astype(int)
-            axs[2, j].plot(r["tm"] / 24, d["c"][ti] * np.abs(r["Zg"]), color=col, ls=ls, lw=0.9, zorder=2, label=lab)
+            ti = r["tm"].astype(int); lw = 1.2 if kind == "empirical" else 0.9
+            al = 0.75 if kind == "empirical" else 1.0
+            axs[2, j].plot(r["tm"] / 24, d["c"][ti] * np.abs(r["Zg"]), color=col, ls=ls, lw=lw, alpha=al, zorder=2,
+                           label=lab)
             axs[3, j].plot(r["tm"] / 24, d["cA"][ti] * np.abs(r["ZA"]) - d["cB"][ti] * np.abs(r["ZB"]), color=col,
-                           ls=ls, lw=0.9, zorder=2, label=lab)
+                           ls=ls, lw=lw, alpha=al, zorder=2, label=lab)
+            if frozen and kind != "empirical":
+                continue                                    # frozen: one shared K_s(t), that of the reference
             p = r["params"]
             axs[4, j].plot(tt / 24, np.maximum(F.Kfun(p, d)(tt), 1e-6), color=col, ls=ls, lw=0.9, label=lab)
             if p.get("K_i", 0) > 1e-4:
@@ -134,9 +152,9 @@ def main():
     for row, letter in enumerate("abcde"):
         panel_label(axs[row, 0], letter, dx=-26, dy=2)
     axs[2, 0].legend(handles=[Line2D([], [], color="k", lw=1.1, label="data")] +
-                     [Line2D([], [], color=c, ls=ls, lw=0.9, label=l) for _, l, c, ls in VARIANTS],
+                     [Line2D([], [], color=c, ls=ls, lw=0.9, label=l) for _, l, c, ls in curves],
                      loc="lower left", fontsize=4.8, handlelength=1.8)
-    out = os.path.join(OUT, "scn_lmmf_fits_supp")
+    out = os.path.join(OUT, "scn_lmmf_fits_supp" + ("" if frozen else "_refit"))
     fig.savefig(out + ".pdf", bbox_inches="tight"); fig.savefig(out + ".png", dpi=300, bbox_inches="tight")
     print(f"[saved] {out}.pdf/.png" + (f"  (missing fits: {', '.join(missing)})" if missing else ""))
 
