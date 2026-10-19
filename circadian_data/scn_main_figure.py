@@ -2,12 +2,16 @@ r"""
 Main figure (single-column PRL): the level of detail of the frequency distribution and the coherence dynamics
 =============================================================================================================
 
-Same dynamics in all three models (setup C; scn_model_fit "hr-noise+transient+local"), frequency distribution per
-slice and lobe captured by: no floor (λ = 1e-5) | noise floor | single Lorentzian (M_max = 1).
+Same dynamics in all models (setup C; scn_model_fit "hr-noise+transient+local"), frequency distribution per slice and
+lobe captured by: no floor (λ = 1e-5) | noise floor | single Lorentzian (M_max = 1).
+FROZEN comparison (default): the dynamical parameters are those of the fit with the EMPIRICAL distribution (one narrow
+Lorentzian per cell; scn_model_fit kind "empirical") and are NOT refitted for the mixtures (scn_model_fit frozen), so
+every difference between the models is due to the frequency distribution alone. --refit: each mixture with its own
+fitted parameters instead.
 
   (a) SCN3: intrinsic-frequency histogram of all cells (lobes pooled) and the three model distributions (slice level:
       lobe mixtures weighted by the lobe fractions)
-  (b) SCN3: coherence R(t), data and c(t)|Z(t)| of the three models
+  (b) SCN3: coherence R(t), data and c(t)|Z(t)| of the empirical reference and the three models
   (c) DESYNCHRONISATION rate κ_d = −d ln R/dt over [t_ttx + 24 h, t_ttx + 72 h] (1/day): model vs data, SCN1–4
   (d) RESYNCHRONISATION rate 1/w (1/day) of a logistic fit R(t) = a + b σ((t − t_0)/w) over [t_wash − 72 h,
       t_wash + 96 h]; the onset t_0 is free, so the rate does not depend on when resynchronisation starts. The data
@@ -17,15 +21,17 @@ slice and lobe captured by: no floor (λ = 1e-5) | noise floor | single Lorentzi
       x  Cramér–von Mises distance D = W²/N between each lobe's model distribution and its cells' frequencies,
          averaged over the lobes (cell-weighted); the dashed line is the SAMPLING NOISE FLOOR E[D] = 1/(6N),
          averaged over the lobes of SCN1–4 (expected distance of an exact model, finite N)
-      y  RMSE of c|Z| vs R over the mask, slice and both lobes combined (the fitted quantity)
+      y  frozen: APPROXIMATION ERROR, RMSE of c|Z| vs the empirical reference's c|Z_ref| over the mask (slice and both
+         lobes combined); the dotted line is the reference's own error vs the data (mean over slices)
+         --refit: RMSE of c|Z| vs R (slice and lobes combined)
       grey lines connect the three models of a slice
-  (f) SCN3: critical coupling of the incoherent state, K_c(γ), for each model's distribution (with its fitted lag α_s
-      and lobe-local coupling K_loc): smallest K_s at which the linearised LMMF
+  (f) SCN3: critical coupling of the incoherent state, K_c(γ), for each distribution (frozen: all with the reference's
+      lag α_s and lobe-local coupling K_loc, and ONE shared trajectory): smallest K_s at which the linearised LMMF
           ż_m = (iΩ_m − Δ_m − γ) z_m + ½ [K_s e^{−iα_s} Σ_n w_n z_n + K_loc Σ_{n ∈ L(m)} w_n z_n / p_L(m)]
       has an eigenvalue with Re λ = 0; and the fitted trajectory (K_s(t), γ u(t)) of each model, with the pre-TTX
       state (circle), the TTX plateau (triangle) and the post-washout state (square). --plane alpha: (K_s, α) instead.
 
-    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_main_figure.py [--example 3] [--plane gamma|alpha]
+    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_main_figure.py [--example 3] [--plane gamma|alpha] [--refit]
 Output: data_paths.MPMF/circadian_data/writeup/scn_lmmf_main.{pdf,png}, scn_lmmf_main_stats.json
 """
 import os, sys, json
@@ -44,6 +50,23 @@ SLICES = (1, 2, 3, 4)
 MARK = ["o", "s", "D", "^"]
 CPD = 24 / (2 * np.pi)
 VARIANTS = SF.VARIANTS                                      # (kind, label, colour, linestyle)
+REF = ("empirical", "empirical", "#7b3294", "-")
+FIT = os.path.join(S.OUT, "model_fit", "shapes")
+WIN = "hr-noise+transient+local"
+FROZEN = "--refit" not in sys.argv
+
+
+def res_of(i, kind):
+    """Fit result of slice i: frozen evaluation at the empirical reference (default) or the refit (--refit)."""
+    if not FROZEN:
+        return SF.load(i, kind)
+    f = os.path.join(FIT, f"scn{i}_{kind}_frozen-empirical-{WIN}.npy")
+    return np.load(f, allow_pickle=True).item() if os.path.exists(f) else None
+
+
+def shown():
+    """Models in panels b–f: the reference (frozen only) and the three mixtures."""
+    return ([REF] if FROZEN else []) + list(VARIANTS)
 
 
 # ─── statistics ──────────────────────────────────────────────────────────────────────────────────
@@ -105,15 +128,16 @@ def stats():
         d = TG.load(i); ttx, wash = int(d["ttx"]), int(d["wash"]); t = np.arange(int(d["T"]), dtype=float)
         o = {"data": dict(kd=kappa_d(t, d["R"], ttx), kr=resync_rate(t, d["R"], wash)),
              "N": [int((d["lobe"] == k).sum()) for k in (0, 1)]}
-        for kind, lab, *_ in VARIANTS:
-            r = SF.load(i, kind)
+        for kind, lab, *_ in shown():
+            r = res_of(i, kind)
             mod = r["model"] if r is not None else F.mixture(i, kind, d)
             Dk = [cvm(d["om"][d["lobe"] == k], mod, k) for k in (0, 1)]
             o[kind] = dict(D=float(np.average(Dk, weights=o["N"])), D_lobes=Dk)
             if r is not None:
                 tm, Rg, *_ = model_R(r, d)
                 o[kind].update(kd=kappa_d(tm, Rg, ttx), kr=resync_rate(tm, Rg, wash),
-                               rmse=float(np.sqrt((r["rmse"] ** 2 + r["rmse_A"] ** 2 + r["rmse_B"] ** 2) / 3)))
+                               rmse=float(np.sqrt((r["rmse"] ** 2 + r["rmse_A"] ** 2 + r["rmse_B"] ** 2) / 3)),
+                               rmse_ref=float(r.get("rmse_ref_comb", np.nan)), loss=float(r["loss"]))
         out[i] = o
     floor = float(np.mean([1 / (6 * n) for i in SLICES for n in out[i]["N"]]))
     return out, floor
@@ -146,17 +170,21 @@ def figure(st, floor, ex, plane):
     a = axs[0, 1]; td = np.arange(T) / 24
     a.axvspan(d["ttx"] / 24, d["wash"] / 24, color="0.92", lw=0, zorder=0)
     a.plot(td, np.where((np.arange(T) >= v0) & (np.arange(T) < v1), d["R"], np.nan), color="k", lw=1.0, zorder=3)
-    for kind, lab, col, ls in VARIANTS:
-        r = SF.load(ex, kind)
+    for kind, lab, col, ls in shown():
+        r = res_of(ex, kind)
         if r is not None:
-            tm, Rg, *_ = model_R(r, d); a.plot(tm / 24, Rg, color=col, ls=ls, lw=0.8, zorder=2)
+            tm, Rg, *_ = model_R(r, d)
+            a.plot(tm / 24, Rg, color=col, ls=ls, lw=1.1 if kind == "empirical" else 0.8, zorder=2,
+                   alpha=0.8 if kind == "empirical" else 1.0, label=lab)
+    if FROZEN:
+        a.legend(loc="lower right", fontsize=4.4, handlelength=1.6, borderaxespad=0.1)
     a.set_ylim(0, 1.02); a.set_xlabel("time (days)"); a.set_ylabel(r"coherence $R$")
     # (c), (d) rates
     for a, key, lab, lims in ((axs[1, 0], "kd", r"$\kappa_d$", (0, 0.8)), (axs[1, 1], "kr", r"$\kappa_r$", "log")):
         xs, ys = [], []
         for j, i in enumerate(SLICES):
             xd = st[i]["data"][key]; xd = xd[0] if isinstance(xd, (tuple, list)) else xd
-            for kind, _, col, _ in VARIANTS:
+            for kind, _, col, _ in shown():
                 if key in st[i][kind]:
                     y = st[i][kind][key]; y = y[0] if isinstance(y, (tuple, list)) else y
                     a.plot(xd, y, MARK[j], color=col, ms=3.2, mec="k", mew=0.3); xs.append(xd); ys.append(y)
@@ -175,42 +203,51 @@ def figure(st, floor, ex, plane):
                      borderaxespad=0.2)
     # (e) error vs error
     a = axs[2, 0]
+    yk = "rmse_ref" if FROZEN else "rmse"
     for j, i in enumerate(SLICES):
-        pts = [(st[i][k]["D"], st[i][k]["rmse"]) for k, *_ in VARIANTS if "rmse" in st[i][k]]
+        pts = [(st[i][k]["D"], st[i][k][yk]) for k, *_ in VARIANTS if yk in st[i][k]]
         if len(pts) > 1:
             a.plot(*zip(*pts), color="0.75", lw=0.5, zorder=1)
         for kind, _, col, _ in VARIANTS:
-            if "rmse" in st[i][kind]:
-                a.plot(st[i][kind]["D"], st[i][kind]["rmse"], MARK[j], color=col, ms=3.2, mec="k", mew=0.3, zorder=2)
+            if yk in st[i][kind]:
+                a.plot(st[i][kind]["D"], st[i][kind][yk], MARK[j], color=col, ms=3.2, mec="k", mew=0.3, zorder=2)
+    if FROZEN:
+        e_ref = np.nanmean([st[i]["empirical"]["rmse"] for i in SLICES if "rmse" in st[i]["empirical"]])
+        a.axhline(e_ref, color="#7b3294", ls=":", lw=0.7)
+        a.text(0.03, e_ref, " reference vs data", transform=a.get_yaxis_transform(), va="bottom", fontsize=4.4,
+               color="#7b3294")
+        a.set_yscale("log")
     a.axvline(floor, color="0.3", ls="--", lw=0.6)
     a.text(floor, 0.03, "noise floor ", transform=a.get_xaxis_transform(), ha="right", va="bottom", fontsize=4.6,
            color="0.3")
-    a.set_xscale("log"); a.set_xlabel(r"distribution error $D$"); a.set_ylabel(r"coherence RMSE")
+    a.set_xscale("log"); a.set_xlabel(r"distribution error $D$")
+    a.set_ylabel("approximation error" if FROZEN else "coherence RMSE")
     # (f) critical coupling and trajectories
     a = axs[2, 1]
-    g_fit = [SF.load(ex, k)["params"]["gamma"] for k, *_ in VARIANTS if SF.load(ex, k) is not None]
-    gam = np.linspace(0, max(2.5 * max(g_fit + [0.0]), 0.005), 61) if plane == "gamma" else None
-    al = np.linspace(-0.6, 0.6, 61) if plane == "alpha" else None
-    for kind, lab, col, ls in VARIANTS:
-        r = SF.load(ex, kind); mod = r["model"] if r is not None else F.mixture(ex, kind, d)
+    g_fit = [res_of(ex, k)["params"]["gamma"] for k, *_ in shown() if res_of(ex, k) is not None]
+    gam = np.linspace(0, max(2.5 * max(g_fit + [0.0]), 0.005), 31) if plane == "gamma" else None
+    al = np.linspace(-0.6, 0.6, 31) if plane == "alpha" else None
+    for kind, lab, col, ls in shown():
+        r = res_of(ex, kind); mod = r["model"] if r is not None else F.mixture(ex, kind, d)
         p = r["params"] if r is not None else dict(alpha_s=0.0, K_i=0.0)
         if plane == "gamma":
             Kc = [K_crit(mod, p["alpha_s"], p["K_i"], x) for x in gam]; a.plot(Kc, gam * 1e3, color=col, ls=ls, lw=0.9)
         else:
             Kc = [K_crit(mod, x, p["K_i"], 0.0) for x in al]; a.plot(Kc, al, color=col, ls=ls, lw=0.9)
-        if r is not None:
+        if r is not None and (not FROZEN or kind == "empirical"):     # frozen: one shared trajectory
             tt = np.arange(v0, v1, 0.5); K = F.Kfun(p, d)(tt); u = F.ufun(p, d)(tt)
             y = p["gamma"] * u * 1e3 if plane == "gamma" else np.full(tt.size, p["alpha_s"])
-            a.plot(np.maximum(K, 1e-4), y, color=col, lw=0.5, alpha=0.6)
+            tc = "k" if FROZEN else col
+            a.plot(np.maximum(K, 1e-4), y, color=tc, lw=0.5, alpha=0.6)
             for t_, mk in ((d["ttx"] - 24, "o"), (d["wash"] - 1, "v"), (v1 - 1, "s")):
-                k_ = np.argmin(np.abs(tt - t_)); a.plot(max(K[k_], 1e-4), y[k_], mk, color=col, ms=3, mec="k", mew=0.3)
+                k_ = np.argmin(np.abs(tt - t_)); a.plot(max(K[k_], 1e-4), y[k_], mk, color=tc, ms=3, mec="k", mew=0.3)
     a.set_xscale("log"); a.set_xlim(1e-3, 3)
     a.set_xlabel(r"coupling $K_s$ (rad/h)")
     a.set_ylabel(r"noise $\gamma u$ ($10^{-3}$ rad/h)" if plane == "gamma" else r"phase lag $\alpha_s$ (rad)")
     a.set_title("critical coupling")
     for a_, l in zip(axs.flat, "abcdef"):
         panel_label(a_, l, dx=-20, dy=3)
-    out = os.path.join(OUT, "scn_lmmf_main")
+    out = os.path.join(OUT, "scn_lmmf_main" + ("" if FROZEN else "_refit"))
     fig.savefig(out + ".pdf", bbox_inches="tight"); fig.savefig(out + ".png", dpi=400, bbox_inches="tight")
     print(f"[saved] {out}.pdf/.png")
 
@@ -221,11 +258,12 @@ def main():
     st, floor = stats()
     for i, o in st.items():
         print(f"SCN{i}: data κ_d {o['data']['kd']:.3f}, κ_r {o['data']['kr'][0]:.2f}/day (t0 {o['data']['kr'][1]:+.0f} h) | "
-              + " | ".join(f"{k}: D {o[k]['D']:.2e}" + (f", RMSE {o[k]['rmse']:.3f}, κ_d {o[k]['kd']:.3f}, "
-                                                        f"κ_r {o[k]['kr'][0]:.2f}" if 'rmse' in o[k] else "")
-                           for k, *_ in VARIANTS))
+              + " | ".join(f"{k}: D {o[k]['D']:.2e}" + (f", RMSE {o[k]['rmse']:.3f}, vs ref {o[k]['rmse_ref']:.3f}, "
+                                                        f"κ_d {o[k]['kd']:.3f}, κ_r {o[k]['kr'][0]:.2f}"
+                                                        if 'rmse' in o[k] else "")
+                           for k, *_ in shown()))
     print(f"sampling noise floor of D (mean over lobes): {floor:.2e}")
-    with open(os.path.join(OUT, "scn_lmmf_main_stats.json"), "w") as fh:
+    with open(os.path.join(OUT, "scn_lmmf_main_stats" + ("" if FROZEN else "_refit") + ".json"), "w") as fh:
         json.dump(dict(stats={str(k): v for k, v in st.items()}, noise_floor=floor), fh, indent=1, default=float)
     figure(st, floor, ex, plane)
 
