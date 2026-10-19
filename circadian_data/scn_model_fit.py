@@ -206,7 +206,8 @@ for _s, _h in zip(STARTS, _HSTARTS):                       # common defaults of 
     for _k, _v in dict(K_i=0.01, alpha_i=0.0, dw=0.0, reset_wash=0.1).items():
         _s.setdefault(_k, _v)
 KINDS = ("floor", "nofloor", "lobelump", "lumped", "single", "empirical")
-EMP_H_SCALE = 1.0           # frequency-distribution variants, see mixture()
+EMP_H_SCALE = 0.1      # "empirical" kernel width = 0.1 × the measurement error: the reference IS the measured
+                       # distribution (h = the full error would smooth the already error-broadened frequencies again)           # frequency-distribution variants, see mixture()
 LUMP_SLICES = (1, 2, 3, 4)
 C_MODEL = {"base": "0.35", "reset": "#b2182b", "noise": "#2166ac", "shift": "#5aae61", "quenched": "#e08214",
            "reset+noise": "#762a83", "full": "#01665e", "noise+anchor": "#d6604d", "noise+transient": "#4393c3",
@@ -375,8 +376,9 @@ def mixture(i, kind, d):
     """Mixture model of slice i for the frequency-distribution variant `kind` (all noise-floor fits except nofloor):
       floor / nofloor  SCN- and lobe-specific Lorentzian mixtures (with / without the noise floor)
       single           ONE Lorentzian per slice and lobe (M_max = 1; with the noise floor)
-      empirical        NO mixture fit: one Lorentzian per cell at its measured frequency, width = EMP_H_SCALE × the
-                       per-cell frequency measurement error (empirical_h); the reference for the frozen comparison
+      empirical        NO mixture fit: one Lorentzian per cell at its measured frequency, width = EMP_H_SCALE (0.1)
+                       × the per-cell frequency measurement error (empirical_h), i.e. a small regulariser: the
+                       reference for the frozen comparison is the measured distribution itself
       lobelump         one mixture of the slice's frequencies with the lobes POOLED, the same for both lobes
       lumped           one mixture of the frequencies pooled over the slices LUMP_SLICES (and lobes), the same for
                        every slice and lobe"""
@@ -385,7 +387,8 @@ def mixture(i, kind, d):
         return _cached(f, lambda: SIM.build(d, LAM, kind == "floor", WIDTH_K))
     if kind == "lumped":
         return _cached(f, lambda: SIM.build_shared(d, lumped_fit()))
-    if kind == "empirical":
+    if kind == "empirical":                                # h in the file name: no stale cache across scales
+        f = os.path.join(MIX, f"scn{i}_empirical-h{EMP_H_SCALE:g}_mixture.npy")
         return _cached(f, lambda: SIM.build_empirical(d, EMP_H_SCALE * empirical_h(i)))
     if kind == "single":
         return _cached(f, lambda: SIM.build(d, LAM, True, WIDTH_K, M_max=1))
