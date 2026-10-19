@@ -47,6 +47,9 @@ def slopes(PH, a, b):
 def main():
     fig, axs = plt.subplots(3, len(S.SLICES), figsize=(15, 8.2), layout="constrained",
                             gridspec_kw=dict(height_ratios=[1.0, 0.8, 0.8]))
+    # common position span: every row-1 panel shows the same width × height (equal aspect), centred on its slice
+    ext = [np.ptp(np.asarray(S.load(i)[1], float), axis=0) for i in S.SLICES]
+    span = 1.08 * np.max(ext, axis=0)                     # (width, height) in pixels
     print(f"{'slice':5s} {'N':>4s} {'lobes':>9s} | {'TTX freq (c/d) mean ± sd':>26s} | R pre / TTX end / wash end | lobe PLV pre/TTX/wash")
     for j, i in enumerate(S.SLICES):
         g = TG.load(i); X, locs = S.load(i); locs = np.asarray(locs, float)
@@ -58,7 +61,9 @@ def main():
         a.scatter(x[out_], y[out_], s=6, color="0.8")
         for k in (0, 1):
             a.scatter(x[cells[lab == k]], y[cells[lab == k]], s=8, color=C_LOBE[k])
-        a.set_aspect("equal"); a.invert_yaxis(); a.set_xticks([]); a.set_yticks([])
+        cx, cy = 0.5 * (locs.min(0) + locs.max(0))
+        a.set_xlim(cx - span[0] / 2, cx + span[0] / 2); a.set_ylim(cy + span[1] / 2, cy - span[1] / 2)  # y down
+        a.set_aspect("equal", adjustable="box"); a.set_xticks([]); a.set_yticks([])
         a.set_title(f"SCN slice {i} (N = {cells.size} of {locs.shape[0]})")
         # (2) frequency distributions (epoch-peak phase slopes; TTX = the fit target's ω)
         b = axs[1, j]; bins = np.linspace(*F_RANGE, 41)
