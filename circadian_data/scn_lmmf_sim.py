@@ -174,6 +174,16 @@ def build_shared(d, f):
                 p=np.array([w[cl == k].sum() for k in (0, 1)]))
 
 
+def build_empirical(d, h):
+    """EMPIRICAL frequency distribution: one Lorentzian per cell, centred on its measured frequency, common width
+    h (rad/h; the per-cell frequency measurement error), weight 1/N; each cell is its own component (a Lorentzian
+    kernel density estimate, so the OA reduction stays exact). No mixture fit involved."""
+    om, lobe = d["om"], d["lobe"]; n = om.size
+    w = np.full(n, 1.0 / n)
+    return dict(Om=np.asarray(om, float).copy(), De=np.full(n, float(h)), w=w, lobe=np.asarray(lobe).copy(),
+                assign=np.arange(n), p=np.array([w[lobe == k].sum() for k in (0, 1)]))
+
+
 # ─── inputs ──────────────────────────────────────────────────────────────────────────────────────
 def coupling_input(K_pre, K_ttx, K_wash, t_ttx, t_wash, rate_ttx, rate_wash):
     """K_syn(t): steps (rate = inf) or first-order relaxations towards the level of each time domain."""

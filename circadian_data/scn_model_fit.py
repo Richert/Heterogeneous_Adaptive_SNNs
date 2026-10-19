@@ -63,6 +63,9 @@ space, --bh-maxiter-per-dim for the local Nelder–Mead); results in model_fit/n
         [--n-base 16] [--n-ext 8] [--optimizer nm|basinhopping] [--bh-niter 20] [--bh-T 0.02] [--bh-step 0.75]
         [--bh-maxiter-per-dim 150] [--bh-starts 8]
     e.g. the optimiser check:  ... fit figure --optimizer basinhopping --models prof-base,prof-reset+noise
+    FROZEN comparison (frozen()): fit the reference, then evaluate the other distributions without refitting:
+        ... fit summary --kinds empirical --models C        (reference fit, on the server)
+        ... frozen --ref empirical --kinds empirical,nofloor,floor,single --models C
     (time a single loss evaluation: python scn_model_fit.py time --slices 1)
 SETUPS A–C (--models A,B,C, the defaults), all homeostatic K_s with r* fixed at R_STAR_FIX and α_s free, in the
 IDENTIFIABLE parametrisation "hr-" (block depth ρ_min, plateau fraction f_rec → ρ_ttx, recovery time t_hom; one-to-
@@ -202,7 +205,8 @@ for _s, _h in zip(STARTS, _HSTARTS):                       # common defaults of 
     _s.update(_h)
     for _k, _v in dict(K_i=0.01, alpha_i=0.0, dw=0.0, reset_wash=0.1).items():
         _s.setdefault(_k, _v)
-KINDS = ("floor", "nofloor", "lobelump", "lumped", "single")           # frequency-distribution variants, see mixture()
+KINDS = ("floor", "nofloor", "lobelump", "lumped", "single", "empirical")
+EMP_H_SCALE = 1.0           # frequency-distribution variants, see mixture()
 LUMP_SLICES = (1, 2, 3, 4)
 C_MODEL = {"base": "0.35", "reset": "#b2182b", "noise": "#2166ac", "shift": "#5aae61", "quenched": "#e08214",
            "reset+noise": "#762a83", "full": "#01665e", "noise+anchor": "#d6604d", "noise+transient": "#4393c3",
@@ -343,10 +347,36 @@ def lumped_fit():
     return _cached(os.path.join(MIX, "lumped_floor_fit.npy"), lambda: SIM.fit_mixture(om, LAM, True, WIDTH_K))
 
 
+def empirical_h(i, n_real=3):
+    """Per-cell frequency MEASUREMENT error of slice i (rad/h): median |ω_est − ω_true| of synthetic cells that
+    free-run at known constant frequencies (each cell's measured trend, envelope and calibrated noise) through the
+    epoch-peak pipeline, frequency = phase slope over the same TTX window as the fit target (scn_targets).
+    Heavy-tailed (SD ≈ 2–4 × the median), so used as the half-width of a Lorentzian kernel. Cached."""
+    def make():
+        import scn_pipeline_validation as V
+        import scn_epoch_processing as EP
+        dd = S.process(i); tg = TG.load(i); sel = np.zeros(dd["N"], bool); sel[tg["cells"]] = True
+        a, b = (int(x) for x in tg["epochs"][1]); t = np.arange(dd["T"])
+        errs = []
+        for k in range(n_real):
+            trend, A, noise, kick, Theta = V.ground_truth_inputs(dd, sel, float(tg["noise_scale"]),
+                                                                 np.random.default_rng(100 + 10 * i + k))
+            th = V.true_phases(dd, sel, Theta, "dephase", kick)
+            PH = EP.process(trend + A * np.cos(th) + noise, dd["ttx"], dd["wash"], **TG.PIPE)["PH"]
+            for c in range(th.shape[1]):
+                ok = np.isfinite(PH[a:b, c])
+                if ok.sum() > 24:
+                    errs.append(np.polyfit(t[a:b][ok], PH[a:b, c][ok], 1)[0] - np.polyfit(t[a:b], th[a:b, c], 1)[0])
+        return dict(h=float(np.median(np.abs(errs))), sd=float(np.std(errs)), n=len(errs))
+    return _cached(os.path.join(MIX, f"scn{i}_empirical_h.npy"), make)["h"]
+
+
 def mixture(i, kind, d):
     """Mixture model of slice i for the frequency-distribution variant `kind` (all noise-floor fits except nofloor):
       floor / nofloor  SCN- and lobe-specific Lorentzian mixtures (with / without the noise floor)
       single           ONE Lorentzian per slice and lobe (M_max = 1; with the noise floor)
+      empirical        NO mixture fit: one Lorentzian per cell at its measured frequency, width = EMP_H_SCALE × the
+                       per-cell frequency measurement error (empirical_h); the reference for the frozen comparison
       lobelump         one mixture of the slice's frequencies with the lobes POOLED, the same for both lobes
       lumped           one mixture of the frequencies pooled over the slices LUMP_SLICES (and lobes), the same for
                        every slice and lobe"""
@@ -355,6 +385,8 @@ def mixture(i, kind, d):
         return _cached(f, lambda: SIM.build(d, LAM, kind == "floor", WIDTH_K))
     if kind == "lumped":
         return _cached(f, lambda: SIM.build_shared(d, lumped_fit()))
+    if kind == "empirical":
+        return _cached(f, lambda: SIM.build_empirical(d, EMP_H_SCALE * empirical_h(i)))
     if kind == "single":
         return _cached(f, lambda: SIM.build(d, LAM, True, WIDTH_K, M_max=1))
     if kind == "lobelump":
@@ -649,6 +681,48 @@ def timing(i, dt, kind="floor"):
           f"max |ΔR| vs dt = 0.25: {np.max(np.abs(np.abs(cur['Zg']) - np.abs(ref['Zg']))):.2e}")
 
 
+# ─── frozen evaluation ───────────────────────────────────────────────────────────────────────────
+def frozen(slices, kinds, models, ref, dt):
+    """Evaluate each frequency-distribution variant in `kinds` with the dynamical parameters FROZEN at the fit
+    obtained with the reference distribution `ref` (no refit): differences between variants are then due to the
+    frequency distribution alone. Scores, over the mask:
+      vs data       the loss and the RMSE of c|Z| vs R (slice, lobes, combined) — prediction quality
+      vs reference  the RMSE of c|Z| vs the reference model's c|Z_ref| (slice, lobes, combined) — pure
+                    approximation error of the mixture, free of data noise and of misfit of the dynamics
+    Saved as scn<i>_<kind>_frozen-<ref>-<model>.npy next to the fits."""
+    for n in models:
+        print(f"\nFROZEN at the {ref} fit of {n}  (loss ×1e3 | RMSE vs data: comb (slice/A/B) | RMSE vs reference: "
+              f"comb (slice/A/B) | refitted loss ×1e3 for comparison)")
+        for i in slices:
+            fr = os.path.join(OUT, f"scn{i}_{ref}_{n}.npy")
+            if not os.path.exists(fr):
+                print(f"  SCN{i}: no reference fit {os.path.basename(fr)}"); continue
+            rr = np.load(fr, allow_pickle=True).item(); keys, x = rr["keys"], rr["x"]
+            d = TG.load(i); prep = prepare(d)
+            m_ref = mixture(i, ref, d); _GQ_MAX[0] = GQ_FRAC * float(m_ref["De"].min())
+            Lr, ref_res = loss(x, keys, d, m_ref, prep, dt, detail=True)
+            ti = ref_res["tm"].astype(int); w = d["mask"][ti] > 0
+            obs = lambda r_: [d[c][ti] * np.abs(r_[z]) for c, z in (("c", "Zg"), ("cA", "ZA"), ("cB", "ZB"))]
+            O_ref = obs(ref_res)
+            for kind in kinds:
+                mod = mixture(i, kind, d)
+                L, res = loss(x, keys, d, mod, prep, dt, detail=True)
+                if res is None:
+                    print(f"  SCN{i} {kind:9s} non-finite"); continue
+                O = obs(res)
+                rm_ref = [float(np.sqrt(np.mean((a[w] - b[w]) ** 2))) for a, b in zip(O, O_ref)]
+                rm_dat = [res["rmse"], res["rmse_A"], res["rmse_B"]]
+                comb = lambda v: float(np.sqrt(np.mean(np.square(v))))
+                res.update(slice=i, kind=kind, model_name=n, ref=ref, keys=keys, x=x, model=mod, dt=dt,
+                           rmse_ref=rm_ref, rmse_ref_comb=comb(rm_ref), rmse_comb=comb(rm_dat), loss_ref_fit=Lr)
+                np.save(os.path.join(OUT, f"scn{i}_{kind}_frozen-{ref}-{n}.npy"), res, allow_pickle=True)
+                fo = os.path.join(OUT, f"scn{i}_{kind}_{n}.npy")
+                Lo = np.load(fo, allow_pickle=True).item()["loss"] if os.path.exists(fo) else np.nan
+                print(f"  SCN{i} {kind:9s} M = {mod['Om'].size:3d} | {L * 1e3:7.3f} | {comb(rm_dat):.4f} "
+                      f"({rm_dat[0]:.3f}/{rm_dat[1]:.3f}/{rm_dat[2]:.3f}) | {comb(rm_ref):.4f} "
+                      f"({rm_ref[0]:.3f}/{rm_ref[1]:.3f}/{rm_ref[2]:.3f}) | {Lo * 1e3:7.3f}")
+
+
 # ─── output ──────────────────────────────────────────────────────────────────────────────────────
 def collect(slices, kinds, models):
     R = {}
@@ -764,6 +838,8 @@ if __name__ == "__main__":
         for i in slices:
             for k in kinds:
                 timing(i, dt, k)
+    if "frozen" in sys.argv:                               # e.g. frozen --ref empirical --kinds empirical,nofloor,…
+        frozen(slices, kinds, models, arg("--ref", "empirical"), dt)
     if "fit" in sys.argv:
         run(slices, kinds, models, arg("--procs", os.cpu_count(), int), dt, mpd, arg("--n-base", N_BASE, int),
             arg("--n-ext", N_EXT, int))
