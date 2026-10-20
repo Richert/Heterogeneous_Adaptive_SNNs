@@ -141,7 +141,7 @@ E_VARIANTS = {"log":    "log K, [0.01, 0.5]",
               "rel":    r"log $K/K_c$ (each mixture), [1, 30]",
               "1-R":    r"log K vs log $(1 - R^*)$ (approach to full sync)",
               "rel1-R": r"log $K/K_c$ vs log $(1 - R^*)$"}
-E_VARIANT = "log"
+E_VARIANT = "lin"                  # chosen 2026-10-20 (linear K, [0, 0.2])
 
 
 def draw_e(a, ex, bif, variant="log"):
