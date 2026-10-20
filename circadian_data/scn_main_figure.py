@@ -21,8 +21,12 @@ fitted parameters instead.
       grey lines connect the three models of a slice
   (d) LOBE-SPECIFIC DESYNCHRONISATION rate κ_d = −d ln R_L/dt over [t_ttx + 24 h, t_ttx + 72 h] (1/day), model vs
       data, SCN1–4; filled = lobe A, open = lobe B; colour = model (incl. the empirical reference)
-  (old panels: resynchronisation rate and critical coupling, removed 2026-10-19; the helpers resync_rate and K_crit
-  are kept for the planned bifurcation panels)
+  (e) SCN3: steady-state coherence R*(K) of the three mixtures with ONE global coupling K (no lag, noise or local
+      coupling; scn_bifurcation_mixtures, synchronised branch: mean and oscillation envelope), log K in [0.01, 0.5];
+      horizontal lines: the ceiling-corrected data coherence before TTX, after washout and its minimum (lowest R/c
+      in [t_ttx, t_wash + 24 h]); markers: the coupling at which each mixture's R* matches each level
+  (f) these inferred couplings for SCN1–4 (circle: pre-TTX, square: post-washout, triangle: minimum), per mixture
+  (needs scn_bifurcation_mixtures.py to have been run)
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_main_figure.py [--example 3] [--plane gamma|alpha] [--refit]
 Output: data_paths.MPMF/circadian_data/writeup/scn_lmmf_main.{pdf,png}, scn_lmmf_main_stats.json
@@ -37,6 +41,7 @@ import scn_common as S
 import scn_targets as TG
 import scn_model_fit as F
 import scn_supp_figure as SF
+import scn_bifurcation_mixtures as BM
 
 OUT = dp.ensure(os.path.join(S.OUT, "writeup"))
 SLICES = (1, 2, 3, 4)
@@ -115,6 +120,27 @@ def K_crit(mod, alpha, K_loc, gamma, K_hi=20.0):
     return hi
 
 
+LEVELS = [("pre", ":", "o"), ("post", "-.", "s"), ("min", "--", "v")]     # data coherence levels
+
+
+def bifurcation_levels():
+    """Per slice: ceiling-corrected data coherence before TTX, after washout and its MINIMUM (lowest R/c in
+    [t_ttx, t_wash + 24 h]), and for each mixture the global coupling at which its synchronised steady state R*(K)
+    (scn_bifurcation_mixtures) equals each level."""
+    out = {}
+    for i in sorted(set(SLICES) | {3}):
+        d = TG.load(i); T = int(d["T"]); ttx, wash = int(d["ttx"]), int(d["wash"]); v0, v1 = S.valid_window(T)
+        Rc = d["R"] / d["c"]
+        lev = dict(pre=float(np.nanmean(Rc[TG.start_hour(d, v0):ttx - 24])),
+                   post=float(np.nanmean(Rc[wash + 72:v1])), min=float(np.nanmin(Rc[ttx:wash + 24])))
+        o = {f"R_{k}": v for k, v in lev.items()}
+        for kind, *_ in VARIANTS:
+            z = np.load(os.path.join(BM.OUT, f"scn{i}_{kind}_bif.npz"))
+            o[kind] = {f"K_{k}": BM.invert(z["Ks"], z["sync_mean"], min(v, 0.999)) for k, v in lev.items()}
+        out[i] = o
+    return out
+
+
 def stats():
     out = {}
     for i in SLICES:
@@ -146,8 +172,8 @@ def figure(st, floor, ex, plane):
     from matplotlib.lines import Line2D
     from prl_style import set_prl_style, panel_label, COL_SINGLE
     set_prl_style("prl", **{"axes.titleweight": "bold", "axes.titlelocation": "center"})
-    fig, axs = plt.subplots(2, 2, figsize=(COL_SINGLE, 3.1),
-                            gridspec_kw=dict(hspace=0.62, wspace=0.42, left=0.13, right=0.98, top=0.96, bottom=0.11))
+    fig, axs = plt.subplots(3, 2, figsize=(COL_SINGLE, 4.6),
+                            gridspec_kw=dict(hspace=0.62, wspace=0.42, left=0.13, right=0.98, top=0.97, bottom=0.08))
     d = TG.load(ex); T = int(d["T"]); v0, v1 = S.valid_window(T)
     # (a) frequency distribution, lobes pooled
     a = axs[0, 0]; f = d["om"] * CPD
@@ -217,7 +243,40 @@ def figure(st, floor, ex, plane):
     a.legend(handles=[Line2D([], [], marker="o", color="0.3", ls="none", ms=3, label="lobe A"),
                       Line2D([], [], marker="o", color="0.3", mfc="white", ls="none", ms=3, label="lobe B")],
              loc="upper left", fontsize=4.4, handletextpad=0.1, borderaxespad=0.2)
-    for a_, l in zip(axs.flat, "abcd"):
+    # (e) steady-state coherence R*(K) of the three mixtures (global coupling only), SCN example
+    a = axs[2, 0]; bif = bifurcation_levels()
+    for kind, lab, col, ls in VARIANTS:
+        z = np.load(os.path.join(BM.OUT, f"scn{ex}_{kind}_bif.npz"))
+        a.fill_between(z["Ks"], z["sync_min"], z["sync_max"], color=col, alpha=0.15, lw=0)
+        a.plot(z["Ks"], z["sync_mean"], color=col, ls=ls, lw=0.9, label=lab)
+    for lev, lls, mk in LEVELS:
+        a.axhline(bif[ex]["R_" + lev], color="k", lw=0.5, ls=lls, zorder=1)
+        for kind, lab, col, ls in VARIANTS:
+            Kx = bif[ex][kind]["K_" + lev]
+            if np.isfinite(Kx):
+                a.plot(Kx, bif[ex]["R_" + lev], mk, color=col, ms=3, mec="k", mew=0.3, zorder=3)
+    a.set_xscale("log"); a.set_xlim(0.01, 0.5); a.set_ylim(0, 1.02)
+    a.set_xlabel(r"global coupling $K$ (rad/h)"); a.set_ylabel(r"steady state $R^*$")
+    a.set_title(f"SCN{ex}: coherence vs coupling")
+    # (f) inferred couplings per slice: pre-TTX (circle), post-washout (square), coherence minimum (triangle)
+    a = axs[2, 1]
+    offs = {k: o for (k, *_), o in zip(VARIANTS, (-0.18, 0.0, 0.18))}
+    for j, i in enumerate(SLICES):
+        for kind, lab, col, ls in VARIANTS:
+            ys = [bif[i][kind]["K_" + lev] for lev, *_ in LEVELS]
+            a.plot([j + offs[kind]] * 3, ys, color=col, lw=0.5, alpha=0.6, zorder=1)
+            for (lev, lls, mk), y in zip(LEVELS, ys):
+                a.plot(j + offs[kind], y, mk, color=col, ms=3, mec="k", mew=0.3, zorder=2)
+    a.set_xticks(range(len(SLICES))); a.set_xticklabels([f"SCN{i}" for i in SLICES])
+    a.set_yscale("log"); a.set_ylabel(r"inferred $K$ (rad/h)"); a.set_title("inferred coupling")
+    a.legend(handles=[Line2D([], [], marker=mk, color="0.3", ls="none", ms=3, label=nm)
+                      for (lev, lls, mk), nm in zip(LEVELS, ("pre-TTX", "post-washout", "minimum"))],
+             loc="upper right", fontsize=4.4, handletextpad=0.1, borderaxespad=0.2)
+    axs[2, 0].legend(handles=[Line2D([], [], color=c, ls=ls, lw=0.9, label=l) for _, l, c, ls in VARIANTS] +
+                     [Line2D([], [], color="k", lw=0.5, ls=lls, label=f"data {nm}")
+                      for (lev, lls, mk), nm in zip(LEVELS, ("pre-TTX", "post-washout", "minimum"))],
+                     loc="center right", fontsize=4.0, handlelength=1.6, borderaxespad=0.2)
+    for a_, l in zip(axs.flat, "abcdef"):
         panel_label(a_, l, dx=-20, dy=3)
     out = os.path.join(OUT, "scn_lmmf_main" + ("" if FROZEN else "_refit"))
     fig.savefig(out + ".pdf", bbox_inches="tight"); fig.savefig(out + ".png", dpi=400, bbox_inches="tight")
