@@ -7,25 +7,36 @@ appended Hopf oscillator (cf. Gast et al. 2021):
     ż_m = (iΩ_m − Δ_m) z_m + ½ (H − H̄ z_m²),   H = K Z + I(t) e^{iθ_L},   Z = Σ w_m z_m
     ẋ_d = x_d (1 − x_d² − y_d²) − ω_f y_d,   ẏ_d = y_d (1 − x_d² − y_d²) + ω_f x_d          (y_d = sin ω_f t)
     I(t) = F · ½ [1 + tanh(β y_d) / tanh β]        β = 4.2 → ~2 h light/dark transitions at T_f = 24 h; I ≥ 0
-θ_L is removable (z_m → e^{iθ_L} z_m maps the system onto θ_L = 0), i.e. it only sets the entrained phase, not the
-tongues -> θ_L = 0. Mixtures: pooled-lobe "pfloor" (noise floor) and "psingle" (M = 1), scn_pycobi_bifurcation.
-K values per slice: N_K values geometrically spaced in [1.2 max(K_c), K_pre], K_pre = coupling at which the pooled
-noise-floor R*(K) equals the measured pre-TTX coherence (scn_bif_tests.json) — the same K values for both mixtures.
+θ_L is removable (z_m → e^{iθ_L} z_m maps the system onto θ_L = 0): it sets the entrained phase, not the tongues.
+Mixtures: pooled-lobe "pfloor" (noise floor) and "psingle" (M = 1), scn_pycobi_bifurcation.
+
+Protocol (user, 2026-10-20): per slice THREE couplings, the SAME for both mixtures (isolates the effect of the
+distribution shape), all from the pooled noise-floor mixture:
+    K_c     critical coupling (incoherent state loses stability)
+    K_mid   ≈ 1.5–2 K_c; SCN1 / SCN3 inside the limit-cycle window of the noise-floor mixture (K_MID), else 1.75 K_c
+    K_post  coupling at which R*(K) equals the measured post-washout coherence (scn_bif_tests.json)
+Driving frequency f_d ∈ [0.6, 1.4] cycles/day, light amplitude F ∈ [0, 0.15] rad/h, 30 × 30 grid.
 
 Two complementary analyses:
-  sim     brute-force grid in (T_f, F): N_TR_PER forcing periods from the unforced synchronised state, then
-          stroboscopic samples Z(n T_f); entrained (1:1) if |Z((n+1)T_f) − Z(n T_f)| < LOCK_TOL over the last N_STROBE
-          periods (a periodicity test: at strong forcing the entrained orbit of Z need not wind around the origin, so
-          a mean-frequency test fails); vectorised RK4 with dt = T_f / N_PER per grid point
-  auto    PyCoBi: entrained orbit from a simulation at the tongue centre (ω_f = unforced collective frequency, small F)
-          -> .dat seed -> LC continuation in F (UZ levels) -> LC continuation in ω_f from each level (folds of cycles LP,
-          torus bifurcations TR) -> 2-parameter continuation of every LP/TR in (ω_f, F) = tongue boundaries
+  sim     brute-force 30 × 30 grid with the coherence of the stand-alone script (scn_arnold_tongue): magnitude-squared
+          coherence between driver and the rhythm Re Z at f_d from one-period segments (300 transient periods,
+          50 measured, 96 RK4 steps per period; parallel). NB: C measures periodicity with the forcing period, so
+          n:1 locking (e.g. two rhythm cycles per 48-h driver period) also gives C ≈ 1.
+  auto    PyCoBi: entrained orbits from simulations at SEVERAL tongue centres — the unforced collective frequency
+          (or the mean intrinsic frequency if incoherent) AND every mixture-component frequency further than
+          SEED_SEP from it (partial-entrainment tongues of single clusters in multimodal mixtures) -> .dat seeds ->
+          LC continuation in F (UZ levels) -> LC continuation in ω_f from each level -> 2-parameter continuation in
+          (ω_f, F) of EVERY fold (LP) and torus (TR) point found; curves may pass through the tongue tip (F = 0) to
+          F_TIP so both edges of a tongue are traced (NMX = 8000, dense output; de-duplicated)
           (one ODESystem per process, cases run sequentially in subprocesses with wall-time/fort.9 guards)
+  figure  all curves for F ≥ 0; a segment is drawn bold where the simulated coherence changes by more than CONTRAST
+          across it (boundary of the main entrained region), thin elsewhere (e.g. partial entrainment of a cluster,
+          which changes the global coherence only partly; --bold-only hides these)
 
-    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_entrainment.py sim
+    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_entrainment.py sim [--jobs 8]
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_entrainment.py run [--cases 4:pfloor:0,...]
-    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_entrainment.py figure
-Output: data_paths.MPMF/circadian_data/entrainment/
+    PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_entrainment.py figure [--show]
+Output: data_paths.MPMF/circadian_data/entrainment/ (grid_*.npz, tongue3_*.npy, K_protocol.json, scn_entrainment_grid)
 """
 import os, sys
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -38,25 +49,27 @@ import time
 import numpy as np
 import data_paths as dp
 import scn_pycobi_bifurcation as B
+import scn_arnold_tongue as AT
 
 OUT = dp.ensure(dp.mpmf("circadian_data", "entrainment"))
 SLICES = (1, 2, 3, 4, 5)
 KINDS = ("pfloor", "psingle")
-N_K = 4
+K_LABELS = ("K_c", "K_mid", "K_post")
+K_MID = {1: 0.030, 3: 0.035}                # inside the noise-floor limit-cycle windows (0.0235–0.0353, 0.0291–0.0425)
+K_MID_FACTOR = 1.75
 BETA = 4.2
-TF_RANGE = (20.0, 30.0)                     # forcing period (h)
-F_MAX = 0.3                                 # light amplitude (rad/h)
-# brute-force grid
-N_TF, N_F = 81, 61
-DT = 0.2                                    # h (unforced settling, seeds)
-N_PER = 120                                 # RK4 steps per forcing period on the grid (dt = T_f / N_PER ≈ 0.2 h)
-N_TR_PER, N_MEAS_PER = 300, 30             # forcing periods of transient / measurement
-N_STROBE, LOCK_TOL = 10, 1e-3               # entrained (1:1) if |Z(t + T_f) − Z(t)| < LOCK_TOL over the last N_STROBE
-CONTRACT = 0.3                              # strobes, or if that drift still contracts (< CONTRACT × the drift over the
-                                            # N_STROBE strobes before): slow approach near the tongue edges at low K
+FREQ_RANGE = (0.6, 1.4)                     # driving frequency (cycles/day)
+F_MAX = 0.15                                # light amplitude (rad/h)
+N_FREQ, N_F = 30, 30
+N_TR, N_MEAS, N_STEPS = 300, 50, 96         # forcing periods (transient, measured), RK4 steps per period
 # continuation
-F_SEED = (0.01, 0.03, 0.1)                  # tried in order until the seed orbit locks
-F_LEVELS = (0.02, 0.06, 0.15, 0.28)         # UZ levels on the LC branch in F (1-par ω_f scans start there)
+DT = 0.2
+F_SEED = (0.01, 0.03, 0.08)                 # tried in order until the seed orbit locks
+F_LEVELS = (0.01, 0.03, 0.06, 0.1, 0.145)   # UZ levels on the LC branch in F (1-par ω_f scans start there)
+SEED_SEP = 0.01                             # rad/h: extra seed at every component frequency this far from ω_c
+F_TIP = -0.02                               # 2-par curves may pass through the tongue tip (F = 0) down to here
+CONTRAST = 0.25                             # figure: segment drawn bold if the simulated coherence changes by more
+                                            # than this across it (2.5 grid cells to either side)
 NPAR = 36
 CASE_TIMEOUT = 1800
 FORT9_MAX = 2e9
@@ -71,84 +84,49 @@ def mixture_abs(i, kind):
     return w / w.sum(), np.asarray(mod["Om"], float), np.asarray(mod["De"], float)
 
 
-def light(F, y):
-    return 0.5 * F * (1.0 + np.tanh(BETA * y) / np.tanh(BETA))
-
-
-def rhs(z, K, I, w, a):
-    """z (..., M) complex; K scalar; I (...,) real light; w (M,), a = iΩ − Δ (M,)."""
-    H = K * (z @ w) + I
-    return a * z + 0.5 * (H[..., None] - np.conj(H)[..., None] * z ** 2)
-
-
 def rk4(z, t, dt, K, F, wf, w, a):
-    """One RK4 step; the driver is analytic (y_d = sin ω_f t on the unit circle). t, dt scalars or (G,) arrays."""
-    I0, Ih, I1 = (light(F, np.sin(wf * s)) for s in (t, t + 0.5 * dt, t + dt))
-    h = np.asarray(dt)[..., None] if np.ndim(dt) else dt
-    k1 = rhs(z, K, I0, w, a); k2 = rhs(z + 0.5 * h * k1, K, Ih, w, a)
-    k3 = rhs(z + 0.5 * h * k2, K, Ih, w, a); k4 = rhs(z + h * k3, K, I1, w, a)
-    return z + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-
-
-def unforced(w, Om, De, K, T=4000.0, T_meas=1000.0):
-    """Settled unforced state z (M,) and its mean collective frequency ω_c."""
-    a = 1j * Om - De
-    z = 0.99 * np.exp(1j * 1e-3 * np.random.default_rng(0).standard_normal(w.size))
-    for _ in range(int(T / DT)):
-        z = rk4(z, 0.0, DT, K, 0.0, 0.0, w, a)
-    ph, z0 = 0.0, z
-    for _ in range(int(T_meas / DT)):
-        z1 = rk4(z0, 0.0, DT, K, 0.0, 0.0, w, a); ph += np.angle((z1 @ w) / (z0 @ w)); z0 = z1
-    return z, ph / T_meas
+    return AT.rk4(z, t, dt, K, F, wf, BETA, w, a)
 
 
 def K_values(i):
-    """N_K couplings per slice in [1.2 max K_c, K_pre] (geometric)."""
-    Kc = max(B.K_crit(*B.mixture(i, k)) for k in KINDS)
-    tests = json.load(open(dp.mpmf("circadian_data", "bifurcation", "scn_bif_tests.json")))
-    R_pre = tests[str(i)]["floor"]["R_pre"]
-    eq = np.load(os.path.join(B.OUT, f"scn{i}_pfloor.npy"), allow_pickle=True).item()["eq"]
-    up = eq["stable"] & (eq["K"] > 1.5 * Kc)                 # upper stable branch
-    o = np.argsort(eq["K"][up]); Kp = float(np.interp(R_pre, eq["R"][up][o], eq["K"][up][o]))
-    return np.geomspace(1.2 * Kc, Kp, N_K), Kc, Kp, R_pre
+    """(K_c, K_mid, K_post) of the pooled noise-floor mixture."""
+    g = np.load(os.path.join(B.OUT, f"scn{i}_pfloor.npy"), allow_pickle=True).item()
+    eq, Kc = g["eq"], float(g["kc"]["K_c"])
+    R_post = json.load(open(dp.mpmf("circadian_data", "bifurcation", "scn_bif_tests.json")))[str(i)]["floor"]["R_post"]
+    up = eq["stable"] & (eq["K"] > 1.5 * Kc); o = np.argsort(eq["K"][up])
+    K_post = float(np.interp(R_post, eq["R"][up][o], eq["K"][up][o]))
+    return [Kc, K_MID.get(i, K_MID_FACTOR * Kc), K_post], R_post
 
 
-# ─── brute-force locking map ─────────────────────────────────────────────────────────────────────
-def locking_map(i, kind, K):
-    w, Om, De = mixture_abs(i, kind); a = 1j * Om - De
-    z_u, w_c = unforced(w, Om, De, K)
-    Tf = np.linspace(*TF_RANGE, N_TF); Fv = np.linspace(0, F_MAX, N_F)
-    TT, FF = np.meshgrid(Tf, Fv); wf, F = 2 * np.pi / TT.ravel(), FF.ravel()
-    dt = TT.ravel() / N_PER                                     # integer steps per forcing period at every point
-    z = np.repeat(z_u[None], wf.size, axis=0); t = np.zeros(wf.size)
-    for _ in range(N_TR_PER * N_PER):
-        z = rk4(z, t, dt, K, F, wf, w, a); t = t + dt
-    strobe = [z @ w]; Rm = np.zeros(wf.size)
-    for n in range(N_MEAS_PER * N_PER):
-        z = rk4(z, t, dt, K, F, wf, w, a); t = t + dt; Rm += np.abs(z @ w)
-        if (n + 1) % N_PER == 0:
-            strobe.append(z @ w)
-    strobe = np.array(strobe)                                   # Z at t = n T_f (driver phase 0)
-    dZ = np.abs(np.diff(strobe, axis=0))
-    drift, drift0 = dZ[-N_STROBE:].max(0), dZ[-2 * N_STROBE:-N_STROBE].max(0)
-    locked = (drift < LOCK_TOL) | (drift < CONTRACT * drift0)
-    return dict(Tf=Tf, F=Fv, drift=drift.reshape(TT.shape), R=(Rm / (N_MEAS_PER * N_PER)).reshape(TT.shape),
-                Z_strobe=strobe[-1].reshape(TT.shape), locked=locked.reshape(TT.shape), w_c=w_c,
-                R_unforced=abs(z_u @ w))
-
-
-def sim_all():
+def write_K():
     meta = {}
     for i in SLICES:
-        Ks, Kc, Kp, R_pre = K_values(i); meta[i] = dict(K=Ks.tolist(), K_c=Kc, K_pre=Kp, R_pre=R_pre)
+        Ks, R_post = K_values(i)
+        meta[str(i)] = dict(K=Ks, labels=K_LABELS, R_post=R_post)
+    json.dump(meta, open(os.path.join(OUT, "K_protocol.json"), "w"), indent=1)
+    return meta
+
+
+def load_K():
+    f = os.path.join(OUT, "K_protocol.json")
+    return json.load(open(f)) if os.path.exists(f) else write_K()
+
+
+# ─── brute-force coherence maps ──────────────────────────────────────────────────────────────────
+def sim_all(jobs):
+    meta = write_K()
+    freqs = np.linspace(*FREQ_RANGE, N_FREQ); Fs = np.linspace(0, F_MAX, N_F)
+    for i in SLICES:
         for kind in KINDS:
-            for j, K in enumerate(Ks):
-                t0 = time.time(); m = locking_map(i, kind, K)
-                np.savez(os.path.join(OUT, f"map_scn{i}_{kind}_K{j}.npz"), K=K, **m)
-                print(f"[map] SCN{i} {kind} K = {K:.4f}: T_c = {2 * np.pi / m['w_c']:.2f} h, "
-                      f"R0 = {m['R_unforced']:.2f}, locked {m['locked'].mean():.0%} ({time.time() - t0:.0f} s)",
-                      flush=True)
-    json.dump(meta, open(os.path.join(OUT, "K_values.json"), "w"), indent=1)
+            w, Om, De = mixture_abs(i, kind)
+            for j, K in enumerate(meta[str(i)]["K"]):
+                t0 = time.time()
+                z0, w_c = AT.unforced(w, Om, De, K)
+                C, R = AT.tongue(w, Om, De, K, BETA, z0, freqs, Fs, N_TR, N_MEAS, N_STEPS, jobs)
+                np.savez(os.path.join(OUT, f"grid_scn{i}_{kind}_K{j}.npz"), K=K, freqs=freqs, F=Fs, C=C, R=R,
+                         f_c=w_c * 24 / (2 * np.pi), R_unforced=abs(z0 @ w))
+                print(f"[map] SCN{i} {kind} {K_LABELS[j]} = {K:.4f}: R0 = {abs(z0 @ w):.2f}, "
+                      f"C > 0.9 on {np.mean(C > 0.9):.0%} ({time.time() - t0:.0f} s)", flush=True)
 
 
 # ─── PyCoBi ──────────────────────────────────────────────────────────────────────────────────────
@@ -182,12 +160,11 @@ def circuit(w, Om, De, K, F, wf, tag, z0, d0=(1.0, 0.0)):
     return CircuitTemplate(name=f"scne_{tag}", nodes={"p": NodeTemplate(name=f"scne_node_{tag}", operators=[op])})
 
 
-def seed_orbit(w, Om, De, K, wf, F, T_settle=200 * 24.0, n_per=400):
+def seed_orbit(w, Om, De, K, wf, F, z_start, T_settle=300 * 24.0, n_per=400):
     """Locked orbit over one forcing period starting at driver phase 0 (x_d = 1, y_d = 0), or None if not locked."""
     a = 1j * Om - De; Tf = 2 * np.pi / wf; dt = Tf / n_per
-    z = unforced(w, Om, De, K, T=2000.0, T_meas=1.0)[0]
-    n_set = int(np.ceil(T_settle / Tf)) * n_per; t = 0.0
-    for _ in range(n_set):
+    z = z_start.copy(); t = 0.0
+    for _ in range(int(np.ceil(T_settle / Tf)) * n_per):
         z = rk4(z, t, dt, K, F, wf, w, a); t += dt
     orbit = [z]
     for _ in range(n_per):
@@ -212,76 +189,119 @@ def _col(s, name):
     return B._col(s, name)
 
 
+def par_index():
+    """Auto PAR indices of K, F, wf from the constants file PyCoBi wrote (fallback: definition order 1, 2, 3)."""
+    import re, glob
+    for f in glob.glob("c.*"):
+        m = re.search(r"parnames\s*=\s*(\{[^}]*\})", open(f).read())
+        if m:
+            d = eval(m.group(1))
+            inv = {v: k for k, v in d.items()}
+            if all(n in inv for n in ("K", "F", "wf")):
+                return {n: inv[n] for n in ("K", "F", "wf")}
+    return {"K": 1, "F": 2, "wf": 3}
+
+
 def run_case(i, kind, j):
     from pycobi import ODESystem
     from pyrates import clear
     os.chdir(dp.local_work(WD)); t0 = time.time(); log = []
     w, Om, De = mixture_abs(i, kind); M = w.size; dim = 2 * M + 2
-    K = float(json.load(open(os.path.join(OUT, "K_values.json")))[str(i)]["K"][j])
-    w_c = unforced(w, Om, De, K)[1]
-    for F0 in F_SEED:
-        orbit, Tf, err = seed_orbit(w, Om, De, K, w_c, F0)
-        if orbit is not None:
-            break
-    if orbit is None:
-        print(f"[auto] SCN{i} {kind} K{j}: no locked seed (return error {err:.1e})", flush=True); return
-    log.append(f"seed: T_f = {Tf:.3f} h, F = {F0}, return error {err:.1e}")
-    write_seed(orbit, w_c, Tf, "seed.dat")
+    K = float(load_K()[str(i)]["K"][j])
+    z_u, w_c = AT.unforced(w, Om, De, K)
+    if not np.isfinite(w_c):                                 # incoherent unforced state: mean intrinsic frequency
+        w_c = float(np.sum(w * Om)); z_u = 0.05 * np.ones(M, complex)
+    # seed frequencies: the collective one + every component frequency off it (partial-entrainment tongues of
+    # the individual clusters, e.g. the SCN3 side cluster)
+    seed_w = [w_c]
+    for om in Om[np.argsort(-w)]:
+        if all(abs(om - s_) > SEED_SEP for s_ in seed_w):
+            seed_w.append(float(om))
+    seeds = []
+    for q, wf0 in enumerate(seed_w):
+        for F0 in F_SEED + (0.12,) * (q > 0):
+            orbit, Tf, err = seed_orbit(w, Om, De, K, wf0, F0, z_u)
+            if orbit is not None:
+                write_seed(orbit, wf0, Tf, f"seed{q}.dat"); seeds.append((q, wf0, F0, orbit))
+                log.append(f"seed{q}: f_d = {wf0 * 24 / (2 * np.pi):.4f} c/d, F = {F0}, return error {err:.1e}")
+                break
+        else:
+            log.append(f"seed{q}: f_d = {wf0 * 24 / (2 * np.pi):.4f} c/d: no locked orbit (return error {err:.1e})")
+    if not seeds:
+        print(f"[auto] SCN{i} {kind} {K_LABELS[j]}: no locked seed\n   " + "\n   ".join(log), flush=True); return
     tag = f"s{i}{kind}{j}"
-    circ = circuit(w, Om, De, K, F0, w_c, tag, orbit[0])
+    _, wf0, F0, orbit = seeds[0]
+    circ = circuit(w, Om, De, K, F0, wf0, tag, orbit[0])
     ode = ODESystem.from_template(circ, auto_dir=B.AUTO_DIR, init_cont=False, analytical_jacobian=True,
                                   auto_constants=("ivp", "eq", "lc"))
-    wf_lo, wf_hi = 2 * np.pi / TF_RANGE[1] * 0.97, 2 * np.pi / TF_RANGE[0] * 1.03
+    par = par_index()                                        # Auto PAR indices of K, F, wf
+    wf_lo, wf_hi = 2 * np.pi * FREQ_RANGE[0] / 24 * 0.97, 2 * np.pi * FREQ_RANGE[1] / 24 * 1.03
     lc = dict(c="lc", NDIM=dim, NPAR=NPAR, IPS=2, NTST=80, NCOL=4, EPSL=1e-8, EPSU=1e-8, EPSS=1e-6,
               DSMIN=1e-10, THL={11: 0.0})
-    # 1. entrained orbit in F (tongue centre): UZ levels for the ω_f scans
-    ode.run(name="lcF", dat="seed", ICP=["F", 11], ISW=1, ILP=1, ISP=2, NMX=4000, NPR=50, DS=1e-3, DSMAX=5e-3,
-            RL0=0.0, RL1=F_MAX * 1.02, UZR={"F": [f for f in F_LEVELS if f > F0]}, UZSTOP={"F": F_MAX * 1.02}, **lc)
-    sF = ode.get_summary("lcF")
-    uz = [str(x) for x in sF.index if str(sF.loc[x, ("bifurcation", "")]) == "UZ"]
-    log.append(f"lcF: {len(sF)} pts, {len(uz)} UZ levels, bifs {sorted(set(sF[('bifurcation', '')].astype(str)))}")
-    starts = [("lcF", f"UZ{k + 1}") for k in range(len(uz))]
-    # 2. ω_f scans at each level -> folds of cycles (LP) and torus bifurcations (TR)
     edges = []
-    for n_, (orig, sp) in enumerate(starts):
-        nm = f"wf{n_}"
+    for q, wf0, F0, _ in seeds:
+        # 1. entrained orbit in F at the seed frequency: UZ levels for the ω_f scans (.dat carries no parameters)
+        nmF = f"lcF{q}"
         try:
-            ode.run(origin=orig, starting_point=sp, name=nm, ICP=["wf", 11], ISW=1, ILP=1, ISP=2, NMX=4000, NPR=50,
-                    DS=1e-4, DSMAX=2e-3, RL0=wf_lo, RL1=wf_hi, bidirectional=True, **lc)
-            s = ode.get_summary(nm); bif = s[("bifurcation", "")].astype(str).values
-            wv, Fv = np.asarray(s[_col(s, "wf")], float), np.asarray(s[_col(s, "F")], float)
-            for lab in ("LP", "TR"):
-                for k, r_ in enumerate(np.flatnonzero(bif == lab)):
-                    edges.append((nm, f"{lab}{k + 1}", wv[r_], Fv[r_]))
-            log.append(f"{nm} (F = {float(np.asarray(sF[_col(sF, 'F')])[[str(x) for x in sF.index].index(uz[n_])]):.3f}):"
-                       f" LP {int((bif == 'LP').sum())}, TR {int((bif == 'TR').sum())}")
+            ode.run(name=nmF, dat=f"seed{q}", PAR={par["K"]: K, par["F"]: F0, par["wf"]: wf0}, ICP=["F", 11],
+                    ISW=1, ILP=1, ISP=2, NMX=4000, NPR=50, DS=1e-3, DSMAX=5e-3, RL0=0.0, RL1=F_MAX * 1.02,
+                    UZR={"F": [f for f in F_LEVELS if abs(f - F0) > 1e-3]}, UZSTOP={"F": F_MAX * 1.02},
+                    bidirectional=True, get_stability=True, **lc)
         except Exception as e:
-            log.append(f"{nm}: FAILED ({type(e).__name__}: {str(e)[:80]})")
-    # 3. tongue boundaries: 2-parameter continuation of every LP / TR in (ω_f, F)
-    curves = {}
+            log.append(f"{nmF}: FAILED ({type(e).__name__}: {str(e)[:80]})"); continue
+        sF = ode.get_summary(nmF)
+        n_uz = int((sF[("bifurcation", "")].astype(str) == "UZ").sum())
+        log.append(f"{nmF}: {len(sF)} pts, {n_uz} UZ levels")
+        # 2. ω_f scans at each level -> LP / TR (Floquet stability change recorded as metadata)
+        for n_ in range(n_uz):
+            nm = f"wf{q}_{n_}"
+            try:
+                ode.run(origin=nmF, starting_point=f"UZ{n_ + 1}", name=nm, ICP=["wf", 11], ISW=1, ILP=1, ISP=2,
+                        NMX=8000, NPR=10, DS=1e-4, DSMAX=2e-3, RL0=wf_lo, RL1=wf_hi, bidirectional=True,
+                        get_stability=True, **lc)
+                s = ode.get_summary(nm); bif = s[("bifurcation", "")].astype(str).values
+                stab = (np.asarray(s[("stability", "")]).astype(bool) if ("stability", "") in s.columns
+                        else np.ones(bif.size, bool))
+                wv, Fv = np.asarray(s[_col(s, "wf")], float), np.asarray(s[_col(s, "F")], float)
+                for lab in ("LP", "TR"):
+                    for k, r_ in enumerate(np.flatnonzero(bif == lab)):
+                        win = stab[max(0, r_ - 2):r_ + 3]
+                        edges.append((nm, f"{lab}{k + 1}", wv[r_], Fv[r_], bool(win.any() and (~win).any())))
+                log.append(f"{nm} (F = {Fv[0]:.3f}): LP {int((bif == 'LP').sum())}, TR {int((bif == 'TR').sum())}")
+            except Exception as e:
+                log.append(f"{nm}: FAILED ({type(e).__name__}: {str(e)[:80]})")
+    # 3. 2-parameter continuation in (ω_f, F) of every LP / TR (de-duplicated against traced curves); curves may
+    #    pass through the tongue tip (F = 0) to F_TIP so that both edges of a tongue are traced
+    curves, meta_c = {}, {}
 
-    def on_curve(wv, Fv):          # start point already traced (same edge found again by another scan / label)
-        return any(np.min(np.hypot((c[:, 0] - wv) / 1e-3, (c[:, 1] - Fv) / 5e-3)) < 1 for c in curves.values())
+    def on_curve(wv, Fv):
+        return any(np.min(np.hypot((c[:, 0] - wv) / 1e-3, (c[:, 1] - Fv) / 2e-3)) < 1 for c in curves.values())
 
-    for n_, (orig, sp, wv, Fv) in enumerate(edges):
-        nm = f"edge{n_}_{sp}"
-        if on_curve(wv, Fv) or any(abs(wv - e[2]) < 1e-5 and abs(Fv - e[3]) < 1e-5 for e in edges[:n_]):
+    for n_, (orig, sp, wv, Fv, stab_change) in sorted(enumerate(edges), key=lambda e: not e[1][4]):
+        nm = f"edge{n_}_{orig}_{sp}"
+        if on_curve(wv, Fv):
             continue
-        try:
-            ode.run(origin=orig, starting_point=sp, name=nm, ICP=["wf", "F", 11], ISW=2, ILP=0, ISP=1, NMX=3000,
-                    NPR=20, DS=1e-4, DSMAX=2e-3, RL0=wf_lo, RL1=wf_hi, bidirectional=True,
-                    UZSTOP={"F": [1e-5, F_MAX * 1.02]}, **lc)
-            s = ode.get_summary(nm)
-            curves[nm] = np.column_stack([np.asarray(s[_col(s, "wf")], float), np.asarray(s[_col(s, "F")], float)])
-            log.append(f"{nm}: {curves[nm].shape[0]} pts, F ∈ [{curves[nm][:, 1].min():.3f}, "
-                       f"{curves[nm][:, 1].max():.3f}]")
-        except Exception as e:
-            log.append(f"{nm}: FAILED ({type(e).__name__}: {str(e)[:80]})")
+        parts = []                       # the two directions as SEPARATE runs: a failure in one keeps the other
+        for d, ds in (("a", 1e-4), ("b", -1e-4)):
+            try:
+                ode.run(origin=orig, starting_point=sp, name=nm + d, ICP=["wf", "F", 11], ISW=2, ILP=0, ISP=1,
+                        NMX=8000, NPR=5, DS=ds, DSMAX=2e-3, RL0=wf_lo, RL1=wf_hi,
+                        UZSTOP={"F": [F_TIP, F_MAX * 1.05]}, get_stability=False, **lc)
+                s = ode.get_summary(nm + d)
+                parts.append(np.column_stack([np.asarray(s[_col(s, "wf")], float), np.asarray(s[_col(s, "F")], float)]))
+            except Exception as e:
+                log.append(f"{nm}{d}: FAILED ({type(e).__name__}: {str(e)[:80]})")
+        if parts:
+            curves[nm] = np.vstack([parts[0][::-1]] + parts[1:])
+            meta_c[nm] = dict(type=sp[:2], stability_change=stab_change)
+            log.append(f"{nm}: {curves[nm].shape[0]} pts ({len(parts)} directions), F ∈ "
+                       f"[{curves[nm][:, 1].min():.3f}, {curves[nm][:, 1].max():.3f}]")
     ode.close_session(clear_files=True); clear(circ)
-    np.save(os.path.join(OUT, f"tongue_scn{i}_{kind}_K{j}.npy"),
-            dict(slice=i, kind=kind, K=K, w_c=w_c, F_seed=F0, curves=curves, log=log), allow_pickle=True)
-    print(f"[auto] SCN{i} {kind} K{j} = {K:.4f} (dim {dim}; {time.time() - t0:.0f} s)\n   " + "\n   ".join(log),
-          flush=True)
+    np.save(os.path.join(OUT, f"tongue3_scn{i}_{kind}_K{j}.npy"),
+            dict(slice=i, kind=kind, K=K, w_c=w_c, seeds=[(q, wf0, F0) for q, wf0, F0, _ in seeds], curves=curves,
+                 meta=meta_c, log=log), allow_pickle=True)
+    print(f"[auto] SCN{i} {kind} {K_LABELS[j]} = {K:.4f} (dim {dim}; {time.time() - t0:.0f} s)\n   "
+          + "\n   ".join(log), flush=True)
 
 
 def run_all(cases):
@@ -309,68 +329,93 @@ def run_all(cases):
 
 
 # ─── figure ──────────────────────────────────────────────────────────────────────────────────────
-def figure():
+def contrast(m, fd, Fc, cells=2.5):
+    """|ΔC| of the simulated coherence map across a curve: C sampled `cells` grid cells to either side along the
+    local normal (in grid-cell units)."""
+    from scipy.interpolate import RegularGridInterpolator
+    df, dF = np.diff(m["freqs"][:2])[0], np.diff(m["F"][:2])[0]
+    itp = RegularGridInterpolator((m["F"], m["freqs"]), m["C"], bounds_error=False, fill_value=np.nan)
+    u, v = fd / df, Fc / dF
+    tu, tv = np.gradient(u), np.gradient(v); nrm = np.hypot(tu, tv) + 1e-12
+    nu, nv = -tv / nrm, tu / nrm
+    side = lambda s: itp(np.column_stack([(v + s * cells * nv) * dF, (u + s * cells * nu) * df]))
+    c = np.abs(side(1) - side(-1))
+    return np.where(np.isfinite(c), c, 0.0)
+
+
+def figure(show=False, weak_hidden=False):
     import matplotlib
-    matplotlib.use("Agg")
+    if not show:
+        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
-    from prl_style import set_prl_style, panel_label, COL_DOUBLE
-    set_prl_style("prl", **{"axes.titleweight": "bold", "axes.titlelocation": "center"})
-    meta = json.load(open(os.path.join(OUT, "K_values.json")))
-    sty = {"pfloor": ("#c0392b", "-", "noise floor"), "psingle": ("0.25", "--", "single Lorentzian")}
-    H = 1.35 * len(SLICES) + 0.5
-    fig, axs = plt.subplots(len(SLICES), N_K, figsize=(COL_DOUBLE, H), squeeze=False, sharex=True, sharey=True,
-                            gridspec_kw=dict(hspace=0.45, wspace=0.12, left=0.08, right=0.99, top=1 - 0.25 / H,
-                                             bottom=0.62 / H))
+    from prl_style import set_prl_style
+    FS = 11
+    set_prl_style("prl", **{"axes.titleweight": "bold", "axes.titlelocation": "center", "font.size": FS,
+                            "axes.labelsize": FS, "axes.titlesize": FS, "xtick.labelsize": FS - 1,
+                            "ytick.labelsize": FS - 1, "legend.fontsize": FS - 1})
+    meta = load_K()
+    lab_k = {"pfloor": "noise floor", "psingle": "single Lorentzian"}
+    K_tex = {"K_c": r"$K_c$", "K_mid": r"$K_{mid}$", "K_post": r"$K_{post}$"}
+    nc = len(K_LABELS) * len(KINDS)
+    fig, axs = plt.subplots(len(SLICES), nc, figsize=(17, 2.6 * len(SLICES) + 1.2), squeeze=False, sharex=True,
+                            sharey=True, gridspec_kw=dict(hspace=0.35, wspace=0.08, left=0.05, right=0.93,
+                                                          top=1 - 0.75 / (2.6 * len(SLICES) + 1.2),
+                                                          bottom=1.0 / (2.6 * len(SLICES) + 1.2)))
+    im = None
     for r, i in enumerate(SLICES):
-        for j in range(N_K):
-            a = axs[r, j]; K = meta[str(i)]["K"][j]
-            for kind in KINDS:
-                col, ls, _ = sty[kind]
-                f = os.path.join(OUT, f"map_scn{i}_{kind}_K{j}.npz")
+        for j, kl in enumerate(K_LABELS):
+            K = meta[str(i)]["K"][j]
+            for q, kind in enumerate(KINDS):
+                a = axs[r, 2 * j + q]
+                f = os.path.join(OUT, f"grid_scn{i}_{kind}_K{j}.npz"); m = None
                 if os.path.exists(f):
                     m = np.load(f)
-                    if kind == "pfloor":
-                        a.contourf(m["Tf"], m["F"], m["locked"].astype(float), levels=[0.5, 1.5], colors=["#f4c7c0"])
-                    a.contour(m["Tf"], m["F"], m["locked"].astype(float), levels=[0.5], colors=[col],
-                              linewidths=0.5, linestyles=":")
-                f = os.path.join(OUT, f"tongue_scn{i}_{kind}_K{j}.npy")
+                    im = a.pcolormesh(m["freqs"], m["F"], m["C"], cmap="magma", vmin=0, vmax=1, shading="nearest",
+                                      rasterized=True)
+                    if np.isfinite(m["f_c"]):
+                        a.plot(m["f_c"], 0, marker="v", color="c", mec="k", mew=0.5, ms=8, clip_on=False, zorder=6)
+                f = os.path.join(OUT, f"tongue3_scn{i}_{kind}_K{j}.npy")
                 if os.path.exists(f):
                     g = np.load(f, allow_pickle=True).item()
                     for nm, cur in g["curves"].items():
-                        a.plot(2 * np.pi / cur[:, 0], cur[:, 1], color=col, lw=0.9 if kind == "pfloor" else 0.8,
-                               ls="-" if "_LP" in nm else (0, (3, 1.5)), alpha=1 if kind == "pfloor" else 0.85)
-                    a.plot(2 * np.pi / g["w_c"], 0, marker="v", color=col, ms=3, clip_on=False)
-            a.axvline(24, color="0.6", lw=0.5, zorder=0)
-            a.set_xlim(*TF_RANGE); a.set_ylim(0, F_MAX)
-            a.set_title(rf"SCN{i}, $K$ = {K:.3f}" + (r" ($K_{pre}$)" if j == N_K - 1 else ""), fontsize=6)
-            if r == len(SLICES) - 1:
-                a.set_xlabel(r"forcing period $T_f$ (h)")
-            if j == 0:
-                a.set_ylabel(r"light amplitude $F$")
-        panel_label(axs[r, 0], "abcdefgh"[r], dx=-20, dy=3)
-    hd = [Patch(fc="#f4c7c0", label="entrained (simulation, noise floor)")] + \
-         [Line2D([], [], color=c, lw=1.2, label=lab) for c, _, lab in sty.values()] + \
-         [Line2D([], [], color="0.4", lw=0.9, label="fold of entrained cycle (LP)"),
-          Line2D([], [], color="0.4", lw=0.9, ls=(0, (3, 1.5)), label="torus bifurcation (TR)"),
-          Line2D([], [], color="0.4", ls=":", lw=0.5, label="simulated boundary"),
-          Line2D([], [], ls="none", marker="v", color="0.4", ms=3, label="unforced period")]
-    fig.legend(handles=hd, loc="lower center", ncol=4, frameon=False, fontsize=5.5, bbox_to_anchor=(0.5, 0.0))
-    out = os.path.join(OUT, "scn_entrainment")
-    fig.savefig(out + ".pdf", bbox_inches="tight"); fig.savefig(out + ".png", dpi=300, bbox_inches="tight")
+                        fd, Fc = cur[:, 0] * 24 / (2 * np.pi), cur[:, 1]
+                        bold = contrast(m, fd, Fc) > CONTRAST if m is not None else np.ones(fd.size, bool)
+                        ls = "-" if g["meta"][nm]["type"] == "LP" else (0, (4, 2))
+                        y = np.where(Fc >= 0, Fc, np.nan)                        # F < 0: past the tongue tip
+                        if not weak_hidden:
+                            a.plot(fd, y, color="#39d5ff", lw=0.9, alpha=0.7, ls=ls, zorder=5)
+                        a.plot(fd, np.where(bold, y, np.nan), color="#39d5ff", lw=2.0, ls=ls, zorder=5)
+                a.set_xlim(*FREQ_RANGE); a.set_ylim(0, F_MAX)
+                a.set_title(f"{K_tex[kl]} = {K:.3f}" + (f"\n{lab_k[kind]}" if r == 0 else ""), fontsize=FS)
+                if r == len(SLICES) - 1:
+                    a.set_xlabel(r"$f_d$ (cycles/day)")
+            axs[r, 0].set_ylabel(f"SCN{i}\n" + r"light $F$ (rad/h)")
+    if im is not None:
+        cax = fig.add_axes([0.945, 0.25, 0.012, 0.5])
+        fig.colorbar(im, cax=cax).set_label(r"coherence with driver at $f_d$")
+    hd = [Line2D([], [], color="#39d5ff", lw=2.0, label="fold of the entrained cycle (LP): phase slips"),
+          Line2D([], [], color="#39d5ff", lw=2.0, ls=(0, (4, 2)), label="torus bifurcation (TR): amplitude modulation"),
+          Line2D([], [], color="#39d5ff", lw=0.9, alpha=0.7,
+                 label=f"thin: coherence changes by < {CONTRAST} across the curve (e.g. partial entrainment)"),
+          Line2D([], [], ls="none", marker="v", color="c", mec="k", ms=8, label="unforced collective frequency")]
+    fig.legend(handles=hd, loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, -0.01))
+    out = os.path.join(OUT, "scn_entrainment_grid")
+    fig.savefig(out + ".pdf", bbox_inches="tight"); fig.savefig(out + ".png", dpi=200, bbox_inches="tight")
     print(f"[saved] {out}.pdf/.png")
+    if show:
+        plt.show()
 
 
 if __name__ == "__main__":
     mode = sys.argv[1]
     if mode == "sim":
-        sim_all()
+        sim_all(int(sys.argv[sys.argv.index("--jobs") + 1]) if "--jobs" in sys.argv else os.cpu_count())
     elif mode == "one":
         run_case(int(sys.argv[2]), sys.argv[3], int(sys.argv[4]))
     elif mode == "run":
         cases = (sys.argv[sys.argv.index("--cases") + 1].split(",") if "--cases" in sys.argv else
-                 [f"{i}:{k}:{j}" for i in SLICES for k in KINDS for j in range(N_K)])
+                 [f"{i}:{k}:{j}" for i in SLICES for k in KINDS for j in range(len(K_LABELS))])
         run_all(cases)
     elif mode == "figure":
-        figure()
+        figure(show="--show" in sys.argv, weak_hidden="--bold-only" in sys.argv)
