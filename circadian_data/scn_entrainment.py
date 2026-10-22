@@ -29,9 +29,11 @@ Two complementary analyses:
           (ω_f, F) of EVERY fold (LP) and torus (TR) point found; curves may pass through the tongue tip (F = 0) to
           F_TIP so both edges of a tongue are traced (NMX = 8000, dense output; de-duplicated)
           (one ODESystem per process, cases run sequentially in subprocesses with wall-time/fort.9 guards)
-  figure  all curves for F ≥ 0; a segment is drawn bold where the simulated coherence changes by more than CONTRAST
-          across it (boundary of the main entrained region), thin elsewhere (e.g. partial entrainment of a cluster,
-          which changes the global coherence only partly; --bold-only hides these)
+  figure  all curves for F ≥ 0 (duplicates removed); a segment is drawn bold where the entrained cycle changes
+          stability at the curve (Floquet, recorded on the ω_f scans) AND the simulated coherence changes by more than
+          CONTRAST across it (boundary of the main entrained region); thin elsewhere: partial entrainment of a cluster
+          (global coherence changes only partly) and folds / tori of other, unstable cycles (e.g. the U-shaped
+          interior folds at K_post); --bold-only hides the thin ones
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_entrainment.py sim [--jobs 8]
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_entrainment.py run [--cases 4:pfloor:0,...]
@@ -377,10 +379,16 @@ def figure(show=False, weak_hidden=False):
                         a.plot(m["f_c"], 0, marker="v", color="c", mec="k", mew=0.5, ms=8, clip_on=False, zorder=6)
                 f = os.path.join(OUT, f"tongue3_scn{i}_{kind}_K{j}.npy")
                 if os.path.exists(f):
-                    g = np.load(f, allow_pickle=True).item()
+                    g = np.load(f, allow_pickle=True).item(); drawn = []
                     for nm, cur in g["curves"].items():
                         fd, Fc = cur[:, 0] * 24 / (2 * np.pi), cur[:, 1]
-                        bold = contrast(m, fd, Fc) > CONTRAST if m is not None else np.ones(fd.size, bool)
+                        uv = np.column_stack([fd / 0.0276, Fc / 0.0052])          # ~ grid-cell units
+                        if any(np.mean(np.min(np.linalg.norm(uv[:, None] - d[None], axis=2), axis=1) < 0.5) > 0.9
+                               for d in drawn):
+                            continue                                            # duplicate of a drawn curve
+                        drawn.append(uv)
+                        bold = ((contrast(m, fd, Fc) > CONTRAST if m is not None else np.ones(fd.size, bool))
+                                & bool(g["meta"][nm].get("stability_change", True)))
                         ls = "-" if g["meta"][nm]["type"] == "LP" else (0, (4, 2))
                         y = np.where(Fc >= 0, Fc, np.nan)                        # F < 0: past the tongue tip
                         if not weak_hidden:
@@ -397,7 +405,8 @@ def figure(show=False, weak_hidden=False):
     hd = [Line2D([], [], color="#39d5ff", lw=2.0, label="fold of the entrained cycle (LP): phase slips"),
           Line2D([], [], color="#39d5ff", lw=2.0, ls=(0, (4, 2)), label="torus bifurcation (TR): amplitude modulation"),
           Line2D([], [], color="#39d5ff", lw=0.9, alpha=0.7,
-                 label=f"thin: coherence changes by < {CONTRAST} across the curve (e.g. partial entrainment)"),
+                 label="thin: no stability change of the entrained cycle, or little coherence change\n"
+                       "(partial entrainment of a cluster; folds / tori of other cycles)"),
           Line2D([], [], ls="none", marker="v", color="c", mec="k", ms=8, label="unforced collective frequency")]
     fig.legend(handles=hd, loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, -0.01))
     out = os.path.join(OUT, "scn_entrainment_grid")
