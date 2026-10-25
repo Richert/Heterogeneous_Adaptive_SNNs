@@ -116,13 +116,13 @@ def state_names(M):
     return ["x0"] + [v for m in range(1, M) for v in (f"x{m}", f"y{m}")]
 
 
-def circuit(w, Om, De, tag, r0=0.95):
+def circuit(w, Om, De, tag, r0=0.95, K0=None):
     from pyrates import OperatorTemplate, NodeTemplate, CircuitTemplate
     M = w.size
     var = {"x0": f"output({r0})"}
     for m in range(1, M):
         var[f"x{m}"] = f"variable({r0})"; var[f"y{m}"] = "variable(0.0)"
-    var.update(K=float(K_START), alpha=0.0, h=1.0)
+    var.update(K=float(K_START if K0 is None else K0), alpha=0.0, h=1.0)
     op = OperatorTemplate(name=f"scnb_op_{tag}", equations=equations(w, Om, De), variables=var)
     return CircuitTemplate(name=f"scnb_{tag}", nodes={"p": NodeTemplate(name=f"scnb_node_{tag}", operators=[op])})
 
