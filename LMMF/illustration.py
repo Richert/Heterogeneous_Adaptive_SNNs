@@ -9,6 +9,7 @@ Fits (λ = 1e-6, warm start, M_max = 64, slsqp, 10 restarts, patience 3):
     pop      the TRUE ρ (N_Q quantile nodes), no floor, widths ≥ 1e-4
     floor    the sample with the noise-floor cap, widths ≥ k/(N ρ̂_max), k = 10
     nofloor  the sample without the floor, same width floor
+    single   the sample with the noise-floor cap and ONE Lorentzian (M_max = 1; as the circadian "psingle")
 Loci: largest / second-largest Re eigenvalue at z = 0 on a fine (α, K) grid for every fit (zero contours =
 LMMF incoherence boundaries; verified against PyCoBi Hopf continuations, bimodal/lmmf_hopf_check.py), and the
 cluster-resolved maps (largest Re λ among modes with Im λ < 0 / ≥ 0), stored as loci[kind] = (G1, G2, Gm, Gp).
@@ -17,6 +18,8 @@ Exact boundaries of ρ: unimodal_kalpha (gauss, g8, dgauss) and bimodal_kalpha (
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python illustration.py fits [--procs P] [--dist a,b]
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python illustration.py loci [--dist a,b]
 Ramps: illustration_ramps.py. Results: data_paths.MPMF/illustration/
+Ramp sets (use_ramp_set): "" = the original K grids (ramps/); "kmax3" = unimodal K grid 0.1 … 3.0 with the same number
+of steps (40; ramps_kmax3/), for the PNAS unimodal figure. The bimodal grid is the same in both sets.
 """
 import os, sys
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):   # one thread per worker
@@ -39,13 +42,26 @@ N = 1000
 SEEDS = {"gauss": 17, "g8": 24, "dgauss": 4, "bimodal": 18}
 DISTS = tuple(SEEDS)
 LAM, WIDTH_K, M_MAX, N_Q = 1e-6, 10, 64, 5000
-KINDS = ("pop", "floor", "nofloor")
+KINDS = ("pop", "floor", "nofloor", "single")      # appended kinds keep the indices of older ramp files
 FIT_KW = dict(lambda_M=LAM, M_max=M_MAX, patience=3, n_restarts=10, seed=1, method="slsqp", large_M=16)
 # (K, α) grids of the ramps and stability maps
 A_GRID = UK.A_GRID                                          # 0, 0.05, …, 1.4
 K_GRID = {d: (np.round(np.arange(0.1, 6.0001, 0.1), 3) if d == "bimodal" else UK.K_GRID) for d in DISTS}
 A_FINE = np.linspace(0.0, 1.45, 146)
 K_FINE = {d: np.linspace(0.02, 6.0 if d == "bimodal" else 4.0, 300) for d in DISTS}
+RAMP_SETS = {"": ({d: K_GRID[d] for d in DISTS}, "ramps"),
+             "kmax3": ({d: (K_GRID[d] if d == "bimodal" else np.round(np.linspace(0.1, 3.0, UK.K_GRID.size), 3))
+                        for d in DISTS}, "ramps_kmax3")}
+_SET = [""]
+
+
+def use_ramp_set(name):
+    """Switch the ramp K grids (K_GRID, in place) and the ramp directory; call before starting worker pools."""
+    K_GRID.clear(); K_GRID.update(RAMP_SETS[name][0]); _SET[0] = name
+
+
+def ramp_dir():
+    return dp.ensure(os.path.join(OUT, RAMP_SETS[_SET[0]][1]))
 
 
 def sample(dist):
@@ -82,8 +98,8 @@ def _fit_job(args):
     if kind == "pop":
         x, bounds, fc = quantiles(dist, N_Q), (1e-4, 1e2), 0.0
     else:
-        x = sample(dist); bounds = (FS.width_floor(x, WIDTH_K), 1e2); fc = 1.0 if kind == "floor" else 0.0
-    r = LM.fit(x, bounds, floor_c=fc, **FIT_KW)
+        x = sample(dist); bounds = (FS.width_floor(x, WIDTH_K), 1e2); fc = 0.0 if kind == "nofloor" else 1.0
+    r = LM.fit(x, bounds, floor_c=fc, **dict(FIT_KW, M_max=1 if kind == "single" else M_MAX))
     m = r["model"]
     q = quantiles(dist, N_Q); u = (np.arange(N_Q) + 0.5) / N_Q
     res = dict(w=m.w, Om=m.Omega, De=m.Delta, M=int(m.M), D=float(r["data_loss"]),
@@ -129,7 +145,7 @@ def stability_maps(f, K, A):
         for j, k in enumerate(K):
             ev = np.linalg.eigvals(A0 + k * np.exp(-1j * a) * P)
             re = np.sort(ev.real)[::-1]
-            G1[i, j], G2[i, j] = re[0], re[1]
+            G1[i, j], G2[i, j] = re[0], (re[1] if re.size > 1 else -np.inf)     # M = 1: one eigenvalue
             neg, pos = ev.real[ev.imag < 0], ev.real[ev.imag >= 0]
             Gm[i, j] = neg.max() if neg.size else -np.inf
             Gp[i, j] = pos.max() if pos.size else -np.inf
@@ -160,7 +176,7 @@ TOL_EDGE = 5e-3                          # edge growth: |ω̃ − plateau freque
 def load_ramps(dist, direction):
     """All α chunks of illustration_ramps.py for one direction, ordered by α. Arrays: R_net (nα, nK, ns),
     R_fit (nkind, nα, nK, ns), R_cont (nα, nK, ns), W_net (nα, nK, N), W_test (nkind, nα, nK, N_TEST)."""
-    d = os.path.join(OUT, "ramps")
+    d = ramp_dir()
     P = [np.load(os.path.join(d, f)) for f in sorted(os.listdir(d)) if f.startswith(f"{dist}_{direction}_c")]
     ia = np.concatenate([p["ia"] for p in P]); o = np.argsort(ia)
     out = {}
@@ -233,7 +249,7 @@ def largest_cluster(om, W):
 
 def locking_maps(dist, direction="bwd"):
     """ℓ and macroscopic-cluster counts for the network and every fit's test oscillators (cached)."""
-    cache = os.path.join(OUT, "ramps", f"{dist}_{direction}_locking.npz")
+    cache = os.path.join(ramp_dir(), f"{dist}_{direction}_locking.npz")
     if os.path.exists(cache):
         d = np.load(cache)
         return {k: d[k] for k in d.files}

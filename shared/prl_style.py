@@ -64,6 +64,20 @@ PRESETS = {
         "legend.fontsize": 6, "xtick.labelsize": 6.5, "ytick.labelsize": 6.5,
         "axes.linewidth": 0.5,
     },
+    # PNAS: sans-serif (Arial / Helvetica; Liberation Sans is metric-compatible with Arial), 6-8 pt text,
+    # columns 8.7 cm (PNAS_SINGLE) / 17.8 cm (PNAS_DOUBLE); panel labels: bold capitals (pnas_panel_label)
+    "pnas": {
+        **_BASE,
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "Liberation Sans", "Nimbus Sans", "DejaVu Sans"],
+        "mathtext.fontset": "custom", "mathtext.rm": "Liberation Sans", "mathtext.it": "Liberation Sans:italic",
+        "mathtext.bf": "Liberation Sans:bold", "mathtext.sf": "Liberation Sans",
+        "font.size": 7, "axes.labelsize": 7, "axes.titlesize": 7,
+        "legend.fontsize": 6.5, "xtick.labelsize": 6.5, "ytick.labelsize": 6.5,
+        "axes.linewidth": 0.6, "lines.linewidth": 1.0,
+        "xtick.major.width": 0.6, "ytick.major.width": 0.6,
+        "xtick.major.size": 2.0, "ytick.major.size": 2.0,
+    },
     # on-screen diagnostics (spiking net vs. mean field)
     "diagnostic": {
         **_BASE,
@@ -97,3 +111,14 @@ def panel_label(ax, letter, dx=-16, dy=4, fontsize=8, weight="bold"):
     return ax.annotate(f"({letter})", xy=(0, 1), xycoords="axes fraction",
                        xytext=(dx, dy), textcoords="offset points",
                        fontsize=fontsize, fontweight=weight, ha="left", va="bottom")
+
+
+# PNAS column widths in inches (8.7 cm / 17.8 cm)
+PNAS_SINGLE = 3.42
+PNAS_DOUBLE = 7.0
+
+
+def pnas_panel_label(ax, letter, dx=-16, dy=4, fontsize=9):
+    """PNAS panel label: bold capital letter without parentheses, above the axis' top-left corner."""
+    return ax.annotate(letter.upper(), xy=(0, 1), xycoords="axes fraction", xytext=(dx, dy),
+                       textcoords="offset points", fontsize=fontsize, fontweight="bold", ha="left", va="bottom")

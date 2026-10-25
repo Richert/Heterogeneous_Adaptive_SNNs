@@ -19,6 +19,7 @@ RK4, dt = DT. One job per (distribution, direction, α chunk); resumable files i
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python illustration_ramps.py time
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python illustration_ramps.py run [--dist a,b] [--procs P] [--chunks C]
+            [--set kmax3]        (ramp set of illustration.py; default: the original grids in ramps/)
 """
 import os, sys
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):   # one thread per worker
@@ -30,7 +31,6 @@ import numpy as np
 from multiprocessing import Pool
 import illustration as IL
 
-OUT = IL.dp.ensure(os.path.join(IL.OUT, "ramps"))
 DT, DTS, HOLD = 0.05, 0.1, 100.0
 DIRECTIONS = {"fwd": 0.05, "bwd": 0.9}
 N_TEST, N_CONT = 1000, 2000
@@ -122,7 +122,8 @@ def lmmf_ramp_nokick(dist, alpha, kinds=("floor", "nofloor"), direction="bwd", s
     incoherence, where a finite network is never exactly at R = 0 and the seed is needed for re-growth,
     e.g. re-entrant synchrony); seed_below=False: no kick at all (re-growth from ~0 is then delayed).
     Same start R(0), K grid, DT, DTS and HOLD as ramp(). Cached. Returns R (nkind, nK, ns), K ascending."""
-    out = os.path.join(OUT, f"{dist}_{direction}_{'seedkick' if seed_below else 'nokick'}_a{alpha:g}.npz")
+    out = os.path.join(IL.ramp_dir(), f"{dist}_{direction}_{'seedkick' if seed_below else 'nokick'}_a{alpha:g}"
+                       + ("" if tuple(kinds) == ("floor", "nofloor") else "_" + "-".join(kinds)) + ".npz")
     if os.path.exists(out):
         return np.load(out)["R"]
     th0 = _wrapped_cauchy(DIRECTIONS[direction], IL.N, 100); R0_obs = float(np.abs(np.exp(1j * th0).mean()))
@@ -149,7 +150,7 @@ def lmmf_ramp_nokick(dist, alpha, kinds=("floor", "nofloor"), direction="bwd", s
 
 
 def ramp_file(dist, direction, c):
-    return os.path.join(OUT, f"{dist}_{direction}_c{c:02d}.npz")
+    return os.path.join(IL.ramp_dir(), f"{dist}_{direction}_c{c:02d}.npz")
 
 
 def _job(args):
@@ -193,6 +194,7 @@ def time_probe(dists):
 if __name__ == "__main__":
     arg = lambda k, d_, t=str: t(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d_
     dists = arg("--dist", list(IL.DISTS), lambda s_: s_.split(","))
+    IL.use_ramp_set(arg("--set", ""))                     # --set kmax3: unimodal K ≤ 3 (ramps_kmax3/)
     if "time" in sys.argv:
         time_probe(dists)
     if "run" in sys.argv:

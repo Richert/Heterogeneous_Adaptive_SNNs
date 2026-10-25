@@ -20,6 +20,9 @@ other fit sets are written with a tag (e.g. _mmax100).
 --illustration [--ramp-alpha 0.7]: the revised figure (main_illus) for the setup of LMMF/illustration.py
 (seed-searched N = 1000 samples, λ = 1e-6): fits with / without the noise floor, network locked fraction,
 and R(t) along the backward ramp -> illustration/fig_unimodal_illustration.*
+--pnas: the PNAS manuscript version (main_pnas): K ≤ 3 (ramp set "kmax3"), an additional M = 1 model, wider
+distribution panels -> /home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures/unimodal_distributions.*
+(needs: illustration.py fits + loci with the "single" kind; illustration_ramps.py run --set kmax3 --dist gauss,g8,dgauss)
 """
 import os, sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -349,9 +352,126 @@ def main_illus(names, ramp_alpha=RAMP_ALPHA):
     print(f"[saved] {out}.png/.svg/.pdf")
 
 
+MS_FIGURES = "/home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures"      # manuscript figures (PNAS submission)
+C_PNAS = {"floor": "#eb6834", "nofloor": "#2a78d6", "single": "#7b2cbf"}
+L_PNAS = {"floor": "LMMF, noise floor", "nofloor": "LMMF, no floor", "single": r"LMMF, $M = 1$"}
+
+
+def main_pnas(names, ramp_alpha=RAMP_ALPHA, out_dir=MS_FIGURES, name_out="unimodal_distributions"):
+    """PNAS two-column version of the illustration figure (manuscript figure). As main_illus, with
+    - the K grid 0.1 … 3.0 (40 steps; illustration ramp set "kmax3"),
+    - a third model, ONE Lorentzian fitted to the sample with the noise floor (M = 1; kind "single"), in every panel,
+    - wider distribution panels (same x-limits),
+    - PNAS style: 17.8 cm wide, sans-serif 6.5-7 pt, bold capital panel labels.
+    Per row: (A) true ρ, N = 1000 sample, the three LMMF fits; (B) network locked fraction (backward ramp) with the
+    exact threshold and the three LMMF thresholds; (C) R(t) along the backward K-ramp at α = ramp_alpha[dist]."""
+    from prl_style import pnas_panel_label, PNAS_DOUBLE
+    IL = _illustration()
+    IL.use_ramp_set("kmax3")
+    import illustration_ramps as IR
+    set_prl_style("pnas")
+    kinds = ("floor", "nofloor", "single")
+    H = 1.6 * len(names) + 0.55
+    fig = plt.figure(figsize=(PNAS_DOUBLE, H))
+    gs = fig.add_gridspec(len(names) + 1, 3, height_ratios=[1.0] * len(names) + [0.26],
+                          width_ratios=[1.25, 1.0, 1.75], left=0.075, right=0.99, top=1 - 0.22 / H,
+                          bottom=0.01, wspace=0.3, hspace=0.32)
+    stroke = [pe.withStroke(linewidth=1.9, foreground="w")]
+    letters = iter("ABCDEFGHIJKLMNOP")
+    for r, name in enumerate(names):
+        ax = [fig.add_subplot(gs[r, j]) for j in range(3)]
+        fits = {k: IL.load_fit(name, k) for k in kinds}
+        loci = np.load(IL.loci_file(name), allow_pickle=True).item()
+        KG = IL.K_GRID[name]; dK = KG[1] - KG[0]
+        ext = [KG[0] - dK / 2, KG[-1] + dK / 2, UK.A_GRID[0] - 0.025, UK.A_GRID[-1] + 0.025]
+        # (A) distribution
+        a = ax[0]; x = IL.sample(name)
+        lim = 2.5 if name == "dgauss" else 2.0 if name.startswith("g") else 3.0
+        g = np.linspace(-lim, lim, 1201)
+        a.hist(x, bins=50, range=(-lim, lim), density=True, color=C_HIST, edgecolor="none", zorder=1)
+        a.plot(g, np.asarray(UK.dists()[name]["pdf"](g), float).ravel(), color=C_TRUE, lw=1.2, zorder=2)
+        for k, z in (("single", 3), ("nofloor", 4), ("floor", 5)):
+            f = fits[k]
+            a.plot(g, LM.LorentzianMixture(f["w"], f["Om"], f["De"]).pdf(g), color=C_PNAS[k], lw=0.9, zorder=z)
+        a.set_xlim(-lim, lim); a.set_yticks([])
+        a.set_ylabel(label(name) + "\n" + r"$\rho(\omega)$", labelpad=2)
+        a.legend(handles=[Line2D([], [], color=C_PNAS[k], lw=1.2, label=f"$M = {fits[k]['M']}$") for k in kinds],
+                 loc="upper right", fontsize=6, handlelength=1.2, handletextpad=0.4, labelspacing=0.25,
+                 borderaxespad=0.3, frameon=True, framealpha=0.85, edgecolor="none")
+        # (B) network locked fraction + thresholds
+        b = ax[1]
+        L = IL.locking_maps(name, "bwd")
+        im_l = b.imshow(np.log10(np.maximum(L["ell_net"], ELL_FLOOR)), origin="lower", aspect="auto", extent=ext,
+                        cmap="viridis", norm=Normalize(np.log10(ELL_FLOOR), 0.0), interpolation="nearest")
+        ex = np.load(UK._f(name, "boundary_exact") + ".npy"); ex = ex[np.isfinite(ex[:, 0])]
+        b.plot(ex[:, 0], np.abs(ex[:, 1]), "--", color="w", lw=1.0)
+        for k in kinds:
+            b.contour(loci["K"], loci["A"], loci[k][0], levels=[0.0], colors=[C_PNAS[k]],
+                      linewidths=1.0).set_path_effects(stroke)
+        a_r = ramp_alpha[name] if isinstance(ramp_alpha, dict) else ramp_alpha
+        b.axhline(a_r, color="w", lw=0.6, ls=(0, (1, 2)))
+        b.set_xlim(ext[:2]); b.set_ylim(ext[2:]); b.set_ylabel(r"phase lag $\alpha$", labelpad=2)
+        b.set_yticks(np.arange(0.0, 1.41, 0.2)); b.set_xticks([0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
+        # (C) backward ramp at α = ramp_alpha
+        c = ax[2]
+        R = IL.load_ramps(name, "bwd")
+        ia = int(np.argmin(np.abs(R["alpha"] - a_r)))
+        Ks = R["K"][::-1]
+        ns = R["R_net"].shape[-1]; Tw = (ns - 1) * R["dts"]
+        t = np.concatenate([i * Tw + np.arange(ns - 1) * R["dts"] for i in range(Ks.size)])
+        seg = lambda arr: np.concatenate([arr[ik, :-1] for ik in range(R["K"].size - 1, -1, -1)])
+        c.plot(t, seg(R["R_net"][ia]), color=C_TRUE, lw=0.4, zorder=2)
+        Rnk = IR.lmmf_ramp_nokick(name, float(R["alpha"][ia]), kinds)
+        for j, k in enumerate(kinds):
+            c.plot(t, seg(Rnk[j]), color=C_PNAS[k], lw=0.7, zorder=3 + (k == "floor"))
+        c.text(0.012, 0.04, rf"$\alpha = {R['alpha'][ia]:g}$", transform=c.transAxes, ha="left", va="bottom",
+               fontsize=6.5, bbox=dict(fc="w", ec="none", pad=1.0, alpha=0.85), zorder=6)
+        c.set_xlim(0, t[-1]); c.set_ylim(0, 1.12); c.set_ylabel(r"$R(t)$", labelpad=2)
+        strip = c.inset_axes([0.0, 0.905, 1.0, 0.095])
+        strip.imshow(Ks[None, :], aspect="auto", cmap="Greys", extent=[0, t[-1], 0, 1],
+                     norm=Normalize(-0.4 * Ks.max(), 1.25 * Ks.max()), interpolation="nearest")
+        for Kl in (2.5, 1.5, 0.5):
+            i = int(np.argmin(np.abs(Ks - Kl)))
+            strip.text((i + 0.5) * Tw, 0.5, rf"$K = {Kl:g}$", ha="center", va="center", fontsize=5.5,
+                       color="w" if Kl > 1.6 else "k")
+        for Kb in (2.0, 1.0):
+            strip.axvline(int(np.argmin(np.abs(Ks - Kb))) * Tw, color="0.5", lw=0.4)
+        strip.set_xlim(0, t[-1]); strip.set_xticks([]); strip.set_yticks([])
+        for sp in strip.spines.values():
+            sp.set_linewidth(0.4)
+        if r == 0:
+            ax[0].set_title(r"distribution, $N = 1000$ sample, fits", pad=3)
+            ax[1].set_title(r"network ($N = 1000$): locked fraction", pad=3)
+            c.set_title(r"backward $K$-ramp (100 time units per $K$ step)", pad=3)
+        for j, axx in enumerate(ax):
+            if r == len(names) - 1:
+                axx.set_xlabel((r"$\omega$", r"coupling $K$", "time along the ramp")[j], labelpad=1)
+            else:
+                axx.tick_params(labelbottom=False)
+            pnas_panel_label(axx, next(letters), dx=-20 if j else -14, dy=3)
+    lg = fig.add_subplot(gs[-1, :]); lg.axis("off")
+    h = [Line2D([], [], color=C_TRUE, lw=1.2, label=r"true $\rho$ / network $R(t)$"),
+         Patch(fc=C_HIST, label=r"sample ($N = 1000$)")]
+    h += [Line2D([], [], color=C_PNAS[k], lw=1.0, label=L_PNAS[k]) for k in kinds]
+    h += [Line2D([], [], color="w", ls="--", lw=1.0, label=r"exact threshold (true $\rho$)",
+                 path_effects=[pe.withStroke(linewidth=2.0, foreground="0.5")])]
+    lg.legend(handles=h, loc="center left", ncol=3, frameon=False, handlelength=1.6, columnspacing=1.2,
+              handletextpad=0.5, borderaxespad=0.0, bbox_to_anchor=(0.0, 0.5))
+    cax = lg.inset_axes([0.78, 0.32, 0.2, 0.17])
+    cb = fig.colorbar(im_l, cax=cax, orientation="horizontal")
+    cb.set_label(r"$\log_{10}$ locked fraction $\ell$ (network)", fontsize=6.5, labelpad=2)
+    cb.ax.xaxis.set_label_position("top"); cb.ax.tick_params(labelsize=6)
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, name_out)
+    fig.savefig(out + ".png", dpi=300); fig.savefig(out + ".svg"); fig.savefig(out + ".pdf")
+    print(f"[saved] {out}.png/.svg/.pdf")
+
+
 if __name__ == "__main__":
     arg = lambda k, d, t=str: t(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d
-    if "--illustration" in sys.argv:
+    if "--pnas" in sys.argv:
+        main_pnas(arg("--dists", f"gauss,g{UK.N_RATIONAL},dgauss").split(","), arg("--ramp-alpha", RAMP_ALPHA, float))
+    elif "--illustration" in sys.argv:
         main_illus(arg("--dists", f"gauss,g{UK.N_RATIONAL},dgauss").split(","), arg("--ramp-alpha", RAMP_ALPHA, float))
         # (--ramp-alpha A sets one α for all rows; default: RAMP_ALPHA per distribution)
     else:
