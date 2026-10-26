@@ -37,43 +37,67 @@ CASE_TIMEOUT, FORT9_MAX = 1800, 2e9
 K_LC_MAX = 3.3                                       # limit cycles are continued within the ramp range
 LC_NTST, LC_NMX, LC_DSMAX = 150, 4000, 0.05
 OSC_MIN = 0.05                                       # SD of R in a ramp window above which it oscillates
+CLOSE_TOL = 0.1                                      # rough closure of the simulated seed orbit (Auto then converges it;
+                                                     # windows without a matching STABLE continued cycle = quasi-periodic)
+MAX_LC = 4                                           # limit-cycle seeds per example
+LC_NPR = 3
 
 
-def lc_seed(N, m, w, Om, De, T_settle=2000.0, dt=0.01):
-    """Simulation seed of the standing-wave limit cycle in the pinned co-rotating frame (component 0 = largest weight,
-    real), at the ramp K (≤ 3) where this model's R oscillates most. Returns (K, period, orbit (n, 2M−1), names) or
-    None if the model never oscillates along the ramp."""
+def ramp_windows(N, m):
+    """The example's own LMMF backward ramp (bimodal_fit_ensemble): K grid and R min / max / SD per window (2nd half)."""
     d, _ = BE.load_run(N, SEED_EX)
-    Rw = d["R_lmmf"][m["k"]]                                   # (nK, ns)
-    sd = Rw[:, Rw.shape[1] // 2:].std(1)
-    if sd.max() < OSC_MIN:
-        return None
-    Ks = float(d["K"][int(np.argmax(sd))])
+    Rw = d["R_lmmf"][m["k"]][:, d["R_lmmf"].shape[-1] // 2:]
+    return d["K"], Rw.min(1), Rw.max(1), Rw.std(1)
+
+
+def lc_seed(m, w, Om, De, K_target, dt=0.02, hold=BE.HOLD, close_tol=CLOSE_TOL):
+    """Simulation seed of a limit cycle in the pinned co-rotating frame (component 0 = largest weight, real) at
+    K_target, reached like the ramp: from a synchronised start at the top of the K grid, stepping DOWN the grid
+    (hold time units per step) to K_target (same attractor as the ramp). The orbit is accepted if it closes after 1-3
+    R-oscillation periods (max |Δz| < close_tol); otherwise the motion is quasi-periodic -> returns (None, err).
+    Returns ((period, columns), err)."""
     a = 1j * Om - De; z = np.full(w.size, 0.9 + 0j) * np.exp(1j * np.linspace(0, 1, w.size))
-    F = lambda z_: a * z_ + 0.5 * (Ks * (z_ @ w) - np.conj(Ks * (z_ @ w)) * z_ * z_)
-    def step(z_):
+    def step(z_, K):
+        F = lambda u: a * u + 0.5 * (K * (u @ w) - np.conj(K * (u @ w)) * u * u)
         k1 = F(z_); k2 = F(z_ + 0.5 * dt * k1); k3 = F(z_ + 0.5 * dt * k2); k4 = F(z_ + dt * k3)
         return z_ + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-    for _ in range(int(T_settle / dt)):
-        z = step(z)
-    pin = lambda z_: z_ * np.exp(-1j * np.angle(z_[0]))       # co-rotating, component 0 real
+    for K in BE.K_GRID[::-1]:
+        if K < K_target - 1e-9:
+            break
+        for _ in range(int(hold / dt)):
+            z = step(z, K)
+    for _ in range(int(1000.0 / dt)):                         # extra settling at K_target
+        z = step(z, K_target)
+    pin = lambda z_: z_ * np.exp(-1j * np.angle(z_[0]))
     traj = [pin(z)]
     for _ in range(int(200.0 / dt)):
-        z = step(z); traj.append(pin(z))
+        z = step(z, K_target); traj.append(pin(z))
     traj = np.array(traj); R = np.abs(traj @ w)
     up = np.flatnonzero((R[:-1] < R.mean()) & (R[1:] >= R.mean()))
-    if up.size < 3:
-        return None
-    # fundamental period: smallest multiple of the R-crossing interval that closes the orbit in the pinned frame
+    if up.size < 4:
+        return None, np.inf
     base = int(np.median(np.diff(up))); i0 = up[1]
-    best = min(((np.abs(traj[i0 + q * base] - traj[i0]).max(), q) for q in (1, 2, 3)
-                if i0 + q * base < traj.shape[0]))
-    n_per = best[1] * base
-    orbit = traj[i0:i0 + n_per + 1]
+    err, q = min(((np.abs(traj[i0 + q * base] - traj[i0]).max(), q) for q in (1, 2, 3)
+                  if i0 + q * base < traj.shape[0]))
+    if err > close_tol:
+        return None, err
+    orbit = traj[i0:i0 + q * base + 1]
     cols = {"x0": orbit[:, 0].real}
     for j in range(1, w.size):
         cols[f"x{j}"] = orbit[:, j].real; cols[f"y{j}"] = orbit[:, j].imag
-    return Ks, n_per * dt, cols, None
+    return (q * base * dt, cols), err
+
+
+def covered(lcs, K, Rmax, tol=0.05):
+    """True if a STABLE continued limit cycle passes through K with R max within tol of Rmax (linear interpolation
+    between consecutive stored points that are both stable; the stored points are sparse in K)."""
+    for lc in lcs:
+        Kb, st, Rb = lc["K"], lc["stable"].astype(bool), lc["Rmax"]
+        for j in range(Kb.size - 1):
+            if st[j] and st[j + 1] and Kb[j] != Kb[j + 1] and min(Kb[j], Kb[j + 1]) <= K <= max(Kb[j], Kb[j + 1]):
+                if abs(Rb[j] + (Rb[j + 1] - Rb[j]) * (K - Kb[j]) / (Kb[j + 1] - Kb[j]) - Rmax) < tol:
+                    return True
+    return False
 
 
 def par_index(name):
@@ -143,35 +167,48 @@ def run_case(N, tag):
     n_hb = int(np.sum(eq["bif"] == "HB"))
     log.append(f"eq: {eq['K'].size} pts, LP {np.round(eq['K'][eq['bif'] == 'LP'], 3)}, "
                f"HB {np.round(eq['K'][eq['bif'] == 'HB'], 3)}")
-    # limit cycle (standing wave / cluster beating): seeded from a simulation at the K of strongest oscillation
-    seed = lc_seed(N, m, w, Om, De)
-    if seed is None:
-        log.append("lc: no oscillation along the ramp (K ≤ 3) -> no limit cycle")
-    else:
-        Ks, T, orbit, names = seed
-        write_lc_seed(orbit, T, names, "lcseed.dat")
-        par = par_index("K")
+    # limit cycles (standing waves / cluster beating), seeded from simulations of the ramp: first at the window of
+    # strongest oscillation, then in every oscillating window not yet covered by a stable continued cycle; windows whose
+    # orbit does not close are quasi-periodic (drawn from the simulation in the figure)
+    Kg, Rlo, Rhi, Rsd = ramp_windows(N, m)
+    osc = np.flatnonzero(Rsd > OSC_MIN)
+    par = par_index("K"); tried, qp = [], []
+    order = list(osc[np.argsort(-Rsd[osc])])
+    while order and len(tried) < MAX_LC:
+        i = order.pop(0)
+        if covered(lcs, Kg[i], Rhi[i]) or any(abs(Kg[i] - t_) < 0.15 for t_ in tried):
+            continue
+        tried.append(Kg[i])
+        seed, err = lc_seed(m, w, Om, De, float(Kg[i]))
+        if seed is None:
+            qp.append(float(Kg[i])); log.append(f"seed K = {Kg[i]:.2f}: orbit does not close (err {err:.1e}) -> quasi-periodic")
+            continue
+        T, orbit = seed
+        q = len(lcs)
+        write_lc_seed(orbit, T, None, f"lcseed{q}.dat")
         parts = []
         for d_, ds in (("a", 1e-3), ("b", -1e-3)):
-            nm = "lc" + d_
+            nm = f"lc{q}{d_}"
             try:
-                ode.run(name=nm, dat="lcseed", c="lc", NDIM=2 * M - 1, NPAR=36, PAR={par: Ks}, IPS=2, ISW=1,
-                        ICP=["K", 11], NTST=LC_NTST, NCOL=4, ILP=1, ISP=2, NMX=LC_NMX, NPR=10, DS=ds, DSMIN=1e-10,
-                        DSMAX=LC_DSMAX, EPSL=1e-7, EPSU=1e-7, EPSS=1e-6, RL0=K_MIN, RL1=K_LC_MAX,
+                ode.run(name=nm, dat=f"lcseed{q}", c="lc", NDIM=2 * M - 1, NPAR=36, PAR={par: float(Kg[i])}, IPS=2,
+                        ISW=1, ICP=["K", 11], NTST=LC_NTST, NCOL=4, ILP=1, ISP=2, NMX=LC_NMX, NPR=LC_NPR, DS=ds,
+                        DSMIN=1e-10, DSMAX=LC_DSMAX, EPSL=1e-7, EPSU=1e-7, EPSS=1e-6, RL0=K_MIN, RL1=K_LC_MAX,
                         THL={11: 0.0}, UZSTOP={11: SB.LC_PERIOD_MAX}, get_stability=True)
-                lc = SB.lc_branch(ode, nm, w, M)
-                parts.append(lc)
+                parts.append(SB.lc_branch(ode, nm, w, M))
             except Exception as e:
                 log.append(f"{nm}: FAILED ({type(e).__name__}: {str(e)[:80]})")
         if parts:
             lc = {k: (np.concatenate([parts[0][k][::-1]] + [p_[k] for p_ in parts[1:]])
                       if isinstance(parts[0][k], np.ndarray) else parts[0][k]) for k in parts[0]}
             lcs.append(lc)
-            log.append(f"lc (seed K = {Ks:.2f}, T = {T:.2f}): K ∈ [{np.nanmin(lc['K']):.3f}, {np.nanmax(lc['K']):.3f}],"
-                       f" R ∈ [{np.nanmin(lc['Rmin']):.2f}, {np.nanmax(lc['Rmax']):.2f}], stable "
-                       f"{np.mean(lc['stable']):.0%}")
+            log.append(f"lc{q} (seed K = {Kg[i]:.2f}, T = {T:.2f}): K ∈ [{np.nanmin(lc['K']):.3f}, "
+                       f"{np.nanmax(lc['K']):.3f}], R ∈ [{np.nanmin(lc['Rmin']):.2f}, {np.nanmax(lc['Rmax']):.2f}], "
+                       f"stable {np.mean(lc['stable']):.0%}")
+    uncov = [float(Kg[i]) for i in osc if not covered(lcs, Kg[i], Rhi[i])]
+    log.append(f"oscillating windows without a stable continued cycle: {np.round(uncov, 2).tolist()}")
     ode.close_session(clear_files=True); clear(circ)
-    np.save(out_file(N, tag), dict(N=N, tag=tag, model=m, eq=eq, lc=lcs, log=log), allow_pickle=True)
+    np.save(out_file(N, tag), dict(N=N, tag=tag, model=m, eq=eq, lc=lcs, log=log, quasi_periodic=qp,
+                                   uncovered=uncov, ramp=dict(K=Kg, Rmin=Rlo, Rmax=Rhi, Rsd=Rsd)), allow_pickle=True)
     print(f"[auto] N = {N} {tag} (M = {M}; {time.time() - t0:.0f} s)\n   " + "\n   ".join(log), flush=True)
 
 

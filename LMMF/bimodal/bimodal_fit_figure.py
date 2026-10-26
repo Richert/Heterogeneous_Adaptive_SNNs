@@ -8,7 +8,10 @@ One ROW per sample size N (bimodal_fit_ensemble.N_LIST), five columns:
   (2) network R(t) along the backward K-ramp (α = 0; 100 time units per K step, K strip on top) with the bifurcation
       diagrams of the two example fits overlaid as continuous lines (K mapped onto the ramp time, each grid K at the
       centre of its window; PyCoBi, bimodal_fit_examples.py): STABLE equilibria (incl. the incoherent R = 0 below the
-      onset K) and R min / max of STABLE limit cycles; unstable solutions are not shown
+      onset K) and R min / max of STABLE limit cycles; unstable solutions are not shown. Markers where a drawn state
+      changes stability: Hopf (square), fold (circle), torus (diamond), period doubling (X), onset of incoherence
+      (triangle). Light bands: oscillating ramp windows of the example without a stable continued cycle
+      (quasi-periodic; R range from the example's simulated ramp)
   (3) spectral RMSE (LMMF vs network ramp): colour = mean over the samples, text = SD
   (4) fit loss in units of the noise floor, D / (1/(6N)): colour = mean, text = SD
   (5) number of Lorentzians M*: colour = mean, text = range (min–max)
@@ -32,6 +35,7 @@ MS_FIGURES = "/home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures"
 C_EX = {"low": "#7b2cbf", "high": "#2a78d6"}
 C_NET, C_HIST, C_TRUE = "0.5", "0.85", "0.3"
 FLOOR_FRAC = 0.5
+MARKERS = {"HB": "s", "LP": "o", "TR": "D", "PD": "X"}      # bifurcation markers (onset of incoherence: "^")
 
 
 def true_pdf(x):
@@ -64,6 +68,31 @@ def diagram_on_ramp(ax, ex, Ks_desc, Tw, col):
         ok = lc["stable"].astype(bool) & inr(lc["K"])
         for key in ("Rmin", "Rmax"):
             ax.plot(tK(lc["K"]), np.where(ok, lc[key], np.nan), **kw)
+    # oscillating ramp windows without a stable continued cycle (quasi-periodic): simulated R range
+    import bimodal_fit_examples as BX_
+    rp = ex.get("ramp")
+    unc = [] if rp is None else [K for K, sd, hi in zip(rp["K"], rp["Rsd"], rp["Rmax"])
+                                 if sd > BX_.OSC_MIN and not BX_.covered(ex["lc"], K, hi)]
+    for K in unc:
+        i = int(np.argmin(np.abs(rp["K"] - K)))
+        ax.fill_between([tK(K) - 0.5 * Tw, tK(K) + 0.5 * Tw], rp["Rmin"][i], rp["Rmax"][i], color=col, alpha=0.22,
+                        lw=0, zorder=3)
+    # bifurcation markers where the stability of a drawn state changes, and the onset of the incoherent state
+    mk = dict(ms=4.2, mfc="w", mec=col, mew=1.0, zorder=6, ls="none")
+    if K_lo <= K_on <= K_hi + 0.5 * dK:
+        ax.plot(tK(K_on), 0.0, marker="^", **mk)
+    for br, keys in ((eq, ("R",)), *((lc, ("Rmin", "Rmax")) for lc in ex["lc"])):
+        if br is None or not br["K"].size:
+            continue
+        st = br["stable"].astype(bool)
+        for j, b in enumerate(br["bif"]):
+            if b not in MARKERS or not inr(br["K"][j]):
+                continue
+            lo, hi = max(j - 1, 0), min(j + 1, st.size - 1)
+            if st[lo] == st[hi]:                                  # no change of stability: not drawn
+                continue
+            for key in keys:
+                ax.plot(tK(br["K"][j]), br[key][j], marker=MARKERS[b], **mk)
 
 
 def _vD(stats):
@@ -97,6 +126,7 @@ def main(show=False):
                           width_ratios=[1.05, 1.75, 0.82, 0.82, 0.82], left=0.06, right=0.99, top=1 - 0.25 / H,
                           bottom=0.02, wspace=0.42, hspace=0.38)
     letters = iter("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    ramp_axes = []
     ims = {}
     for r, N in enumerate(Ns):
         ex = {t: np.load(BX.out_file(N, t), allow_pickle=True).item() for t in ("low", "high")}
@@ -123,7 +153,7 @@ def main(show=False):
         a.set_xlim(-4, 4); a.set_yticks([]); a.set_ylabel(f"$N = {N:,}$".replace(",", "\\,") + "\n"
                                                           + r"$\rho(\omega)$", labelpad=2)
         # (2) network ramp + diagrams
-        c = ax[1]
+        c = ax[1]; ramp_axes.append(c)
         Ks_desc = d["K"][::-1]; ns = d["R_net"].shape[-1]; Tw = (ns - 1) * float(d["dts"])
         t_ = np.concatenate([i * Tw + np.arange(ns - 1) * float(d["dts"]) for i in range(Ks_desc.size)])
         seg = lambda arr: np.concatenate([arr[ik, :-1] for ik in range(d["K"].size - 1, -1, -1)])
@@ -188,9 +218,17 @@ def main(show=False):
           Line2D([], [], color=C_EX["low"], lw=1.2, label="LMMF, few components"),
           Line2D([], [], color=C_EX["high"], lw=1.2, label="LMMF, many components"),
           Line2D([], [], color="0.3", lw=1.4, label="LMMF stable states\n(limit cycles: $R$ min, max)"),
+          Patch(fc="0.3", alpha=0.22, label="quasi-periodic (simulation)"),
           Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, label="noise-floor fit ($\\geq$50 % of samples)")]
     lg.legend(handles=hd, loc="center left", ncol=3, frameon=False, fontsize=6, handlelength=1.6, columnspacing=1.0,
               handletextpad=0.4, borderaxespad=0.0)
+    mk = dict(ls="none", ms=4.2, mfc="w", mec="0.3", mew=1.0)          # bifurcation-marker key in the last ramp panel
+    ramp_axes[-1].legend(handles=[Line2D([], [], marker="^", label="onset of incoherence", **mk),
+                                  Line2D([], [], marker="s", label="Hopf", **mk),
+                                  Line2D([], [], marker="o", label="fold", **mk),
+                                  Line2D([], [], marker="D", label="torus", **mk)],
+                         loc="upper right", bbox_to_anchor=(1.0, 0.88), fontsize=5.8, frameon=True, framealpha=0.9,
+                         edgecolor="none", handletextpad=0.3, labelspacing=0.25, borderpad=0.3)
     for j, key, lab in ((2, "rmse", "mean RMSE\n" + r"(text: SD $\times 10^{3}$)"),
                         (3, "D", r"mean $D\,/\,\frac{1}{6N}$" + "\n" + r"(text: SD; $<1$: below floor)"),
                         (4, "M", "mean $M^*$\n(text: range)")):
