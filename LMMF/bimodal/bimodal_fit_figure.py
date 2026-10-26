@@ -9,14 +9,18 @@ One ROW per sample size N (bimodal_fit_ensemble.N_LIST), five columns:
       diagrams of the two example fits overlaid as continuous lines (K mapped onto the ramp time, each grid K at the
       centre of its window; PyCoBi, bimodal_fit_examples.py): STABLE equilibria (incl. the incoherent R = 0 below the
       onset K) and R min / max of STABLE limit cycles; unstable solutions are not shown. Markers where a drawn state
-      changes stability: Hopf (square), fold (circle), torus (diamond), period doubling (X), onset of incoherence
-      (triangle). Light bands: oscillating ramp windows of the example without a stable continued cycle
-      (quasi-periodic; R range from the example's simulated ramp)
+      changes stability: Hopf (square), fold (circle), torus (diamond), period doubling (X), and the Hopf bifurcation of
+      the incoherent state (triangle; the critical mode has a cluster frequency, Ω_c ≈ ±1.5-2.2, for all examples).
+      Light bands: ramp windows where the example's simulated attractor is not a drawn stable state (no stable
+      equilibrium / limit cycle at that K, or a quasi-periodic oscillation); R range from the example's own ramp.
+      The legend lists only the marker types drawn.
   (3) spectral RMSE (LMMF vs network ramp): colour = mean over the samples, text = SD
   (4) fit loss in units of the noise floor, D / (1/(6N)): colour = mean, text = SD
   (5) number of Lorentzians M*: colour = mean, text = range (min–max)
 Heatmaps: rows M_max, columns λ; all fits WITHOUT a noise floor. Outlined cells: the no-floor fit equals the fit the
-noise-floor rule would have returned for that sample (LM.fit floor_c = 1, λ = 0, M_max = 16) in ≥ 50 % of the samples.
+noise-floor rule would have returned for that sample (LM.fit floor_c = 1, λ = 0, M_max = 16) in ≥ 50 % of the samples;
+if no cell qualifies (the floor fit's M* lies between grid cells, e.g. N = 10k: M* = 9), the cell whose mean M* is
+closest to the floor fit's is outlined dashed.
 Colour scales are shared across the rows (RMSE, D/floor: logarithmic).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python bimodal_fit_figure.py [--show]
@@ -35,7 +39,7 @@ MS_FIGURES = "/home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures"
 C_EX = {"low": "#7b2cbf", "high": "#2a78d6"}
 C_NET, C_HIST, C_TRUE = "0.5", "0.85", "0.3"
 FLOOR_FRAC = 0.5
-MARKERS = {"HB": "s", "LP": "o", "TR": "D", "PD": "X"}      # bifurcation markers (onset of incoherence: "^")
+MARKERS = {"HB": "s", "LP": "o", "TR": "D", "PD": "X"}      # bifurcation markers (Hopf of the incoherent state: "^")
 
 
 def true_pdf(x):
@@ -68,19 +72,32 @@ def diagram_on_ramp(ax, ex, Ks_desc, Tw, col):
         ok = lc["stable"].astype(bool) & inr(lc["K"])
         for key in ("Rmin", "Rmax"):
             ax.plot(tK(lc["K"]), np.where(ok, lc[key], np.nan), **kw)
-    # oscillating ramp windows without a stable continued cycle (quasi-periodic): simulated R range
+    # ramp windows where the simulated attractor is not a drawn stable state: (i) no stable equilibrium / incoherent
+    # state / limit cycle exists at that K, or (ii) the window oscillates but no stable continued cycle matches it
+    # (quasi-periodic). Drawn as the simulated R range (non-stationary dynamics, from the example's own ramp)
     import bimodal_fit_examples as BX_
     rp = ex.get("ramp")
-    unc = [] if rp is None else [K for K, sd, hi in zip(rp["K"], rp["Rsd"], rp["Rmax"])
-                                 if sd > BX_.OSC_MIN and not BX_.covered(ex["lc"], K, hi)]
-    for K in unc:
-        i = int(np.argmin(np.abs(rp["K"] - K)))
+
+    def stable_here(K):
+        if K < K_on:
+            return True
+        for br in ([eq] if eq is not None and eq["K"].size else []) + list(ex["lc"]):
+            Kb, st = br["K"], br["stable"].astype(bool)
+            if np.any(st[:-1] & st[1:] & (np.minimum(Kb[:-1], Kb[1:]) <= K) & (np.maximum(Kb[:-1], Kb[1:]) >= K)):
+                return True
+        return False
+
+    band = [] if rp is None else [i for i, (K, sd, hi) in enumerate(zip(rp["K"], rp["Rsd"], rp["Rmax"]))
+                                  if not stable_here(K) or (sd > BX_.OSC_MIN and not BX_.covered(ex["lc"], K, hi))]
+    for i in band:
+        K = rp["K"][i]
         ax.fill_between([tK(K) - 0.5 * Tw, tK(K) + 0.5 * Tw], rp["Rmin"][i], rp["Rmax"][i], color=col, alpha=0.22,
                         lw=0, zorder=3)
-    # bifurcation markers where the stability of a drawn state changes, and the onset of the incoherent state
+    # bifurcation markers where the stability of a drawn state changes, and the Hopf point of the incoherent state
+    used = set()
     mk = dict(ms=4.2, mfc="w", mec=col, mew=1.0, zorder=6, ls="none")
     if K_lo <= K_on <= K_hi + 0.5 * dK:
-        ax.plot(tK(K_on), 0.0, marker="^", **mk)
+        ax.plot(tK(K_on), 0.0, marker="^", **mk); used.add("HB0")
     for br, keys in ((eq, ("R",)), *((lc, ("Rmin", "Rmax")) for lc in ex["lc"])):
         if br is None or not br["K"].size:
             continue
@@ -91,8 +108,10 @@ def diagram_on_ramp(ax, ex, Ks_desc, Tw, col):
             lo, hi = max(j - 1, 0), min(j + 1, st.size - 1)
             if st[lo] == st[hi]:                                  # no change of stability: not drawn
                 continue
+            used.add(b)
             for key in keys:
                 ax.plot(tK(br["K"][j]), br[key][j], marker=MARKERS[b], **mk)
+    return used, bool(band)
 
 
 def _vD(stats):
@@ -126,7 +145,7 @@ def main(show=False):
                           width_ratios=[1.05, 1.75, 0.82, 0.82, 0.82], left=0.06, right=0.99, top=1 - 0.25 / H,
                           bottom=0.02, wspace=0.42, hspace=0.38)
     letters = iter("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    ramp_axes = []
+    ramp_axes = []; used_all = set(); band_any = False; closest_used = False
     ims = {}
     for r, N in enumerate(Ns):
         ex = {t: np.load(BX.out_file(N, t), allow_pickle=True).item() for t in ("low", "high")}
@@ -159,7 +178,7 @@ def main(show=False):
         seg = lambda arr: np.concatenate([arr[ik, :-1] for ik in range(d["K"].size - 1, -1, -1)])
         c.plot(t_, seg(d["R_net"]), color=C_NET, lw=0.35, zorder=2)
         for t in ("low", "high"):
-            diagram_on_ramp(c, ex[t], Ks_desc, Tw, C_EX[t])
+            u_, b_ = diagram_on_ramp(c, ex[t], Ks_desc, Tw, C_EX[t]); used_all |= u_; band_any |= b_
         c.set_xlim(0, t_[-1]); c.set_ylim(-0.03, 1.12); c.set_ylabel(r"$R$", labelpad=2)
         strip = c.inset_axes([0.0, 0.905, 1.0, 0.095])
         strip.imshow(Ks_desc[None, :], aspect="auto", cmap="Greys", extent=[0, t_[-1], 0, 1],
@@ -174,6 +193,12 @@ def main(show=False):
         for sp in strip.spines.values():
             sp.set_linewidth(0.4)
         # (3)-(5) heatmaps: rows M_max, columns λ
+        # noise-floor outline: cells whose no-floor fit equals the floor fit in >= FLOOR_FRAC of the samples; if there is
+        # none (the floor M* lies between grid cells), the cell with the mean M* closest to the floor fit's (dashed)
+        exact_any = bool(np.any(same[r] >= FLOOR_FRAC))
+        dM = np.abs(stats["M"][0][r] - np.nanmean(S["floor_M"][r]))
+        closest = np.unravel_index(np.nanargmin(dM), dM.shape)
+        closest_used = closest_used or not exact_any
         for j, key in zip((2, 3, 4), ("rmse", "D", "M")):
             h = ax[j]; mean = stats[key][0][r]
             ims[key] = h.imshow(mean, origin="lower", aspect="auto", cmap=cmaps[key], norm=norms[key])
@@ -188,9 +213,10 @@ def main(show=False):
                     rgb = ims[key].cmap(ims[key].norm(mean[i, k]))[:3]
                     h.text(k, i, txt, ha="center", va="center", fontsize=5,
                            color="k" if 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] > 0.5 else "w")
-                    if same[r, i, k] >= FLOOR_FRAC:
+                    if same[r, i, k] >= FLOOR_FRAC or (not exact_any and (i, k) == closest):
                         h.add_patch(Rectangle((k - 0.46, i - 0.46), 0.92, 0.92, fill=False, ec="#f2c14e", lw=1.3,
-                                              zorder=5, path_effects=[pe.withStroke(linewidth=2.2, foreground="k")]))
+                                              ls="-" if exact_any else (0, (2.5, 1.2)), zorder=5,
+                                              path_effects=[pe.withStroke(linewidth=2.2, foreground="k")]))
             h.set_xticks(range(lam.size)); h.set_xticklabels([f"$10^{{{int(np.log10(l))}}}$" for l in lam])
             h.set_yticks(range(Mmax.size)); h.set_yticklabels([str(m) for m in Mmax])
             if j == 2:
@@ -218,15 +244,19 @@ def main(show=False):
           Line2D([], [], color=C_EX["low"], lw=1.2, label="LMMF, few components"),
           Line2D([], [], color=C_EX["high"], lw=1.2, label="LMMF, many components"),
           Line2D([], [], color="0.3", lw=1.4, label="LMMF stable states\n(limit cycles: $R$ min, max)"),
-          Patch(fc="0.3", alpha=0.22, label="quasi-periodic (simulation)"),
+          Patch(fc="0.3", alpha=0.22, label="non-stationary (simulation)"),
           Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, label="noise-floor fit ($\\geq$50 % of samples)")]
+    if closest_used:
+        hd.append(Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, ls=(0, (2.5, 1.2)),
+                            label="closest cell to it"))
+    if not band_any:
+        hd = [h_ for h_ in hd if h_.get_label() != "non-stationary (simulation)"]
     lg.legend(handles=hd, loc="center left", ncol=3, frameon=False, fontsize=6, handlelength=1.6, columnspacing=1.0,
               handletextpad=0.4, borderaxespad=0.0)
     mk = dict(ls="none", ms=4.2, mfc="w", mec="0.3", mew=1.0)          # bifurcation-marker key in the last ramp panel
-    ramp_axes[-1].legend(handles=[Line2D([], [], marker="^", label="onset of incoherence", **mk),
-                                  Line2D([], [], marker="s", label="Hopf", **mk),
-                                  Line2D([], [], marker="o", label="fold", **mk),
-                                  Line2D([], [], marker="D", label="torus", **mk)],
+    keys = [("HB0", "^", "Hopf (incoherent state)"), ("HB", "s", "Hopf"), ("LP", "o", "fold"), ("TR", "D", "torus"),
+            ("PD", "X", "period doubling")]
+    ramp_axes[-1].legend(handles=[Line2D([], [], marker=m_, label=l_, **mk) for k_, m_, l_ in keys if k_ in used_all],
                          loc="upper right", bbox_to_anchor=(1.0, 0.88), fontsize=5.8, frameon=True, framealpha=0.9,
                          edgecolor="none", handletextpad=0.3, labelspacing=0.25, borderpad=0.3)
     for j, key, lab in ((2, "rmse", "mean RMSE\n" + r"(text: SD $\times 10^{3}$)"),
