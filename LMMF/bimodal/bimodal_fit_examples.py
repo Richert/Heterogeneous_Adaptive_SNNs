@@ -31,7 +31,7 @@ import data_paths as dp
 import bimodal_fit_ensemble as BE
 
 SEED_EX = BE.SEED0
-LOW, HIGH = (2, 1e-3), (16, 1e-6)
+LOW, HIGH = (2, 1e-3), (16, 1e-5)
 K_START, K_MIN = 8.0, 0.01
 CASE_TIMEOUT, FORT9_MAX = 1800, 2e9
 K_LC_MAX = 3.3                                       # limit cycles are continued within the ramp range

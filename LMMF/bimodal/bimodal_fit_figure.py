@@ -14,14 +14,16 @@ One ROW per sample size N (bimodal_fit_ensemble.N_LIST), five columns:
       Light bands: ramp windows where the example's simulated attractor is not a drawn stable state (no stable
       equilibrium / limit cycle at that K, or a quasi-periodic oscillation); R range from the example's own ramp.
       The legend lists only the marker types drawn.
-  (3) spectral RMSE (LMMF vs network ramp): colour = mean over the samples, text = SD
-  (4) fit loss in units of the noise floor, D / (1/(6N)): colour = mean, text = SD
-  (5) number of Lorentzians M*: colour = mean, text = range (min–max)
-Heatmaps: rows M_max, columns λ; all fits WITHOUT a noise floor. Outlined cells: the no-floor fit equals the fit the
+  (3) spectral RMSE (LMMF vs network ramp, ×10^-3; linear colour scale): colour = mean over the samples, text =
+      range (min–max)
+  (4) fit loss in units of the noise floor, D / (1/(6N)): colour = mean, text = range
+  (5) number of Lorentzians M*: colour = mean, text = range
+Heatmaps: rows M_max ∈ SHOW_MMAX, columns λ ∈ SHOW_LAM (the ensemble also contains λ = 1e-6, which always runs into
+the M_max cap, and M_max = 1; both omitted); all fits WITHOUT a noise floor. Outlined cells: the no-floor fit equals the fit the
 noise-floor rule would have returned for that sample (LM.fit floor_c = 1, λ = 0, M_max = 16) in ≥ 50 % of the samples;
 if no cell qualifies (the floor fit's M* lies between grid cells, e.g. N = 10k: M* = 9), the cell whose mean M* is
 closest to the floor fit's is outlined dashed.
-Colour scales are shared across the rows (RMSE, D/floor: logarithmic).
+Colour scales are shared across the rows (D/floor: logarithmic, centred on 1).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python bimodal_fit_figure.py [--show]
 Output: /home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures/bimodal_distributions.{png,svg,pdf}
@@ -39,6 +41,9 @@ MS_FIGURES = "/home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures"
 C_EX = {"low": "#7b2cbf", "high": "#2a78d6"}
 C_NET, C_HIST, C_TRUE = "0.5", "0.85", "0.3"
 FLOOR_FRAC = 0.5
+SHOW_MMAX, SHOW_LAM = (2, 4, 8, 16), (1e-5, 1e-4, 1e-3)        # heatmap grid shown (λ = 1e-6, M_max = 1 omitted)
+_g1 = lambda v: f"{v:.0f}" if v >= 10 else (f"{v:.1f}" if v >= 1 else f"{v:.1g}")
+FMT = dict(rmse=lambda v: f"{v:.1f}", D=_g1, M=lambda v: f"{v:.0f}")
 MARKERS = {"HB": "s", "LP": "o", "TR": "D", "PD": "X"}      # bifurcation markers (incl. the Hopf point of the incoherent state)
 
 
@@ -131,12 +136,13 @@ def main(show=False):
     from prl_style import set_prl_style, pnas_panel_label, PNAS_DOUBLE
     set_prl_style("pnas")
     S = np.load(os.path.join(BE.OUT, "summary.npz"))
-    Ns, Mmax, lam = S["N"], S["M_max"], S["lam"]
-    rmse, D, M = S["rmse"], S["D"] / S["noise_floor"][:, None, None, None], S["M"]
-    same = np.nanmean(S["same_floor"].astype(float), axis=1)                   # (N, M_max, λ)
-    stats = dict(rmse=(np.nanmean(rmse, 1), np.nanstd(rmse, 1)), D=(np.nanmean(D, 1), np.nanstd(D, 1)),
-                 M=(np.nanmean(M, 1), np.nanmin(M, 1), np.nanmax(M, 1)))
-    norms = dict(rmse=LogNorm(np.nanmin(stats["rmse"][0]), np.nanmax(stats["rmse"][0])),
+    iM = [i for i, m in enumerate(S["M_max"]) if m in SHOW_MMAX]; iL = [j for j, l in enumerate(S["lam"]) if l in SHOW_LAM]
+    sub = lambda A: A[:, :, iM][:, :, :, iL]                                   # (N, seed, M_max, λ) -> shown grid
+    Ns, Mmax, lam = S["N"], S["M_max"][iM], S["lam"][iL]
+    rmse, D, M = 1e3 * sub(S["rmse"]), sub(S["D"]) / S["noise_floor"][:, None, None, None], sub(S["M"])
+    same = np.nanmean(sub(S["same_floor"]).astype(float), axis=1)              # (N, M_max, λ)
+    stats = {k: (np.nanmean(A, 1), np.nanmin(A, 1), np.nanmax(A, 1)) for k, A in (("rmse", rmse), ("D", D), ("M", M))}
+    norms = dict(rmse=Normalize(np.nanmin(stats["rmse"][0]), np.nanmax(stats["rmse"][0])),
                  D=LogNorm(10 ** -_vD(stats), 10 ** _vD(stats)), M=Normalize(1, BE.M_TRACE))
     cmaps = dict(rmse="Reds", D="BrBG_r", M="Purples")
     H = 1.75 * len(Ns) + 0.75
@@ -204,12 +210,11 @@ def main(show=False):
             ims[key] = h.imshow(mean, origin="lower", aspect="auto", cmap=cmaps[key], norm=norms[key])
             for i in range(Mmax.size):
                 for k in range(lam.size):
-                    if key == "M":
-                        lo, hi = stats["M"][1][r, i, k], stats["M"][2][r, i, k]
-                        txt = f"{lo:.0f}" if lo == hi else f"{lo:.0f}–{hi:.0f}"
-                    else:
-                        sd = stats[key][1][r, i, k]
-                        txt = f"{1e3 * sd:.1f}" if key == "rmse" else (f"{sd:.1g}" if sd < 10 else f"{sd:.0f}")
+                    lo, hi = stats[key][1][r, i, k], stats[key][2][r, i, k]
+                    f_ = FMT[key]
+                    txt = f_(lo) if f_(lo) == f_(hi) else f"{f_(lo)}–{f_(hi)}"
+                    if "–" in txt:                                          # ranges on two lines
+                        txt = f"{f_(lo)}–\n{f_(hi)}"
                     rgb = ims[key].cmap(ims[key].norm(mean[i, k]))[:3]
                     h.text(k, i, txt, ha="center", va="center", fontsize=5,
                            color="k" if 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] > 0.5 else "w")
@@ -259,13 +264,12 @@ def main(show=False):
     ramp_axes[-1].legend(handles=[Line2D([], [], marker=m_, label=l_, **mk) for k_, m_, l_ in keys if k_ in used_all],
                          loc="upper right", bbox_to_anchor=(1.0, 0.88), fontsize=5.8, frameon=True, framealpha=0.9,
                          edgecolor="none", handletextpad=0.3, labelspacing=0.25, borderpad=0.3)
-    for j, key, lab in ((2, "rmse", "mean RMSE\n" + r"(text: SD $\times 10^{3}$)"),
-                        (3, "D", r"mean $D\,/\,\frac{1}{6N}$" + "\n" + r"(text: SD; $<1$: below floor)"),
-                        (4, "M", "mean $M^*$\n(text: range)")):
+    for j, key, lab in ((2, "rmse", r"mean RMSE ($\times 10^{-3}$)"), (3, "D", r"mean $D\,/\,\frac{1}{6N}$"),
+                        (4, "M", "mean $M^*$")):
         host = fig.add_subplot(gs[-1, j]); host.axis("off")
         cax = host.inset_axes([0.05, 0.55, 0.9, 0.18])
         cb = fig.colorbar(ims[key], cax=cax, orientation="horizontal")
-        cb.set_label(lab, fontsize=6, labelpad=1); cb.ax.tick_params(labelsize=5.5)
+        cb.set_label(lab, fontsize=6, labelpad=1); cb.ax.tick_params(labelsize=5.5); cb.ax.minorticks_off()
     os.makedirs(MS_FIGURES, exist_ok=True)
     out = os.path.join(MS_FIGURES, "bimodal_distributions")
     for ext in (".png", ".svg", ".pdf"):
