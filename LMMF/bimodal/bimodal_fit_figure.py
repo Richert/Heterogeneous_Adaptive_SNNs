@@ -9,8 +9,8 @@ One ROW per sample size N (bimodal_fit_ensemble.N_LIST), five columns:
       diagrams of the two example fits overlaid as continuous lines (K mapped onto the ramp time, each grid K at the
       centre of its window; PyCoBi, bimodal_fit_examples.py): STABLE equilibria (incl. the incoherent R = 0 below the
       onset K) and R min / max of STABLE limit cycles; unstable solutions are not shown. Markers where a drawn state
-      changes stability: Hopf (square), fold (circle), torus (diamond), period doubling (X), and the Hopf bifurcation of
-      the incoherent state (triangle; the critical mode has a cluster frequency, Ω_c ≈ ±1.5-2.2, for all examples).
+      changes stability: Hopf (square), fold (circle), torus (diamond), period doubling (X), including the Hopf bifurcation
+      of the incoherent state (square at R = 0; the critical mode has a cluster frequency, Ω_c ≈ ±1.5-2.2, for all examples).
       Light bands: ramp windows where the example's simulated attractor is not a drawn stable state (no stable
       equilibrium / limit cycle at that K, or a quasi-periodic oscillation); R range from the example's own ramp.
       The legend lists only the marker types drawn.
@@ -39,7 +39,7 @@ MS_FIGURES = "/home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures"
 C_EX = {"low": "#7b2cbf", "high": "#2a78d6"}
 C_NET, C_HIST, C_TRUE = "0.5", "0.85", "0.3"
 FLOOR_FRAC = 0.5
-MARKERS = {"HB": "s", "LP": "o", "TR": "D", "PD": "X"}      # bifurcation markers (Hopf of the incoherent state: "^")
+MARKERS = {"HB": "s", "LP": "o", "TR": "D", "PD": "X"}      # bifurcation markers (incl. the Hopf point of the incoherent state)
 
 
 def true_pdf(x):
@@ -91,13 +91,13 @@ def diagram_on_ramp(ax, ex, Ks_desc, Tw, col):
                                   if not stable_here(K) or (sd > BX_.OSC_MIN and not BX_.covered(ex["lc"], K, hi))]
     for i in band:
         K = rp["K"][i]
-        ax.fill_between([tK(K) - 0.5 * Tw, tK(K) + 0.5 * Tw], rp["Rmin"][i], rp["Rmax"][i], color=col, alpha=0.22,
+        ax.fill_between([tK(K) - 0.5 * Tw, tK(K) + 0.5 * Tw], rp["Rmin"][i], rp["Rmax"][i], color=col, alpha=0.38,
                         lw=0, zorder=3)
     # bifurcation markers where the stability of a drawn state changes, and the Hopf point of the incoherent state
     used = set()
     mk = dict(ms=4.2, mfc="w", mec=col, mew=1.0, zorder=6, ls="none")
     if K_lo <= K_on <= K_hi + 0.5 * dK:
-        ax.plot(tK(K_on), 0.0, marker="^", **mk); used.add("HB0")
+        ax.plot(tK(K_on), 0.0, marker="s", **mk); used.add("HB")
     for br, keys in ((eq, ("R",)), *((lc, ("Rmin", "Rmax")) for lc in ex["lc"])):
         if br is None or not br["K"].size:
             continue
@@ -244,7 +244,7 @@ def main(show=False):
           Line2D([], [], color=C_EX["low"], lw=1.2, label="LMMF, few components"),
           Line2D([], [], color=C_EX["high"], lw=1.2, label="LMMF, many components"),
           Line2D([], [], color="0.3", lw=1.4, label="LMMF stable states\n(limit cycles: $R$ min, max)"),
-          Patch(fc="0.3", alpha=0.22, label="non-stationary (simulation)"),
+          Patch(fc="0.3", alpha=0.38, label="non-stationary (simulation)"),
           Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, label="noise-floor fit ($\\geq$50 % of samples)")]
     if closest_used:
         hd.append(Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, ls=(0, (2.5, 1.2)),
@@ -254,7 +254,7 @@ def main(show=False):
     lg.legend(handles=hd, loc="center left", ncol=3, frameon=False, fontsize=6, handlelength=1.6, columnspacing=1.0,
               handletextpad=0.4, borderaxespad=0.0)
     mk = dict(ls="none", ms=4.2, mfc="w", mec="0.3", mew=1.0)          # bifurcation-marker key in the last ramp panel
-    keys = [("HB0", "^", "Hopf (incoherent state)"), ("HB", "s", "Hopf"), ("LP", "o", "fold"), ("TR", "D", "torus"),
+    keys = [("HB", "s", "Hopf"), ("LP", "o", "fold"), ("TR", "D", "torus"),
             ("PD", "X", "period doubling")]
     ramp_axes[-1].legend(handles=[Line2D([], [], marker=m_, label=l_, **mk) for k_, m_, l_ in keys if k_ in used_all],
                          loc="upper right", bbox_to_anchor=(1.0, 0.88), fontsize=5.8, frameon=True, framealpha=0.9,
