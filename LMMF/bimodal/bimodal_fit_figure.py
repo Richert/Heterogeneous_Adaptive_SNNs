@@ -22,7 +22,7 @@ Heatmaps: rows M_max ∈ SHOW_MMAX, columns λ ∈ SHOW_LAM (the ensemble also c
 the M_max cap, and M_max = 1; both omitted); all fits WITHOUT a noise floor. Outlined cells: the no-floor fit equals the fit the
 noise-floor rule would have returned for that sample (LM.fit floor_c = 1, λ = 0, M_max = 16) in ≥ 50 % of the samples;
 if no cell qualifies (the floor fit's M* lies between grid cells, e.g. N = 10k: M* = 9), the cell whose mean M* is
-closest to the floor fit's is outlined dashed.
+closest to the floor fit's is outlined dashed (all cells within 0.25 of that closest mean, i.e. ties).
 Colour scales are shared across the rows (D/floor: logarithmic, centred on 1).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python bimodal_fit_figure.py [--show]
@@ -203,7 +203,7 @@ def main(show=False):
         # none (the floor M* lies between grid cells), the cell with the mean M* closest to the floor fit's (dashed)
         exact_any = bool(np.any(same[r] >= FLOOR_FRAC))
         dM = np.abs(stats["M"][0][r] - np.nanmean(S["floor_M"][r]))
-        closest = np.unravel_index(np.nanargmin(dM), dM.shape)
+        closest = set(zip(*np.nonzero(dM <= np.nanmin(dM) + 0.25)))         # ties within 0.25 in mean M*
         closest_used = closest_used or not exact_any
         for j, key in zip((2, 3, 4), ("rmse", "D", "M")):
             h = ax[j]; mean = stats[key][0][r]
@@ -218,7 +218,7 @@ def main(show=False):
                     rgb = ims[key].cmap(ims[key].norm(mean[i, k]))[:3]
                     h.text(k, i, txt, ha="center", va="center", fontsize=5,
                            color="k" if 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] > 0.5 else "w")
-                    if same[r, i, k] >= FLOOR_FRAC or (not exact_any and (i, k) == closest):
+                    if same[r, i, k] >= FLOOR_FRAC or (not exact_any and (i, k) in closest):
                         h.add_patch(Rectangle((k - 0.46, i - 0.46), 0.92, 0.92, fill=False, ec="#f2c14e", lw=1.3,
                                               ls="-" if exact_any else (0, (2.5, 1.2)), zorder=5,
                                               path_effects=[pe.withStroke(linewidth=2.2, foreground="k")]))
@@ -253,7 +253,7 @@ def main(show=False):
           Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, label="noise-floor fit ($\\geq$50 % of samples)")]
     if closest_used:
         hd.append(Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, ls=(0, (2.5, 1.2)),
-                            label="closest cell to it"))
+                            label="closest cells to it"))
     if not band_any:
         hd = [h_ for h_ in hd if h_.get_label() != "non-stationary (simulation)"]
     lg.legend(handles=hd, loc="center left", ncol=3, frameon=False, fontsize=6, handlelength=1.6, columnspacing=1.0,
