@@ -19,10 +19,11 @@ One ROW per sample size N (bimodal_fit_ensemble.N_LIST), five columns:
   (4) fit loss in units of the noise floor, D / (1/(6N)): colour = mean, text = range
   (5) number of Lorentzians M*: colour = mean, text = range
 Heatmaps: rows M_max ∈ SHOW_MMAX, columns λ ∈ SHOW_LAM (the ensemble also contains λ = 1e-6, which always runs into
-the M_max cap, and M_max = 1; both omitted); all fits WITHOUT a noise floor. Outlined cells: the no-floor fit equals the fit the
-noise-floor rule would have returned for that sample (LM.fit floor_c = 1, λ = 0, M_max = 16) in ≥ 50 % of the samples;
-if no cell qualifies (the floor fit's M* lies between grid cells, e.g. N = 10k: M* = 9), the cell whose mean M* is
-closest to the floor fit's is outlined dashed (all cells within 0.25 of that closest mean, i.e. ties).
+the M_max cap, and M_max = 1; both omitted); all fits WITHOUT a noise floor. Outlined cells (solid): where the noise-floor
+fit lands — the no-floor fit equals the fit the noise-floor rule would have returned for that sample (LM.fit
+floor_c = 1, λ = 0, M_max = 16) in ≥ 50 % of the samples, or the cell's mean M* lies within the range of the floor fit's
+M* over the samples; if no cell qualifies (floor M* between grid cells, e.g. N = 10k: M* = 9), the cells whose mean M*
+is closest to the floor fit's (ties within 0.25).
 Colour scales are shared across the rows (D/floor: logarithmic, centred on 1).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python bimodal_fit_figure.py [--show]
@@ -151,7 +152,7 @@ def main(show=False):
                           width_ratios=[1.05, 1.75, 0.82, 0.82, 0.82], left=0.06, right=0.99, top=1 - 0.25 / H,
                           bottom=0.02, wspace=0.42, hspace=0.38)
     letters = iter("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    ramp_axes = []; used_all = set(); band_any = False; closest_used = False
+    ramp_axes = []; used_all = set(); band_any = False
     ims = {}
     for r, N in enumerate(Ns):
         ex = {t: np.load(BX.out_file(N, t), allow_pickle=True).item() for t in ("low", "high")}
@@ -201,10 +202,10 @@ def main(show=False):
         # (3)-(5) heatmaps: rows M_max, columns λ
         # noise-floor outline: cells whose no-floor fit equals the floor fit in >= FLOOR_FRAC of the samples; if there is
         # none (the floor M* lies between grid cells), the cell with the mean M* closest to the floor fit's (dashed)
-        exact_any = bool(np.any(same[r] >= FLOOR_FRAC))
-        dM = np.abs(stats["M"][0][r] - np.nanmean(S["floor_M"][r]))
-        closest = set(zip(*np.nonzero(dM <= np.nanmin(dM) + 0.25)))         # ties within 0.25 in mean M*
-        closest_used = closest_used or not exact_any
+        fM = S["floor_M"][r]; mM = stats["M"][0][r]
+        match = (same[r] >= FLOOR_FRAC) | ((mM >= np.nanmin(fM)) & (mM <= np.nanmax(fM)))
+        if not match.any():                                                # floor M* between grid cells
+            dM = np.abs(mM - np.nanmean(fM)); match = dM <= np.nanmin(dM) + 0.25
         for j, key in zip((2, 3, 4), ("rmse", "D", "M")):
             h = ax[j]; mean = stats[key][0][r]
             ims[key] = h.imshow(mean, origin="lower", aspect="auto", cmap=cmaps[key], norm=norms[key])
@@ -218,9 +219,9 @@ def main(show=False):
                     rgb = ims[key].cmap(ims[key].norm(mean[i, k]))[:3]
                     h.text(k, i, txt, ha="center", va="center", fontsize=5,
                            color="k" if 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2] > 0.5 else "w")
-                    if same[r, i, k] >= FLOOR_FRAC or (not exact_any and (i, k) in closest):
+                    if match[i, k]:
                         h.add_patch(Rectangle((k - 0.46, i - 0.46), 0.92, 0.92, fill=False, ec="#f2c14e", lw=1.3,
-                                              ls="-" if exact_any else (0, (2.5, 1.2)), zorder=5,
+                                              zorder=5,
                                               path_effects=[pe.withStroke(linewidth=2.2, foreground="k")]))
             h.set_xticks(range(lam.size)); h.set_xticklabels([f"$10^{{{int(np.log10(l))}}}$" for l in lam])
             h.set_yticks(range(Mmax.size)); h.set_yticklabels([str(m) for m in Mmax])
@@ -250,10 +251,7 @@ def main(show=False):
           Line2D([], [], color=C_EX["high"], lw=1.2, label="LMMF, many components"),
           Line2D([], [], color="0.3", lw=1.4, label="LMMF stable states\n(limit cycles: $R$ min, max)"),
           Patch(fc="0.3", alpha=0.38, label="non-stationary (simulation)"),
-          Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, label="noise-floor fit ($\\geq$50 % of samples)")]
-    if closest_used:
-        hd.append(Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, ls=(0, (2.5, 1.2)),
-                            label="closest cells to it"))
+          Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, label="noise-floor fit")]
     if not band_any:
         hd = [h_ for h_ in hd if h_.get_label() != "non-stationary (simulation)"]
     lg.legend(handles=hd, loc="center left", ncol=3, frameon=False, fontsize=6, handlelength=1.6, columnspacing=1.0,
