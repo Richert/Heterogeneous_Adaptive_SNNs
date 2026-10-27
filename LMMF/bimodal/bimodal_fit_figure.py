@@ -24,6 +24,9 @@ fit lands — the no-floor fit equals the fit the noise-floor rule would have re
 floor_c = 1, λ = 0, M_max = 16) in ≥ 50 % of the samples, or the cell's mean M* lies within the range of the floor fit's
 M* over the samples; if no cell qualifies (floor M* between grid cells, e.g. N = 10k: M* = 9), the cells whose mean M*
 is closest to the floor fit's (ties within 0.25).
+Layout: fixed to the hand-edited manuscript version (2026-10-26) — exact panel / colour-bar positions in pt
+(FIG_W_PT, COL_X, ROW_Y, CB_*), no tight bounding box; colour bars below the first row of heatmaps, the Hopf / fold key
+in panel B, the line key (few / many components, network R(t)) in panel G, no bottom legend.
 Colour scales are shared across the rows (D/floor: logarithmic, centred on 1).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python bimodal_fit_figure.py [--show]
@@ -42,6 +45,18 @@ MS_FIGURES = "/home/rgast/OneDrive/manuscripts/PRL_2026/LMMF/figures"
 C_EX = {"low": "#7b2cbf", "high": "#2a78d6"}
 C_NET, C_HIST, C_TRUE = "0.5", "0.85", "0.3"
 FLOOR_FRAC = 0.5
+# ── exact layout of the manuscript version (taken from the hand-edited SVG of 2026-10-26; all in pt, origin top-left) ──
+FIG_W_PT, FIG_H_PT = 489.167, 385.474
+COL_X = (18.287, 117.792, 263.987, 348.150, 432.314)          # panel left edges: distribution, ramp, 3 heatmaps
+COL_W = (70.034, 116.724, 54.693, 54.693, 54.693)
+ROW_Y, ROW_H = (13.550, 139.111, 264.671), 95.593             # panel top edges per row, panel height
+CB_X, CB_Y, CB_W, CB_H = (266.721, 350.885, 435.049), 112.975, 49.224, 5.162   # colour bars below the row-1 heatmaps
+DIST_LEG_SHIFT = 19.5                                         # distribution legends: shifted left from the corner (pt)
+MARKER_KEY_ANCHOR = (1.0, 0.89213)                            # Hopf / fold key in panel B (upper right; axes fraction)
+# line key in panel G, drawn entry by entry: (colour, lw, line x0, x1, line y, text x, text baseline y, label)
+G_KEY = ((None, 1.2, 154.257, 163.857, 154.697, 166.257, 156.797, "LMMF, few components"),
+         (None, 1.2, 148.922, 158.522, 163.290, 160.922, 165.390, "LMMF, many components"),
+         (None, 1.0, 185.096, 194.696, 171.399, 197.096, 173.499, "network $R(t)$"))
 SHOW_MMAX, SHOW_LAM = (2, 4, 8, 16), (1e-5, 1e-4, 1e-3)        # heatmap grid shown (λ = 1e-6, M_max = 1 omitted)
 _g1 = lambda v: f"{v:.0f}" if v >= 10 else (f"{v:.1f}" if v >= 1 else f"{v:.1g}")
 FMT = dict(rmse=lambda v: f"{v:.1f}", D=_g1, M=lambda v: f"{v:.0f}")
@@ -146,18 +161,15 @@ def main(show=False):
     norms = dict(rmse=Normalize(np.nanmin(stats["rmse"][0]), np.nanmax(stats["rmse"][0])),
                  D=LogNorm(10 ** -_vD(stats), 10 ** _vD(stats)), M=Normalize(1, BE.M_TRACE))
     cmaps = dict(rmse="Reds", D="BrBG_r", M="Purples")
-    H = 1.75 * len(Ns) + 0.75
-    fig = plt.figure(figsize=(PNAS_DOUBLE, H))
-    gs = fig.add_gridspec(len(Ns) + 1, 5, height_ratios=[1.0] * len(Ns) + [0.3],
-                          width_ratios=[1.05, 1.75, 0.82, 0.82, 0.82], left=0.06, right=0.99, top=1 - 0.25 / H,
-                          bottom=0.02, wspace=0.42, hspace=0.38)
+    fig = plt.figure(figsize=(FIG_W_PT / 72, FIG_H_PT / 72))
+    rect = lambda x, y, w, h: [x / FIG_W_PT, 1 - (y + h) / FIG_H_PT, w / FIG_W_PT, h / FIG_H_PT]   # pt -> fig fraction
     letters = iter("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     ramp_axes = []; used_all = set(); band_any = False
     ims = {}
     for r, N in enumerate(Ns):
         ex = {t: np.load(BX.out_file(N, t), allow_pickle=True).item() for t in ("low", "high")}
         d, _ = BE.load_run(N, BX.SEED_EX)
-        ax = [fig.add_subplot(gs[r, j]) for j in range(5)]
+        ax = [fig.add_axes(rect(COL_X[j], ROW_Y[r], COL_W[j], ROW_H)) for j in range(5)]
         # (1) sample, true density, example fits
         a = ax[0]; x = d["omega"]; g = np.linspace(-4.0, 4.0, 1201)
         a.hist(x, bins=min(60, max(15, int(np.sqrt(x.size) * 2))), range=(-4, 4), density=True, color=C_HIST,
@@ -168,14 +180,10 @@ def main(show=False):
             a.plot(g, LM.LorentzianMixture(m["w"], m["Om"], m["De"]).pdf(g), color=C_EX[t], lw=1.0, zorder=3)
         a.legend(handles=[Line2D([], [], color=C_EX[t], lw=1.0, label=f"$M = {ex[t]['model']['M']}$")
                           for t in ("low", "high")], loc="upper right", fontsize=6, handlelength=1.2,
-                 handletextpad=0.4, labelspacing=0.2, borderaxespad=0.2, frameon=False)
+                 handletextpad=0.4, labelspacing=0.2, borderaxespad=0.2, frameon=False,
+                 bbox_to_anchor=(1 - DIST_LEG_SHIFT / COL_W[0], 1.0))
         hv, _ = np.histogram(x, bins=40, range=(-4, 4), density=True)
         a.set_ylim(0, 1.35 * max(true_pdf(g).max(), hv.max()))
-        fM = S["floor_M"][r]
-        a.text(0.5, 0.42, "noise-floor fit:\n" + (f"$M^* = {np.nanmin(fM):.0f}$" if np.nanmin(fM) == np.nanmax(fM)
-                                                    else f"$M^* = {np.nanmin(fM):.0f}$–${np.nanmax(fM):.0f}$"),
-               transform=a.transAxes, ha="center", va="top", fontsize=5.5, color="0.25", zorder=6,
-               bbox=dict(fc="w", ec="none", alpha=0.8, pad=0.8))
         a.set_xlim(-4, 4); a.set_yticks([]); a.set_ylabel(f"$N = {N:,}$".replace(",", "\\,") + "\n"
                                                           + r"$\rho(\omega)$", labelpad=2)
         # (2) network ramp + diagrams
@@ -243,35 +251,29 @@ def main(show=False):
                 ax[j].set_title(ttl, pad=3)
         for j, axx in enumerate(ax):
             pnas_panel_label(axx, next(letters), dx=-14 if j in (0, 3, 4) else -20, dy=3)
-    # legend + colour bars
-    lg = fig.add_subplot(gs[-1, :2]); lg.axis("off")
-    hd = [Patch(fc=C_HIST, label="sample"), Line2D([], [], color=C_TRUE, lw=1.0, ls=(0, (3, 1.5)), label="true $\\rho$"),
-          Line2D([], [], color=C_NET, lw=1.0, label="network $R(t)$"),
-          Line2D([], [], color=C_EX["low"], lw=1.2, label="LMMF, few components"),
-          Line2D([], [], color=C_EX["high"], lw=1.2, label="LMMF, many components"),
-          Line2D([], [], color="0.3", lw=1.4, label="LMMF stable states\n(limit cycles: $R$ min, max)"),
-          Patch(fc="0.3", alpha=0.38, label="non-stationary (simulation)"),
-          Rectangle((0, 0), 1, 1, fill=False, ec="#f2c14e", lw=1.3, label="noise-floor fit")]
-    if not band_any:
-        hd = [h_ for h_ in hd if h_.get_label() != "non-stationary (simulation)"]
-    lg.legend(handles=hd, loc="center left", ncol=3, frameon=False, fontsize=6, handlelength=1.6, columnspacing=1.0,
-              handletextpad=0.4, borderaxespad=0.0)
-    mk = dict(ls="none", ms=4.2, mfc="w", mec="0.3", mew=1.0)          # bifurcation-marker key in the last ramp panel
-    keys = [("HB", "s", "Hopf"), ("LP", "o", "fold"), ("TR", "D", "torus"),
-            ("PD", "X", "period doubling")]
-    ramp_axes[-1].legend(handles=[Line2D([], [], marker=m_, label=l_, **mk) for k_, m_, l_ in keys if k_ in used_all],
-                         loc="upper right", bbox_to_anchor=(1.0, 0.88), fontsize=5.8, frameon=True, framealpha=0.9,
-                         edgecolor="none", handletextpad=0.3, labelspacing=0.25, borderpad=0.3)
-    for j, key, lab in ((2, "rmse", r"mean RMSE ($\times 10^{-3}$)"), (3, "D", r"mean $D\,/\,\frac{1}{6N}$"),
-                        (4, "M", "mean $M^*$")):
-        host = fig.add_subplot(gs[-1, j]); host.axis("off")
-        cax = host.inset_axes([0.05, 0.55, 0.9, 0.18])
+    # line key in panel G (entries placed individually, as in the manuscript version)
+    cols = {"LMMF, few components": C_EX["low"], "LMMF, many components": C_EX["high"], "network $R(t)$": C_NET}
+    for _, lw, x0, x1, yl, xt, yt, lab in G_KEY:
+        fx = lambda x: x / FIG_W_PT; fy = lambda y: 1 - y / FIG_H_PT
+        fig.add_artist(Line2D([fx(x0), fx(x1)], [fy(yl), fy(yl)], color=cols[lab], lw=lw, solid_capstyle="projecting",
+                              transform=fig.transFigure))
+        fig.text(fx(xt), fy(yt), lab, fontsize=6, ha="left", va="baseline")
+    # bifurcation-marker key in panel B
+    mk = dict(ls="none", ms=4.2, mfc="w", mec="0.3", mew=1.0)
+    keys = [("HB", "s", "Hopf"), ("LP", "o", "fold"), ("TR", "D", "torus"), ("PD", "X", "period doubling")]
+    ramp_axes[0].legend(handles=[Line2D([], [], marker=m_, label=l_, **mk) for k_, m_, l_ in keys if k_ in used_all],
+                        loc="upper right", bbox_to_anchor=MARKER_KEY_ANCHOR, fontsize=5.8, frameon=True, framealpha=0.9,
+                        edgecolor="none", handletextpad=0.3, labelspacing=0.25, borderpad=0.3)
+    # colour bars below the first row of heatmaps
+    for j, key, lab in ((0, "rmse", r"mean RMSE ($\times 10^{-3}$)"), (1, "D", r"mean $D\,/\,\frac{1}{6N}$"),
+                        (2, "M", "mean $M^*$")):
+        cax = fig.add_axes(rect(CB_X[j], CB_Y, CB_W, CB_H))
         cb = fig.colorbar(ims[key], cax=cax, orientation="horizontal")
         cb.set_label(lab, fontsize=6, labelpad=1); cb.ax.tick_params(labelsize=5.5); cb.ax.minorticks_off()
     os.makedirs(MS_FIGURES, exist_ok=True)
     out = os.path.join(MS_FIGURES, "bimodal_distributions")
     for ext in (".png", ".svg", ".pdf"):
-        fig.savefig(out + ext, dpi=300, bbox_inches="tight", pad_inches=0.03)
+        fig.savefig(out + ext, dpi=300)                          # exact page: no tight bounding box
     print(f"[saved] {out}.png/.svg/.pdf")
     if show:
         plt.show()
