@@ -4,8 +4,10 @@ Adaptive-coupling Kuramoto: microscopic sims along the Δ-bifurcation branches (
 
 Companion to ``weight_variance_bifurcation_rules.py``. For the same (K, γ) and the two adaptation
 rates μ used in the bifurcation figure, it simulates the microscopic adaptive network (Eqs. 1, 2, 4)
-across a range of heterogeneities Δ, initializing each run ON THE OTT–ANTONSEN MANIFOLD at a STABLE
-mean-field steady state, and records the tail-averaged (R, Ā, V_A/Ā²).
+across a range of heterogeneities Δ, initializing each run at a STABLE mean-field fixed point (R*, Ā*):
+phases ON THE OTT–ANTONSEN MANIFOLD at coherence R*, and UNIFORM weights A_ij = Ā* (V_A(0) = 0) — the
+same initialization as the other manuscript simulations (``weight_variance_rule_micro_oainit.py``,
+init="uniform"). It records the tail-averaged (R, Ā, V_A/Ā²).
 
 The stable states at (rule, Δ, μ) are:
   * SYNCHRONIZED branch — cos: the upper root Ā₊ of γĀ²−(γ+μ)Ā+2μΔ/K (physical where R²≥0 & D≥0);
@@ -32,7 +34,7 @@ import numpy as np
 
 import weight_variance_rule_micro as base                        # numba kernel + helpers
 import weight_variance_rule_micro_oainit as oai                  # OA-manifold IC sampler
-from weight_variance_analysis import branches, S_order           # noqa: E402
+from weight_variance_analysis import branches                     # noqa: E402
 
 HAS_NUMBA = base.HAS_NUMBA
 
@@ -41,8 +43,8 @@ CONFIG = dict(
     mus=[0.05, 0.003],                                           # = (mu_bi, mu_mono) of the bif figure
     rules=["cos", "sin"],
     deltas=list(np.round(np.linspace(0.02, 1.2, 25), 4)),        # spans sync / bistable / async
-    N=900, T=5000.0, dt=0.05, trans_frac=0.5, n_rec=200, seed=2,
-    out=dp.mpmf("weight_variance_bif_micro_large.npz"),
+    N=500, T=5000.0, dt=0.05, trans_frac=0.8, n_rec=200, seed=2,
+    out=dp.mpmf("weight_variance_bif_micro_uniform_init.npz"),
 )
 
 BRANCH_LABELS = ["sync", "async"]                                # storage order on the last axis
@@ -51,16 +53,8 @@ BRANCH_LABELS = ["sync", "async"]                                # storage order
 # ════════════════════════════════════════════════════════════════════════════
 #  stable mean-field states + OA-manifold-initialized simulation
 # ════════════════════════════════════════════════════════════════════════════
-def va_ca(R, A, Delta, mu, g, K):
-    """Full-closure V_A* and the matching covariance C_A*=(γ/μ)V_A* for the OA-manifold init."""
-    R2 = R * R
-    S = float(np.clip(S_order(np.array([R2]), np.array([A]), np.array([Delta]), K), 0.0, 1.0)[0])
-    VA = mu ** 2 / (2 * g ** 2 * (g + 2 * Delta)) * (g * (1.0 - R2 ** 2) + 2 * Delta * (S ** 2 - R2 ** 2))
-    return VA, (g / mu) * VA
-
-
 def stable_states(rule, Delta, mu, g, K):
-    """Stable mean-field states at (rule, Δ, μ): list of (branch_idx, R*, Ā*, V_A*, C_A*).
+    """Stable mean-field states at (rule, Δ, μ): list of (branch_idx, R*, Ā*).
     sync branch where physical (idx 0); asynchronous R=0, Ā=1 where stable, Δ>K/2 (idx 1).
     In the cos bistable window K/2 < Δ < Δ_SN both are returned."""
     states = []
@@ -73,23 +67,21 @@ def stable_states(rule, Delta, mu, g, K):
         sync = R2 > 0
         R, A = (float(np.sqrt(R2)), 1.0) if sync else (np.nan, np.nan)
     if sync:
-        VA, CA = va_ca(R, A, Delta, mu, g, K)
-        states.append((0, R, A, VA, CA))
+        states.append((0, R, A))
     if Delta > K / 2.0:                                          # asynchronous branch stable
-        VA, CA = va_ca(0.0, 1.0, Delta, mu, g, K)
-        states.append((1, 0.0, 1.0, VA, CA))
+        states.append((1, 0.0, 1.0))
     return states
 
 
-def simulate_state(rule, Delta, mu, R0, A0, VA0, CA0, cfg):
-    """Init the micro network on the OA manifold at (R0, Ā0, V_A0, C_A0), integrate, and return the
-    tail-averaged steady (R, Ā, V_A)."""
+def simulate_state(rule, Delta, mu, R0, A0, cfg):
+    """Init the micro network at the mean-field fixed point (R0, Ā0) — phases on the OA manifold at
+    coherence R0, uniform weights A_ij = Ā0 — integrate, and return the tail-averaged (R, Ā, V_A)."""
     N, K, g, dt = cfg["N"], cfg["K"], cfg["gamma"], cfg["dt"]
     nsteps = int(cfg["T"] / dt)
     rng = np.random.default_rng(cfg["seed"])
     omega = base.lorentzian_quantiles(N, Delta)
     theta = oai.oa_phases(omega, R0, A0, K, rng)
-    A = oai.oa_weights(theta, rule, A0, VA0, CA0, rng)
+    A = np.full((N, N), A0)
     rec_steps = np.unique(np.linspace(int(cfg["trans_frac"] * nsteps), nsteps - 1, cfg["n_rec"]).astype(int))
 
     if HAS_NUMBA:
@@ -141,13 +133,14 @@ def main(cfg=CONFIG):
     for i, rule in enumerate(rules):
         for m, mu in enumerate(mus):
             for j, D in enumerate(deltas):
-                for bi, R0, A0, VA0, CA0 in stable_states(rule, float(D), float(mu), g, K):
-                    Rss, Ass, Vss = simulate_state(rule, float(D), float(mu), R0, A0, VA0, CA0, cfg)
+                for bi, R0, A0 in stable_states(rule, float(D), float(mu), g, K):
+                    Rss, Ass, Vss = simulate_state(rule, float(D), float(mu), R0, A0, cfg)
                     R[i, m, j, bi] = Rss
                     Abar[i, m, j, bi] = Ass
                     VArel[i, m, j, bi] = Vss / Ass ** 2
                     print(f"  G={rule:<4} μ={mu:<6g} Δ={D:6.3f} [{BRANCH_LABELS[bi]:>5}] "
-                          f"init R*={R0:.3f} -> R={Rss:.3f} Ā={Ass:.3f} V_A/Ā²={Vss / Ass ** 2:.4f}")
+                          f"init R*={R0:.3f} -> R={Rss:.3f} Ā={Ass:.3f} V_A/Ā²={Vss / Ass ** 2:.4f}",
+                          flush=True)
 
     os.makedirs(os.path.dirname(cfg["out"]) or ".", exist_ok=True)
     np.savez(cfg["out"], rules=np.array(rules), mus=mus, deltas=deltas,

@@ -14,6 +14,9 @@ coherence R. In every panel:
     asynchronous R=0, Ā=1); for the R view the synchronized (+saddle) branch spanning R∈[0,1].
   * microscopic (MARKERS, same colour per μ) — V_A/Ā² (and, for the R view, the steady-state R)
     measured directly from the simulation.
+  * row 3 (only if the sweep recorded the phase moments Z1, Z2): V_A/Ā² vs the time-averaged distance
+    from the Ott–Antonsen manifold ⟨|Z_2 − Z²|⟩_t (micro only — the mean field lies ON the manifold,
+    distance 0). Dotted line: 1/√N, the size of the distance for N independent phases (finite-N floor).
 
 Steady-state weight-variance closures (S = ⟨|c|²⟩ clipped to [0,1], b = KĀR):
 
@@ -41,7 +44,12 @@ from matplotlib.lines import Line2D
 from weight_variance_analysis import S_order, branches, set_prl_style, _panel_label  # noqa: E402
 
 CONFIG = dict(
-    micro_npz=dp.mpmf("weight_variance_rule_micro_oainit.npz"),
+    # the manuscript figure uses the γ=0.01, N=300, μ∈{0.005,...,0.04} sweep, archived under this
+    # name when the γ=0.003 sweep took over the default ``weight_variance_rule_micro_oainit.npz``
+    micro_npz=dp.mpmf("weight_variance_rule_micro_oainit_mfstate_init.npz"),
+    # same sweep re-run at N=500 with Z1/Z2 recorded and uniform weights at the MF fixed point
+    # (``weight_variance_rule_micro_oainit.py fig3 --init uniform``) → used instead, adds row 3
+    micro_npz_z=dp.mpmf("weight_variance_rule_micro_oainit_uniform_init_z2.npz"),
     n_curve=800,                 # dense Δ grid for the mean-field curves
     cmap="viridis",              # colour map over μ
     out=dp.mpmf("weight_variance_rule_vratio"),
@@ -116,20 +124,24 @@ def mf_full_RV(rule, d, mu, gamma, K, closure="full"):
 #  main
 # ════════════════════════════════════════════════════════════════════════════
 def main(cfg=CONFIG):
-    dat = np.load(cfg["micro_npz"], allow_pickle=True)
+    has_z = os.path.exists(cfg["micro_npz_z"])
+    dat = np.load(cfg["micro_npz_z"] if has_z else cfg["micro_npz"], allow_pickle=True)
     rules = [str(r) for r in dat["rules"]]
     mus, deltas, t = dat["mus"], dat["deltas"], dat["t"]
     R, Abar, VA = dat["R"], dat["Abar"], dat["VA"]           # (rule, μ, Δ, time)
-    K, gamma = float(dat["K"]), float(dat["gamma"])
+    K, gamma, N = float(dat["K"]), float(dat["gamma"]), int(dat["N"])
     T, trans_frac = float(dat["T"]), float(dat["trans_frac"])
     tail = t >= trans_frac * T
+    if has_z:                                                # distance from the OA manifold, |Z_2 − Z²|
+        dist = np.abs(dat["Z2"] - dat["Z1"] ** 2)
     d_curve = np.linspace(1e-3, deltas.max() * 1.02, cfg["n_curve"])
     cmap = plt.get_cmap(cfg["cmap"])
     colors = [cmap(x) for x in np.linspace(0.12, 0.88, len(mus))]
 
     set_prl_style()
-    ncol = len(rules)                                        # columns = rule; rows = (vs Δ, vs R)
-    fig, axes = plt.subplots(2, ncol, figsize=(3.4, 3.0), squeeze=False)   # shorter panels
+    ncol = len(rules)                                        # columns = rule; rows = (vs Δ, vs R[, vs dist])
+    nrow = 3 if has_z else 2
+    fig, axes = plt.subplots(nrow, ncol, figsize=(3.4, 1.5 * nrow), squeeze=False)   # shorter panels
 
     for i, rule in enumerate(rules):
         ax0, ax1 = axes[0][i], axes[1][i]                    # vs Δ (top) / vs R (bottom)
@@ -151,6 +163,9 @@ def main(cfg=CONFIG):
                     ymax = max(ymax, np.nanmax(rel_dcurve[np.isfinite(rel_dcurve)]))
             ax0.plot(deltas, rel_micro, "o", ms=3.4, mfc=col, mec="k", mew=0.3, zorder=4)
             ax1.plot(R_ss, rel_micro, "o", ms=3.4, mfc=col, mec="k", mew=0.3, zorder=4)
+            if has_z:                                        # time-averaged distance from the manifold
+                d_ss = np.nanmean(dist[i, m][:, tail], axis=1)
+                axes[2][i].plot(d_ss, rel_micro, "o", ms=3.4, mfc=col, mec="k", mew=0.3, zorder=4)
             ymax = max(ymax, np.nanmax(rel_micro))
 
         ymax = 1.12 * (ymax or 1.0)
@@ -158,20 +173,29 @@ def main(cfg=CONFIG):
         ax1.set_xlim(0, 1.02); ax1.set_ylim(0, ymax)
         ax0.set_xlabel(r"heterogeneity $\Delta$", labelpad=1)
         ax1.set_xlabel(r"phase coherence $R$", labelpad=1)
+        if has_z:
+            ax2 = axes[2][i]
+            ax2.axvline(N ** -0.5, color="0.5", ls=":", lw=0.9, zorder=1)        # finite-N floor
+            ax2.set_xlim(0, 1.05 * np.nanmax(np.nanmean(dist[:, :, :, tail], axis=-1)))
+            ax2.set_ylim(0, ymax)
+            ax2.set_xlabel(r"OA distance $\langle|Z_2-Z^2|\rangle_t$", labelpad=1)
         if i == 0:
-            ax0.set_ylabel(r"rel. weight variance $V_A/\bar A^2$", labelpad=2)
-            ax1.set_ylabel(r"rel. weight variance $V_A/\bar A^2$", labelpad=2)
+            for r in range(nrow):
+                axes[r][0].set_ylabel(r"weight variance $V_A/\bar A^2$", labelpad=2)
         rule_tex = {"cos": r"\cos", "sin": r"\sin"}.get(rule, rule)
         ax0.set_title(rf"$G(x)={rule_tex}(x)$", fontsize=8, pad=3)
-        _panel_label(ax0, "abcd"[i]); _panel_label(ax1, "abcd"[ncol + i])
+        for r in range(nrow):
+            _panel_label(axes[r][i], "abcdef"[r * ncol + i])
 
     # μ-colour legend (first panel, upper-left) + line/marker legend (top-right panel)
     mu_handles = [Line2D([0], [0], color=colors[m], lw=1.3, marker="o", mfc=colors[m], mec="k",
                          mew=0.3, ms=4, label=rf"$\mu={mu:g}$") for m, mu in enumerate(mus)]
     axes[0][0].legend(handles=mu_handles, loc="upper left", fontsize=5.6, handlelength=1.5,
-                      labelspacing=0.25, title=r"$\mu$", title_fontsize=6.0)
-    axes[0][-1].legend(handles=[Line2D([0], [0], color="0.3", lw=1.3, ls="-", label=r"MF $C_S{+}C_F$"),
-                                Line2D([0], [0], color="0.3", lw=1.3, ls="--", label=r"MF $C_S$"),
+                      labelspacing=0.25)
+    #  legend labels follow the manuscript notation: C_Γ (static) + C_g (fluctuating) = C_A
+    axes[0][-1].legend(handles=[Line2D([0], [0], color="0.3", lw=1.3, ls="-",
+                                       label=r"MF $C_\Gamma{+}C_g$"),
+                                Line2D([0], [0], color="0.3", lw=1.3, ls="--", label=r"MF $C_\Gamma$"),
                                 Line2D([0], [0], color="0.3", ls="none", marker="o", mfc="0.3",
                                        mec="k", mew=0.3, ms=4, label="micro.")],
                        loc="upper right", fontsize=5.4, handlelength=1.7, labelspacing=0.2)

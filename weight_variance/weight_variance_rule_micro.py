@@ -92,10 +92,12 @@ def block_average_1d(v, res):
 # ════════════════════════════════════════════════════════════════════════════
 if HAS_NUMBA:
     @nb.njit(parallel=True, fastmath=True, cache=True)
-    def _simulate_numba(theta, A, omega, K, mu, g, dt, nsteps, rec_mask, c_cos, Rs, Abars, VAs):
+    def _simulate_numba_z(theta, A, omega, K, mu, g, dt, nsteps, rec_mask, c_cos, Rs, Abars, VAs,
+                          Z1s, Z2s):
         """Fused Euler step: precomputed cos/sin, no N×N temporaries, prange over rows. theta and
-        A are updated in place; Rs/Abars/VAs are filled at the steps where rec_mask is True.
-        c_cos = 1 (cos drive) or 0 (sin drive). Results match the numpy path."""
+        A are updated in place; Rs/Abars/VAs and the complex moments Z1s = ⟨e^{iθ}⟩, Z2s = ⟨e^{2iθ}⟩
+        are filled at the steps where rec_mask is True. c_cos = 1 (cos drive) or 0 (sin drive).
+        Results match the numpy path."""
         N = theta.shape[0]
         KinvN = K / N
         n_off = N * N - N
@@ -116,10 +118,14 @@ if HAS_NUMBA:
             for i in range(N):
                 theta[i] += dt * dth[i]
             if rec_mask[k]:
-                cs = 0.0; ss = 0.0
+                cs = 0.0; ss = 0.0; c2 = 0.0; s2h = 0.0
                 for i in range(N):
                     cs += ct[i]; ss += st[i]                # R from θ at step start (matches numpy)
+                    c2 += ct[i] * ct[i] - st[i] * st[i]     # cos 2θ
+                    s2h += 2.0 * ct[i] * st[i]              # sin 2θ
                 Rs[ridx] = np.sqrt(cs * cs + ss * ss) / N
+                Z1s[ridx] = complex(cs / N, ss / N)
+                Z2s[ridx] = complex(c2 / N, s2h / N)
                 s1 = 0.0; s2 = 0.0
                 for i in range(N):
                     for j in range(N):
@@ -129,6 +135,13 @@ if HAS_NUMBA:
                 Abar = s1 / n_off
                 Abars[ridx] = Abar; VAs[ridx] = s2 / n_off - Abar * Abar
                 ridx += 1
+
+    @nb.njit(cache=True)
+    def _simulate_numba(theta, A, omega, K, mu, g, dt, nsteps, rec_mask, c_cos, Rs, Abars, VAs):
+        """``_simulate_numba_z`` without the Z1/Z2 recording (signature used by the other scripts)."""
+        nr = Rs.shape[0]
+        _simulate_numba_z(theta, A, omega, K, mu, g, dt, nsteps, rec_mask, c_cos, Rs, Abars, VAs,
+                          np.empty(nr, np.complex128), np.empty(nr, np.complex128))
 
 
 def simulate(rule, Delta, mu, cfg):

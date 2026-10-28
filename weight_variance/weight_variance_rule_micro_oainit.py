@@ -9,18 +9,18 @@ run tests the mean field from a state it can itself represent.
 
 Default initialization (``init="uniform"``):
 
-  * WEIGHTS uniform, A_ij(0) = A0 — hence V_A(0) = C_A(0) = 0, and the whole build-up of the weight
-    variance is part of what the mean-field closure has to reproduce.
-  * PHASES on the OA manifold with the coherence the mean field predicts for those weights,
-    R(0)² = 1 − 2Δ/(K·A0) (0 where negative) — the fixed point of Ṙ = −ΔR + (K Ā/2) R(1−R²) at
-    Ā = A0. Sampling at order parameter R (Ψ=0, b=K·A0·R): locked oscillators (|ω|<b) sit at the
-    stable fixed point θ*=arcsin(ω/b); drifting oscillators (|ω|>b) are drawn from the wrapped-Cauchy
-    invariant density with modulus r(ω)=(|ω|−√(ω²−b²))/b and mean angle sgn(ω)·π/2 (App. B, Eq. B3);
-    b=0 ⇒ uniform phases.
+  * PHASES on the OA manifold at the mean-field fixed point (R*, Ā*) of the closed-form equations for
+    R and Ā (synchronized branch where it exists, else asynchronous R*=0, Ā*=1). Sampling at order
+    parameter R* (Ψ=0, b=K·Ā*·R*): locked oscillators (|ω|<b) sit at the stable fixed point
+    θ*=arcsin(ω/b); drifting oscillators (|ω|>b) are drawn from the wrapped-Cauchy invariant density
+    with modulus r(ω)=(|ω|−√(ω²−b²))/b and mean angle sgn(ω)·π/2 (App. B, Eq. B3); b=0 ⇒ uniform phases.
+  * WEIGHTS uniform at that fixed point, A_ij(0) = Ā* — hence V_A(0) = C_A(0) = 0. The state matches
+    the closed-form mean-field equations exactly, so the run tests the weight-variance closure built on
+    them: the whole build-up of V_A is what the closure has to reproduce.
 
-With ``init="mf_state"`` the previous behaviour is recovered: phases at the mean-field steady state
-R* and STRUCTURED weights realizing (Ā*, V_A*, C_A*) via ``oa_weights``, which tests whether the
-microscopic system *stays* at the mean-field fixed point.
+With ``init="mf_state"`` the phases are the same, but the weights are STRUCTURED to realize
+(Ā*, V_A*, C_A*) via ``oa_weights`` — the two modes differ only in the coupling weights — which tests
+whether the microscopic system *stays* at the full mean-field fixed point.
 
 Records the same R(t), Ā(t), V_A(t) traces + final A as the base script (so it feeds the same
 ``weight_variance_rule_meanfield.py`` figure), plus the (R, Ā, V_A, C_A) of the initial state. Reuses
@@ -49,6 +49,13 @@ block_average_1d = base.block_average_1d
 CONFIG = dict(base.CONFIG)                                      # inherit the base sweep configuration
 CONFIG["init"] = "uniform"                                      # "uniform" | "mf_state" (see init_state)
 CONFIG["out"] = dp.mpmf("weight_variance_rule_micro_oainit.npz")
+
+# the sweep behind the manuscript's relative-weight-variance figure (archived as
+# weight_variance_rule_micro_oainit_mfstate_init.npz, N=300), re-run at N=500 with Z1/Z2 recorded.
+# On a many-core machine run one single-threaded process per simulation:
+#     python weight_variance_rule_micro_oainit.py fig3 --workers 80 [--init uniform]
+FIG3_CONFIG = dict(CONFIG, init="mf_state", N=500, gamma=0.01, mus=[0.005, 0.01, 0.02, 0.04],
+                   trans_frac=0.8, out=dp.mpmf("weight_variance_rule_micro_oainit_mfstate_init_z2.npz"))
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -112,21 +119,18 @@ def init_state(rule, Delta, mu, cfg, omega, rng):
     """Ott–Antonsen initial condition (θ, A) and the mean-field values it realizes.
 
     ``cfg["init"]``:
-      * ``"uniform"`` (default) — UNIFORM weights A_ij = A0, and phases on the OA manifold at the
-        coherence the mean field predicts for those weights: R(0)² = 1 − 2Δ/(K·A0) (0 if negative),
-        the fixed point of Ṙ = −ΔR + (K Ā/2) R(1−R²) at Ā = A0. The weight moments therefore start
-        at V_A = C_A = 0 and the run tests the closure over the whole transient, not just at the
-        fixed point.
-      * ``"mf_state"`` — the previous behaviour: phases at the mean-field steady state R* and
-        STRUCTURED weights realizing (Ā*, V_A*, C_A*) from ``oa_weights``.
+      * ``"uniform"`` (default) — phases on the OA manifold at the mean-field fixed point (R*, Ā*)
+        and UNIFORM weights A_ij = Ā*. The weight moments therefore start at V_A = C_A = 0 and the
+        run tests the closure over the whole build-up of the weight variance.
+      * ``"mf_state"`` — the same phases, but STRUCTURED weights realizing (Ā*, V_A*, C_A*) from
+        ``oa_weights``.
     """
     K = cfg["K"]
     if cfg["init"] == "uniform":
-        A0 = float(cfg["A0"])
-        R0 = float(np.sqrt(max(1.0 - 2.0 * Delta / (K * A0), 0.0)))
-        theta = oa_phases(omega, R0, A0, K, rng)
-        A = np.full((omega.size, omega.size), A0, dtype=float)
-        return np.ascontiguousarray(theta), np.ascontiguousarray(A), (R0, A0, 0.0, 0.0)
+        R_mf, A_mf, _, _ = mf_state(rule, Delta, mu, cfg["gamma"], K)
+        theta = oa_phases(omega, R_mf, A_mf, K, rng)
+        A = np.full((omega.size, omega.size), A_mf, dtype=float)
+        return np.ascontiguousarray(theta), np.ascontiguousarray(A), (R_mf, A_mf, 0.0, 0.0)
     if cfg["init"] == "mf_state":
         R_mf, A_mf, VA_mf, CA_mf = mf_state(rule, Delta, mu, cfg["gamma"], K)
         theta = oa_phases(omega, R_mf, A_mf, K, rng)
@@ -139,7 +143,8 @@ def init_state(rule, Delta, mu, cfg, omega, rng):
 # ════════════════════════════════════════════════════════════════════════════
 def simulate(rule, Delta, mu, cfg):
     """Initialize on the OA manifold (see ``init_state``), then integrate. Returns
-    (t_rec, R(t), Ā(t), V_A(t), A_final, mf_init) with mf_init = (R, Ā, V_A, C_A) at t=0."""
+    (t_rec, R(t), Ā(t), V_A(t), A_final, mf_init, Z1(t), Z2(t)) with mf_init = (R, Ā, V_A, C_A) at
+    t=0 and the complex phase moments Z1 = ⟨e^{iθ}⟩, Z2 = ⟨e^{2iθ}⟩ (on the OA manifold Z2 = Z1²)."""
     N, K, g, dt = cfg["N"], cfg["K"], cfg["gamma"], cfg["dt"]
     nsteps = int(cfg["T"] / dt)
     rng = np.random.default_rng(cfg["seed"])
@@ -153,16 +158,19 @@ def simulate(rule, Delta, mu, cfg):
         rec_mask[rec_steps] = True
         nr = rec_steps.size
         Rs, Abars, VAs = np.empty(nr), np.empty(nr), np.empty(nr)
+        Z1s, Z2s = np.empty(nr, complex), np.empty(nr, complex)
         c_cos = 1.0 if rule == "cos" else 0.0
-        base._simulate_numba(theta, A, omega, float(K), float(mu), float(g), float(dt),
-                             int(nsteps), rec_mask, c_cos, Rs, Abars, VAs)
+        base._simulate_numba_z(theta, A, omega, float(K), float(mu), float(g), float(dt),
+                               int(nsteps), rec_mask, c_cos, Rs, Abars, VAs, Z1s, Z2s)
     else:
         KinvN, n_off = K / N, N * N - N
         diag = np.arange(N)
         rec_set = set(int(s) for s in rec_steps)
-        Rs, Abars, VAs = [], [], []
+        Rs, Abars, VAs, Z1s, Z2s = [], [], [], [], []
         for k in range(nsteps):
             e = np.exp(1j * theta)
+            if k in rec_set:                                   # phase moments at step start
+                Z1s.append(e.mean()); Z2s.append((e * e).mean())
             field = A @ e
             theta = theta + dt * (omega + KinvN * np.imag(np.conj(e) * field))
             gph = np.conj(e)[:, None] * e[None, :]
@@ -175,15 +183,28 @@ def simulate(rule, Delta, mu, cfg):
                 Rs.append(float(np.abs(e.mean()))); Abars.append(float(Abar))
                 VAs.append(float(s2 / n_off - Abar ** 2))
         Rs, Abars, VAs = np.array(Rs), np.array(Abars), np.array(VAs)
+        Z1s, Z2s = np.array(Z1s), np.array(Z2s)
 
     A_final = block_average(A, cfg["save_res"])
-    return t_rec, Rs, Abars, VAs, A_final, (R_mf, A_mf, VA_mf, CA_mf)
+    return t_rec, Rs, Abars, VAs, A_final, (R_mf, A_mf, VA_mf, CA_mf), Z1s, Z2s
 
 
 # ════════════════════════════════════════════════════════════════════════════
 #  main
 # ════════════════════════════════════════════════════════════════════════════
-def main(cfg=CONFIG):
+def _worker_init():
+    """Process-pool initializer: one numba thread per process (parallelism is across runs)."""
+    if HAS_NUMBA:
+        import numba
+        numba.set_num_threads(1)
+
+
+def _run_task(task):
+    i, m, j, rule, D, mu, cfg = task
+    return (i, m, j, D, mu, rule) + tuple(simulate(rule, D, mu, cfg))
+
+
+def main(cfg=CONFIG, workers=1):
     rules = cfg["rules"]
     mus = np.asarray(cfg["mus"], float)
     deltas = np.asarray(cfg["deltas"], float)
@@ -195,33 +216,57 @@ def main(cfg=CONFIG):
     t_ref = None
     R = np.full((nr, nm, nd, cfg["n_rec"]), np.nan)
     Abar = np.full_like(R, np.nan); VA = np.full_like(R, np.nan)
+    Z1 = np.full(R.shape, np.nan, complex); Z2 = np.full_like(Z1, np.nan)
     A_final = np.full((nr, nm, nd, res, res), np.nan)
     omega_axis = np.full((nd, res), np.nan)
     mf_init = np.full((nr, nm, nd, 4), np.nan)                  # (R*, Ā*, V_A*, C_A*)
 
     for j, D in enumerate(deltas):
         omega_axis[j] = block_average_1d(lorentzian_quantiles(cfg["N"], D), res)
-    for m, mu in enumerate(mus):
-        for i, rule in enumerate(rules):
-            for j, D in enumerate(deltas):
-                t_rec, Rs, Abars, VAs, A_fin, mfi = simulate(rule, D, mu, cfg)
-                n = Rs.size
-                if t_ref is None:
-                    t_ref = t_rec
-                R[i, m, j, :n], Abar[i, m, j, :n], VA[i, m, j, :n] = Rs, Abars, VAs
-                A_final[i, m, j] = A_fin
-                mf_init[i, m, j] = mfi
-                print(f"  G={rule:<4} μ={mu:<6g} Δ={D:6.3f} | init R*={mfi[0]:.3f} Ā*={mfi[1]:.3f} "
-                      f"V_A*={mfi[2]:.4f} -> end R={Rs[-1]:.3f} Ā={Abars[-1]:.3f} V_A={VAs[-1]:.4f}")
+    tasks = [(i, m, j, rule, float(D), float(mu), cfg) for m, mu in enumerate(mus)
+             for i, rule in enumerate(rules) for j, D in enumerate(deltas)]
+    if workers > 1:                                             # one single-threaded process per run
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor
+        pool = ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn"), initializer=_worker_init)
+        results = pool.map(_run_task, tasks)
+    else:
+        results = map(_run_task, tasks)
+    for i, m, j, D, mu, rule, t_rec, Rs, Abars, VAs, A_fin, mfi, Z1s, Z2s in results:
+        n = Rs.size
+        if t_ref is None:
+            t_ref = t_rec
+        R[i, m, j, :n], Abar[i, m, j, :n], VA[i, m, j, :n] = Rs, Abars, VAs
+        Z1[i, m, j, :n], Z2[i, m, j, :n] = Z1s, Z2s
+        A_final[i, m, j] = A_fin
+        mf_init[i, m, j] = mfi
+        print(f"  G={rule:<4} μ={mu:<6g} Δ={D:6.3f} | init R*={mfi[0]:.3f} Ā*={mfi[1]:.3f} "
+              f"V_A*={mfi[2]:.4f} -> end R={Rs[-1]:.3f} Ā={Abars[-1]:.3f} V_A={VAs[-1]:.4f} "
+              f"|Z2−Z²|={abs(Z2s[-1] - Z1s[-1] ** 2):.3f}", flush=True)
+    if workers > 1:
+        pool.shutdown()
 
     os.makedirs(os.path.dirname(cfg["out"]) or ".", exist_ok=True)
     np.savez(cfg["out"],
              rules=np.array(rules), mus=mus, deltas=deltas, t=t_ref,
              R=R, Abar=Abar, VA=VA, A_final=A_final, omega_axis=omega_axis, mf_init=mf_init,
+             Z1=Z1, Z2=Z2,
              K=cfg["K"], gamma=cfg["gamma"], N=cfg["N"], T=cfg["T"],
              dt=cfg["dt"], trans_frac=cfg["trans_frac"], sigma0=cfg["sigma0"], save_res=res)
     print(f"[saved] {cfg['out']}")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sweep", nargs="?", choices=["default", "fig3"], default="default")
+    ap.add_argument("--workers", type=int, default=1, help="parallel single-threaded processes")
+    ap.add_argument("--init", choices=["uniform", "mf_state"], default=None,
+                    help="override the sweep's initialization (both place the phases on the OA manifold)")
+    args = ap.parse_args()
+    cfg = dict(FIG3_CONFIG if args.sweep == "fig3" else CONFIG)
+    if args.init:
+        cfg["init"] = args.init
+        if args.sweep == "fig3" and args.init == "uniform":
+            cfg["out"] = dp.mpmf("weight_variance_rule_micro_oainit_uniform_init_z2.npz")
+    main(cfg, workers=args.workers)

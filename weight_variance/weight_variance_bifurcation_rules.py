@@ -45,7 +45,7 @@ CONFIG = dict(
     delta_min=1e-3, delta_max=1.2, n_delta=1400,
     mu_min=1e-3, mu_max=3e-1,                     # μ-axis of the 2-D plane (spans γ)
     rules=["cos", "sin"],
-    micro_npz=dp.mpmf("weight_variance_bif_micro.npz"),
+    micro_npz=dp.mpmf("weight_variance_bif_micro_uniform_init.npz"),   # N=500, uniform weights at MF fixed point
     out_dir=dp.MPMF, out_stem="weight_variance_bif",
 )
 
@@ -59,6 +59,20 @@ MASYNC = dict(marker="o", ms=3.3, mfc=C_ASYNC, mec="k", mew=0.3, ls="none")
 Q_LABEL = {"R": r"phase coherence $\tilde R$", "Abar": r"avg. weight $\bar A$",
            "VA": r"rel. variance $V_A/\bar A^2$"}
 RULE_TEX = {"cos": r"\cos", "sin": r"\sin"}
+
+# ── exact layout of the hand-edited manuscript versions (2026-10-27; pt, origin top-left) ──
+#    page, μ–Δ plane (cos only), 1-D panel columns/rows + size, the branch/marker legend (upper-left
+#    corner of its box, font size), and for the plane: the "bistable" label (left, baseline), the
+#    μ-label offset (pt from the top of the μ line) and the extra shift of the plane legend (pt).
+LAYOUT = {
+    "cos": dict(page=(244.8, 316.72), plane=(27.440, 12.487, 215.920, 66.148),
+                cols=(27.440, 151.296), rows=(110.011, 179.129, 248.399), size=(92.064, 49.611),
+                leg=(68.47, 109.72), leg_fs=5.30,
+                bistable=(181.43, 43.46), mu_label_off=(2.5, -49.0), plane_leg_dx=1.5),
+    "sin": dict(page=(244.8, 158.986), plane=None,
+                cols=(25.270, 147.763), rows=(12.487, 86.626), size=(95.597, 54.605),
+                leg=(74.08, 13.51), leg_fs=5.41),
+}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -95,8 +109,9 @@ def fold_point(rule, mu, g, K):
 # ════════════════════════════════════════════════════════════════════════════
 #  row 1: 2-D bifurcation plane in the μ–Δ plane (μ on x, Δ on y; fixed K)
 # ════════════════════════════════════════════════════════════════════════════
-def plot_2d(ax, cfg, rule):
+def plot_2d(ax, cfg, rule, lay):
     g, K = cfg["gamma"], cfg["K"]
+    W, H = lay["page"]
     Dtc = K / 2.0
     mu = np.logspace(np.log10(cfg["mu_min"]), np.log10(cfg["mu_max"]), 600)
     ax.axhline(Dtc, color=C_TC, lw=1.2, ls="--", zorder=3)                       # transcritical (Δ=K/2)
@@ -107,11 +122,11 @@ def plot_2d(ax, cfg, rule):
         ax.plot(mu[phys], dSN[phys], color=C_FOLD, lw=1.3, zorder=4)             # physical fold
         ax.plot(mu[~phys], dSN[~phys], color=C_FOLD, lw=0.9, ls=":", zorder=4)   # unphysical continuation
         ax.plot([g], [Dtc], zorder=6, ls="none", **MARK["cusp"])                 # cusp (μ=γ, Δ=K/2)
-        ax.annotate("bistable", xy=(1.6 * g, 0.5 * (Dtc + min(cfg["delta_max"], 0.9))),
-                    fontsize=5.4, color=C_SYNC, ha="left", rotation=90, va="center")
+        bx, by = lay["bistable"]                                                 # horizontal, in the region
+        ax.figure.text(bx / W, 1 - by / H, "bistable", fontsize=5.4, color=C_SYNC, ha="left", va="baseline")
     for muv in (cfg["mu_bi"], cfg["mu_mono"]):
         ax.axvline(muv, color="0.5", lw=0.7, ls=":", zorder=1)
-        ax.annotate(rf"$\mu={muv:g}$", xy=(muv, cfg["delta_max"]), xytext=(1, -1),
+        ax.annotate(rf"$\mu={muv:g}$", xy=(muv, cfg["delta_max"]), xytext=lay["mu_label_off"],
                     textcoords="offset points", ha="left", va="top", fontsize=5.2, color="0.35")
     ax.set_xscale("log")
     ax.set_xlim(cfg["mu_min"], cfg["mu_max"]); ax.set_ylim(0, cfg["delta_max"])
@@ -125,7 +140,8 @@ def plot_2d(ax, cfg, rule):
     else:                                                                        # sin: only transcritical
         handles = [Line2D([0], [0], color=C_TC, lw=1.2, ls="--", label="transcrit.")]
     ax.legend(handles=handles, loc="upper right", fontsize=4.8, handlelength=1.4,
-              labelspacing=0.2, borderaxespad=0.3)
+              labelspacing=0.2, borderaxespad=0.3,
+              bbox_to_anchor=(1 + lay["plane_leg_dx"] / lay["plane"][2], 1.0))
     _panel_label(ax, "a", dx=-26)
 
 
@@ -197,19 +213,16 @@ def micro_for(micro, rule, mu):
 def make_figure(cfg, rule, micro):
     has_2d = (rule == "cos")          # sin: drop the 2-D row (only a transcritical line — nothing happens)
     quants = ["R", "Abar", "VA"] if rule == "cos" else ["R", "VA"]              # sin: drop Ā row too
-    nrow = len(quants) + (1 if has_2d else 0)
     mus = [cfg["mu_mono"], cfg["mu_bi"]]                                        # left: μ<γ, right: μ>γ
 
-    hr = ([1.0] if has_2d else []) + [0.75] * len(quants)                       # 1-D rows: 3/4 of the 2-D row
+    lay = LAYOUT[rule]                                                          # fixed manuscript layout (pt)
+    W, H = lay["page"]
     set_prl_style()
-    fig = plt.figure(figsize=(3.4, 1.28 * sum(hr) + 0.35), layout="constrained")
-    fig.set_constrained_layout_pads(w_pad=0.02, h_pad=0.02, wspace=0.04, hspace=0.05)
-    gs = fig.add_gridspec(nrow, 2, height_ratios=hr)
+    fig = plt.figure(figsize=(W / 72, H / 72))
+    rect = lambda x, y, w, h: [x / W, 1 - (y + h) / H, w / W, h / H]           # pt (top-left) -> fig fraction
 
-    row0 = 0
     if has_2d:
-        plot_2d(fig.add_subplot(gs[0, :]), cfg, rule)
-        row0 = 1
+        plot_2d(fig.add_axes(rect(*lay["plane"])), cfg, rule, lay)
 
     letters = iter("bcdefghij" if has_2d else "abcdefgh")
     first_1d = None
@@ -217,7 +230,7 @@ def make_figure(cfg, rule, micro):
     for r, q in enumerate(quants):
         row_axes.append([])
         for c, mu in enumerate(mus):
-            ax = fig.add_subplot(gs[r + row0, c])
+            ax = fig.add_axes(rect(lay["cols"][c], lay["rows"][r], *lay["size"]))
             row_axes[r].append(ax)
             first_1d = first_1d or ax
             mrule = micro_for(micro, rule, mu)
@@ -251,8 +264,10 @@ def make_figure(cfg, rule, micro):
         handles.insert(3, Line2D([0], [0], ls="none", label="fold", **MARK["fold"]))
     else:                                                                        # sin: no saddle/fold
         handles = [handles[0], handles[2], handles[3], handles[4]]
-    first_1d.legend(handles=handles, loc="lower left", fontsize=4.4, handlelength=1.3,
-                    labelspacing=0.18, borderaxespad=0.3)
+    lx, ly = lay["leg"]                                                         # upper-left corner of the box
+    first_1d.legend(handles=handles, loc="upper left", fontsize=lay["leg_fs"], handlelength=1.3,
+                    labelspacing=0.18, borderaxespad=0.0, bbox_to_anchor=(lx / W, 1 - ly / H),
+                    bbox_transform=fig.transFigure)
 
     out = f"{cfg['out_dir']}/{cfg['out_stem']}_{rule}"
     os.makedirs(cfg["out_dir"], exist_ok=True)
