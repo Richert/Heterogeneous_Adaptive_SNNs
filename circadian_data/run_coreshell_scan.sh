@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Two-ensemble (core/shell) SCN model: D0 scan (directed model) + symmetric model at the best D0 + figure.
-# Run on the server from the repository root, e.g.
-#   (activate the environment first) nohup bash circadian_data/run_coreshell_scan.sh > coreshell_scan.log 2>&1 &
-# Estimated wall time with 64 processes (2026-11-18 run: ~17 min per D0 with 12 parameters): ~16 min per D0 value
-# (dir, 11 parameters, SCN1-5, 32 starts) x 4 + ~11 min sym ≈ 75 min.
+# Two-ensemble (core/shell) SCN model, DIRECTED model only: one fit per D0 value (+ figure per D0).
+# Run on the server from the repository root (activate the Python environment first), e.g.
+#   HASNN_MPMF=/media/storage/DATA/richard_turbulence/data/mpmf_simulations PROCS=64 \
+#     nohup bash circadian_data/run_coreshell_scan.sh > coreshell_scan.log 2>&1 &
+# D0 values: D0S="5e-4 2e-3" (default). Estimated wall time with 64 processes: ~15 min per D0 (10 parameters, SCN1-5,
+# 32 starts; 2026-11-18 server run: ~17 min per D0 with 12 parameters).
 # Inputs (cached on the shared drive): coreshell/scn<i>_coreshell_target.npz, scn<i>_ens*_floor_mixture.npy,
-# scn<i>_amplitude_q.npy, targets/scn<i>_target.npz. Outputs go to the same coreshell/ folder.
+# scn<i>_amplitude_q.npy, targets/scn<i>_target.npz. Outputs: coreshell/scn<i>_dir_d<D0>_fit.npy,
+# scn_coreshell_fits_d<D0>.png, coreshell_summary_d<D0>.json.
 set -euo pipefail
 export HASNN_MPMF="${HASNN_MPMF:-/mnt/kennedy_labdata/richard_turbulence/data/mpmf_simulations}"
 PROCS="${PROCS:-64}"
 PY="${PY:-python}"                        # the active environment (needs numpy, scipy, matplotlib)
+D0S="${D0S:-5e-4 2e-3}"
 cd "$(dirname "$0")"
-"$PY" scn_coreshell_model.py scan --d0s 2.5e-4,5e-4,1e-3,2e-3 --slices 1,2,3,4,5 --starts 32 --procs "$PROCS"
+for d0 in $D0S; do
+    "$PY" scn_coreshell_model.py fit figure --models dir --d0 "$d0" --slices 1,2,3,4,5 --starts 32 --procs "$PROCS"
+done

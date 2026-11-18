@@ -25,16 +25,16 @@ noise term (it would count the frequency spread twice). Component m of ensemble 
       t < t_ttx                ρ = 1
       t_ttx ≤ t < t_rec        ρ = f_ttx                          (block, instantaneous)
       t_rec ≤ t < t_wash       linear ramp f_ttx → f_wash          (recovery onset t_rec: under TTX or at washout)
-      t ≥ t_wash               ρ = f_post + (f_wash − f_post) e^{−(t − t_wash)/τ_post}   (f_wash > f_post: rebound)
+      t ≥ t_wash               ρ = f_post + (f_wash − f_post) e^{−(t − t_wash)/τ_post}   (f_wash > f_post: rebound;
+                               τ_post = TAU_POST fixed, since the ±24 h washout mask hides it)
   t_rec = t_ttx + 24 h + u_rec (t_wash − t_ttx − 24 h), u_rec ∈ [0, 1].
 
 Models (D₀ fixed):
-  sym     no directed structure: K_cc = K_cs = K, ε = 1, s_c = s_s = s  (9: K, K_g, α, s, f_ttx, u_rec, f_wash, f_post,
-                                                                          τ_post)
+  sym     no directed structure: K_cc = K_cs = K, ε = 1, s_c = s_s = s  (8: K, K_g, α, s, f_ttx, u_rec, f_wash, f_post)
   dir     directed INPUT asymmetry (K_cc ≠ K_cs), ε = 1 (2026-11-18: ε → 1 in the first scan)
-                                                                     (11: K_cc, K_cs, K_g, α, s_c, s_s, f_ttx, u_rec,
-                                                                          f_wash, f_post, τ_post)
-  dir_eps directed with the shell output factor ε free                (12)
+                                                                     (10: K_cc, K_cs, K_g, α, s_c, s_s, f_ttx, u_rec,
+                                                                          f_wash, f_post)
+  dir_eps directed with the shell output factor ε free                (11)
 Loss over the mask of scn_targets: mean of the squared errors of c_c|Z_c| − R_c, c_s|Z_s| − R_s and c|Z| − R (slice),
 + the core–shell PHASE DIFFERENCE Δψ = arg(Z_s Z̄_c) with its sampling error: per hour
       SIG_R² · wrap(Δψ_model − Δψ_data)² / (1/(2 N_c R_c²) + 1/(2 N_s R_s²) + SIG0²)
@@ -75,15 +75,16 @@ Q_MAX = 100.0                            # cap of (A_pre / A)² (amplitudes near
 CPD = 24 / (2 * np.pi)
 # parameter: (lower, upper, transform)  log: positive with bounds, lin: bounded linear
 PAR = dict(K=(1e-3, 5.0, "log"), K_cc=(1e-3, 5.0, "log"), K_cs=(1e-3, 5.0, "log"), eps=(1e-3, 1.0, "log"),
-           K_g=(1e-5, 0.3, "log"), alpha=(-0.6, 0.6, "lin"), s=(0.05, 2.0, "log"), s_c=(0.05, 2.0, "log"),
-           s_s=(0.05, 2.0, "log"), f_ttx=(1e-4, 1.0, "log"), u_rec=(0.0, 1.0, "lin"), f_wash=(0.02, 10.0, "log"),
+           K_g=(1e-5, 0.3, "log"), alpha=(-0.6, 0.6, "lin"), s=(0.02, 4.0, "log"), s_c=(0.02, 4.0, "log"),
+           s_s=(0.02, 4.0, "log"), f_ttx=(1e-4, 1.0, "log"), u_rec=(0.0, 1.0, "lin"), f_wash=(0.02, 10.0, "log"),
            f_post=(0.02, 10.0, "log"), tau_post=(0.5, 200.0, "log"))
-TC = ("f_ttx", "u_rec", "f_wash", "f_post", "tau_post")
+TC = ("f_ttx", "u_rec", "f_wash", "f_post")
+TAU_POST = 2.0                            # h, FIXED (2026-11-18: not identifiable behind the ±24 h washout mask)
 MODELS = dict(sym=("K", "K_g", "alpha", "s") + TC,
               dir=("K_cc", "K_cs", "K_g", "alpha", "s_c", "s_s") + TC,
               dir_eps=("K_cc", "K_cs", "eps", "K_g", "alpha", "s_c", "s_s") + TC)
 START = dict(K=0.2, K_cc=0.3, K_cs=0.15, eps=0.3, K_g=0.01, alpha=0.0, s=0.6, s_c=0.6, s_s=0.6, f_ttx=0.05,
-             u_rec=0.8, f_wash=1.5, f_post=0.8, tau_post=24.0)
+             u_rec=0.8, f_wash=1.5, f_post=0.8)
 D0 = [5e-4]                               # shared, fixed amplitude-noise strength (set by --d0 / scan)
 MAXITER_PER_DIM = [300]                   # Nelder–Mead evaluations per free parameter (--maxiter-per-dim)
 
@@ -113,9 +114,9 @@ def full(p):
     """Expand a model's parameters to the general (dir) set."""
     if "K" in p:
         q = dict(K_cc=p["K"], K_cs=p["K"], eps=1.0, K_g=p["K_g"], alpha=p["alpha"], s_c=p["s"], s_s=p["s"])
-        q.update({k: p[k] for k in TC})
+        q.update({k: p[k] for k in TC}); q["tau_post"] = p.get("tau_post", TAU_POST)
         return q
-    q = dict(p); q.setdefault("eps", 1.0)
+    q = dict(p); q.setdefault("eps", 1.0); q.setdefault("tau_post", TAU_POST)
     return q
 
 
@@ -188,7 +189,7 @@ def rho_t(p, tg, ttx, wash):
     a = (tg >= tr) & (tg < wash)
     r[a] = p["f_ttx"] + (p["f_wash"] - p["f_ttx"]) * (tg[a] - tr) / max(wash - tr, 1e-9)
     b = tg >= wash
-    r[b] = p["f_post"] + (p["f_wash"] - p["f_post"]) * np.exp(-(tg[b] - wash) / p["tau_post"])
+    r[b] = p["f_post"] + (p["f_wash"] - p["f_post"]) * np.exp(-(tg[b] - wash) / p.get("tau_post", TAU_POST))
     return r
 
 

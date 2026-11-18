@@ -489,3 +489,25 @@ What this means for the per-cell frequencies:
   4. The implied noise is large: D₀·q reaches about 0.1 rad/h under TTX (q ≈ 100 in SCN1). This contrasts with the
      undetectable accumulating phase diffusion in the interval test (§13, T1), and it would make the TTX dephasing
      noise-dominated rather than set by the frequency distribution.
+
+## 16. Phase term weighted by sampling error, ε = 1 (local, D₀ = 1e-3, 16 starts, 2026-11-18)
+
+**SCN1 now has a block, but at a cost in coherence fit.**
+- The TTX block is now partial (f_ttx = 0.11; before, f_ttx = 1).
+- The coupling *declines further* during TTX: the ramp runs from 0.11 down to f_wash = 0.027, starting
+  108 h before washout. After washout it jumps to 0.6.
+- A strong TTX-insensitive local coupling (K_g = 0.19) keeps each ensemble internally coherent. With the core–shell
+  coupling blocked, core and shell then drift apart, and the shell runs ahead (model +2 h; data up to +6 h).
+- The coherence fit worsens: slice RMSE 0.023 → 0.039, and the shell after washout is too high (0.90 vs 0.81).
+- Both width factors are at their upper bound of 2.
+
+**The other slices:**
+- SCN2 is unchanged.
+- SCN3 is similar. Its phase term (2.5e-3) is now dominated by the phase wrap near the coherence minimum.
+- SCN4 and SCN5 are fitted well, but with degenerate width factors (s = 0.05) and K_g at its bounds.
+
+**Identifiability:**
+- τ_post sits at its lower bound (0.5 h) in SCN1, SCN2 and SCN4. The ±24 h mask around washout hides how fast
+  coupling recovers.
+- With 16 starts, the best loss is reproduced less consistently than with 32 (SCN5: 1.8 vs 2.5 ×1e-3 before the
+  polish).
