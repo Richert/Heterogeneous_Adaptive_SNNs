@@ -128,28 +128,40 @@ def slice_data(i):
     return TG.load(i)
 
 
-def fit_mixture(om, lam, floor, width_k, M_max=64):
+DC_MIN = 1e-5                 # smallest deconvolved width (rad/h)
+
+
+def fit_mixture(om, lam, floor, width_k, M_max=64, h=0.0):
+    """Lorentzian-mixture fit of the frequencies om (rad/h). h > 0: DECONVOLUTION of a Lorentzian measurement error of
+    half-width h (exact for Cauchy errors: the observed density is the mixture with every width + h). The fit is
+    constrained to widths ≥ h and h is subtracted afterwards (widths clipped at DC_MIN); 'De_obs' keeps the fitted
+    (observed) widths."""
     mu, sd = om.mean(), om.std()
     x = (om - mu) / sd                                     # fit on standardised frequencies (affine-invariant)
     dmin = 1e-4
     if width_k > 0:
         g = np.linspace(x.min(), x.max(), 2001)
         dmin = max(dmin, width_k / (x.size * float(gaussian_kde(x)(g).max())))
+    if h > 0:
+        dmin = max(dmin, h / sd)
     r = LM.fit(x, (dmin, 1e2), lambda_M=lam, M_max=M_max, floor_c=1.0 if floor else 0.0, patience=3,
                n_restarts=10, seed=1, method="slsqp", large_M=16)
     m = r["model"]
-    return dict(w=np.asarray(m.w), Om=mu + sd * np.asarray(m.Omega), De=sd * np.asarray(m.Delta), M=int(m.M))
+    De_obs = sd * np.asarray(m.Delta)
+    return dict(w=np.asarray(m.w), Om=mu + sd * np.asarray(m.Omega), De=np.maximum(De_obs - h, DC_MIN),
+                De_obs=De_obs, h=float(h), M=int(m.M))
 
 
-def build(d, lam, floor, width_k, M_max=64):
+def build(d, lam, floor, width_k, M_max=64, h=0.0):
     """One mixture per lobe (at most M_max components); global weights = lobe fraction × lobe weights;
-    cell -> component assignment."""
+    cell -> component assignment (by the OBSERVED widths). h > 0: deconvolved widths (fit_mixture)."""
     om, lobe = d["om"], d["lobe"]
     Om, De, w, cl, assign = [], [], [], [], np.zeros(om.size, int)
     for k in (0, 1):
         idx = np.where(lobe == k)[0]
-        f = fit_mixture(om[idx], lam, floor, width_k, M_max)
-        resp = f["w"][None] * f["De"][None] / ((om[idx, None] - f["Om"][None]) ** 2 + f["De"][None] ** 2)
+        f = fit_mixture(om[idx], lam, floor, width_k, M_max, h=h)
+        Do = f.get("De_obs", f["De"])
+        resp = f["w"][None] * Do[None] / ((om[idx, None] - f["Om"][None]) ** 2 + Do[None] ** 2)
         assign[idx] = len(Om) + np.argmax(resp, axis=1)
         Om += list(f["Om"]); De += list(f["De"]); w += list(idx.size / om.size * f["w"]); cl += [k] * f["M"]
     cl, w = np.array(cl), np.array(w)

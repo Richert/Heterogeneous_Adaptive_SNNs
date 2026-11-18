@@ -205,7 +205,7 @@ for _s, _h in zip(STARTS, _HSTARTS):                       # common defaults of 
     _s.update(_h)
     for _k, _v in dict(K_i=0.01, alpha_i=0.0, dw=0.0, reset_wash=0.1).items():
         _s.setdefault(_k, _v)
-KINDS = ("floor", "nofloor", "lobelump", "lumped", "single", "empirical")
+KINDS = ("floor", "nofloor", "lobelump", "lumped", "single", "empirical", "floor-dc", "nofloor-dc", "single-dc")
 EMP_H_SCALE = 0.1      # "empirical" kernel width = 0.1 × the measurement error: the reference IS the measured
                        # distribution (h = the full error would smooth the already error-broadened frequencies again)           # frequency-distribution variants, see mixture()
 LUMP_SLICES = (1, 2, 3, 4)
@@ -376,6 +376,8 @@ def mixture(i, kind, d):
     """Mixture model of slice i for the frequency-distribution variant `kind` (all noise-floor fits except nofloor):
       floor / nofloor  SCN- and lobe-specific Lorentzian mixtures (with / without the noise floor)
       single           ONE Lorentzian per slice and lobe (M_max = 1; with the noise floor)
+      <kind>-dc        floor / nofloor / single DECONVOLVED: fitted with widths ≥ h and h subtracted, h = the
+                       per-cell Lorentzian measurement error (empirical_h)
       empirical        NO mixture fit: one Lorentzian per cell at its measured frequency, width = EMP_H_SCALE (0.1)
                        × the per-cell frequency measurement error (empirical_h), i.e. a small regulariser: the
                        reference for the frozen comparison is the measured distribution itself
@@ -383,6 +385,10 @@ def mixture(i, kind, d):
       lumped           one mixture of the frequencies pooled over the slices LUMP_SLICES (and lobes), the same for
                        every slice and lobe"""
     f = os.path.join(MIX, f"scn{i}_{kind}_mixture.npy")
+    if kind.endswith("-dc"):                               # DECONVOLVED: Lorentzian measurement error h removed
+        base = kind[:-3]; h = empirical_h(i)
+        return _cached(f, lambda: SIM.build(d, LAM, base != "nofloor", WIDTH_K, M_max=1 if base == "single" else 64,
+                                            h=h))
     if kind in ("floor", "nofloor"):
         return _cached(f, lambda: SIM.build(d, LAM, kind == "floor", WIDTH_K))
     if kind == "lumped":
