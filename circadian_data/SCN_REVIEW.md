@@ -511,3 +511,41 @@ What this means for the per-cell frequencies:
   coupling recovers.
 - With 16 starts, the best loss is reproduced less consistently than with 32 (SCN5: 1.8 vs 2.5 ×1e-3 before the
   polish).
+
+## 17. Server fits, width factors in [0.02, 4], τ_post = 2 h, 32 starts (2026-11-18)
+
+**Total loss:** 11.6e-3 at D₀ = 5e-4 vs 14.7e-3 at 2e-3. The 1e-3 run on the server was not done; the existing
+1e-3 files are the old local setup.
+
+**At D₀ = 5e-4:**
+
+| | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+|---|---|---|---|---|---|
+| Slice RMSE | 0.025 | 0.019 | 0.026 | 0.025 | 0.029 |
+
+The starts agree (the top three are within 0.01e-3 in SCN1–4).
+
+**SCN1 now tells a coherent story:**
+- complete TTX block (f_ttx at its lower bound);
+- a TTX-insensitive local coupling (K_g = 0.13) keeps each ensemble coherent;
+- core and shell drift apart: model +2.8 h, data up to +6 h, with phase term 0.25e-3;
+- a strong rebound at washout (f_wash at its bound of 10, i.e. 0.5 rad/h), relaxing to 0.47 × K_pre.
+
+**SCN2:** a complete block, recovery starting under TTX, and the core receiving more than the shell
+(K_cc = 2.6 vs K_cs = 0.77).
+
+**The width factors run to opposite bounds:**
+- core → 0.02 in SCN1, SCN4 and SCN5 (SCN3 at 2e-3);
+- shell → 4 in SCN1, SCN2, SCN4 and SCN5.
+
+So the core–shell difference under TTX is explained by a near-zero core width and a much broader shell, instead of
+by the slope-derived mixtures or by coupling. The input asymmetry K_cc > K_cs is now inconsistent across slices: in
+SCN1 0.050 vs 0.049, in SCN5 0.59 vs 0.67. Widths and coupling trade off against each other.
+
+**Artefact:** SCN5 shows a spike at washout, where the rebound reaches its bound of 10 with τ_post = 2 h. It lies
+behind the mask.
+
+**Proposal:**
+- Share one width factor between the ensembles, so that the core–shell frequency differences come from the data.
+- Give each ensemble its own local coupling, K_g,c and K_g,s.
+- Cap f_wash.

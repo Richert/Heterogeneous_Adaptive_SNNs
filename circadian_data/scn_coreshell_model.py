@@ -35,6 +35,10 @@ Models (D₀ fixed):
                                                                      (10: K_cc, K_cs, K_g, α, s_c, s_s, f_ttx, u_rec,
                                                                           f_wash, f_post)
   dir_eps directed with the shell output factor ε free                (11)
+  dirg    (2026-11-18) directed with ONE width factor s shared by both ensembles (the core–shell difference in the
+          frequency distributions comes only from the measured mixtures) and ENSEMBLE-SPECIFIC TTX-insensitive local
+          coupling K_g,c / K_g,s                                         (10: K_cc, K_cs, K_gc, K_gs, α, s, f_ttx, u_rec,
+                                                                          f_wash, f_post); f_wash ≤ 5
 Loss over the mask of scn_targets: mean of the squared errors of c_c|Z_c| − R_c, c_s|Z_s| − R_s and c|Z| − R (slice),
 + the core–shell PHASE DIFFERENCE Δψ = arg(Z_s Z̄_c) with its sampling error: per hour
       SIG_R² · wrap(Δψ_model − Δψ_data)² / (1/(2 N_c R_c²) + 1/(2 N_s R_s²) + SIG0²)
@@ -77,14 +81,17 @@ CPD = 24 / (2 * np.pi)
 PAR = dict(K=(1e-3, 5.0, "log"), K_cc=(1e-3, 5.0, "log"), K_cs=(1e-3, 5.0, "log"), eps=(1e-3, 1.0, "log"),
            K_g=(1e-5, 0.3, "log"), alpha=(-0.6, 0.6, "lin"), s=(0.02, 4.0, "log"), s_c=(0.02, 4.0, "log"),
            s_s=(0.02, 4.0, "log"), f_ttx=(1e-4, 1.0, "log"), u_rec=(0.0, 1.0, "lin"), f_wash=(0.02, 10.0, "log"),
-           f_post=(0.02, 10.0, "log"), tau_post=(0.5, 200.0, "log"))
+           f_post=(0.02, 10.0, "log"), tau_post=(0.5, 200.0, "log"), K_gc=(1e-5, 0.3, "log"),
+           K_gs=(1e-5, 0.3, "log"))
+F_WASH_MAX = dict(dirg=5.0)               # model-specific upper bound of f_wash (rebound cap)
 TC = ("f_ttx", "u_rec", "f_wash", "f_post")
 TAU_POST = 2.0                            # h, FIXED (2026-11-18: not identifiable behind the ±24 h washout mask)
 MODELS = dict(sym=("K", "K_g", "alpha", "s") + TC,
               dir=("K_cc", "K_cs", "K_g", "alpha", "s_c", "s_s") + TC,
-              dir_eps=("K_cc", "K_cs", "eps", "K_g", "alpha", "s_c", "s_s") + TC)
+              dir_eps=("K_cc", "K_cs", "eps", "K_g", "alpha", "s_c", "s_s") + TC,
+              dirg=("K_cc", "K_cs", "K_gc", "K_gs", "alpha", "s") + TC)
 START = dict(K=0.2, K_cc=0.3, K_cs=0.15, eps=0.3, K_g=0.01, alpha=0.0, s=0.6, s_c=0.6, s_s=0.6, f_ttx=0.05,
-             u_rec=0.8, f_wash=1.5, f_post=0.8)
+             u_rec=0.8, f_wash=1.5, f_post=0.8, K_gc=0.01, K_gs=0.01)
 D0 = [5e-4]                               # shared, fixed amplitude-noise strength (set by --d0 / scan)
 MAXITER_PER_DIM = [300]                   # Nelder–Mead evaluations per free parameter (--maxiter-per-dim)
 
@@ -96,16 +103,23 @@ def d0_tag(d0=None):
 def to_x(p, keys):
     x = []
     for k in keys:
-        lo, hi, tr = PAR[k]; v = np.clip(p[k], lo * (1 + 1e-9), hi * (1 - 1e-9))
+        lo, hi, tr = _bounds(k, keys); v = np.clip(p[k], lo * (1 + 1e-9), hi * (1 - 1e-9))
         u = (np.log(v) - np.log(lo)) / (np.log(hi) - np.log(lo)) if tr == "log" else (v - lo) / (hi - lo)
         x.append(np.log(u / (1 - u)))
     return np.array(x)
 
 
+def _bounds(k, keys):
+    lo, hi, tr = PAR[k]
+    if k == "f_wash" and "K_gc" in keys:                   # dirg: rebound cap
+        hi = F_WASH_MAX["dirg"]
+    return lo, hi, tr
+
+
 def from_x(x, keys):
     p = {}
     for k, xi in zip(keys, x):
-        lo, hi, tr = PAR[k]; u = 1 / (1 + np.exp(-xi))
+        lo, hi, tr = _bounds(k, keys); u = 1 / (1 + np.exp(-xi))
         p[k] = float(np.exp(np.log(lo) + u * (np.log(hi) - np.log(lo)))) if tr == "log" else float(lo + u * (hi - lo))
     return p
 
@@ -113,10 +127,15 @@ def from_x(x, keys):
 def full(p):
     """Expand a model's parameters to the general (dir) set."""
     if "K" in p:
-        q = dict(K_cc=p["K"], K_cs=p["K"], eps=1.0, K_g=p["K_g"], alpha=p["alpha"], s_c=p["s"], s_s=p["s"])
+        q = dict(K_cc=p["K"], K_cs=p["K"], eps=1.0, K_gc=p["K_g"], K_gs=p["K_g"], alpha=p["alpha"], s_c=p["s"],
+                 s_s=p["s"])
         q.update({k: p[k] for k in TC}); q["tau_post"] = p.get("tau_post", TAU_POST)
         return q
     q = dict(p); q.setdefault("eps", 1.0); q.setdefault("tau_post", TAU_POST)
+    if "s" in q:                                           # dirg: one width factor for both ensembles
+        q.setdefault("s_c", q["s"]); q.setdefault("s_s", q["s"])
+    if "K_g" in q:
+        q.setdefault("K_gc", q["K_g"]); q.setdefault("K_gs", q["K_g"])
     return q
 
 
@@ -200,7 +219,8 @@ def simulate(p, i):
     Om, De, w, ens = model["Om"], model["De"], model["w"], model["ens"]
     C = ens == 0; wc = np.where(C, w, 0) / model["p"][0]; ws = np.where(C, 0, w) / model["p"][1]
     lin = 1j * Om - np.where(C, p["s_c"], p["s_s"]) * De
-    Ksyn = np.where(C, p["K_cc"], p["K_cs"]) * np.exp(-1j * p["alpha"]); eps = p["eps"]; Kg = p["K_g"]
+    Ksyn = np.where(C, p["K_cc"], p["K_cs"]) * np.exp(-1j * p["alpha"]); eps = p["eps"]
+    Kg = np.where(C, p["K_gc"], p["K_gs"])
     t0, t1 = int(ti[0]), int(ti[-1]); n = t1 - t0; sub = int(round(1 / DT))
     tg = t0 + 0.5 * DT * np.arange(2 * n * sub + 1)
     rg = rho_t(p, tg, float(g["ttx"]), float(g["wash"]))
@@ -321,7 +341,7 @@ def figure(slices, models):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(3, len(slices), figsize=(3.1 * len(slices), 7.2), sharex="col", squeeze=False,
                            gridspec_kw=dict(hspace=0.12, wspace=0.3, left=0.06, right=0.99, top=0.92, bottom=0.07))
-    ls = dict(sym=":", dir="-", dir_eps="--")
+    ls = dict(sym=":", dir="-", dir_eps="--", dirg="-")
     summ = {}
     for col, i in enumerate(slices):
         g, ct, model, prep, z0, ti = context(i)
