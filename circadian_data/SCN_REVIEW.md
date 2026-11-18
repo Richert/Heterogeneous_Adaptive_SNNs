@@ -447,3 +447,45 @@ What this means for the per-cell frequencies:
 2. **Block vs noise is not identifiable in SCN1.** The fit keeps full coupling under TTX (ρ_ttx = 1) and desynchronises through amplitude noise alone; after washout the coupling decays to 5 %. That is biologically implausible.
 3. Many parameters sit at their bounds: K_cc = 2, K_g = 0.3, ρ_post = 3.
 4. The shell's steady phase drift ahead of the core under TTX in SCN1 (to +6 h) is not reproduced.
+
+## 15. Core/shell fits with the user's coupling time course (server scan, 2026-11-18)
+
+- **Coupling time course:** block at t_ttx → linear recovery ramp from t_rec → washout level → relaxation to the
+  post-washout level.
+- **D₀ scan** (shared D₀, directed model), total loss:
+
+  | D₀ | 2e-4 | 5e-4 | 1e-3 |
+  |---|---|---|---|
+  | Total loss (×1e-3) | 11.2 | 9.7 | 8.2 |
+
+  The best D₀ (1e-3) is at the edge of the scan. SCN2 drives the trend; SCN1 is best at 5e-4.
+- **Slice RMSE at D₀ = 1e-3:**
+
+  | | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+  |---|---|---|---|---|---|
+  | Directed | 0.023 | 0.030 | 0.024 | 0.022 | 0.015 |
+  | Model C | 0.019 | 0.021 | 0.024 | 0.026 | — |
+
+- **The directed model beats the symmetric one in every slice**: loss 6.3 → 1.0, 8.2 → 3.5, 2.1 → 0.85,
+  3.6 → 1.4 and 2.2 → 1.5 (×1e-3). The symmetric model cannot separate core and shell (RMSE ≈ 0.1 in SCN1/2).
+- **The asymmetry is in the input: the core receives stronger coupling than the shell.**
+
+  | | SCN1 | SCN2 | SCN3 |
+  |---|---|---|---|
+  | K_cc (rad/h) | 0.18 | 2.6 | 0.032 |
+  | K_cs (rad/h) | 0.064 | 0.41 | 0.009 |
+
+  The shell's output factor ε sits at 1 in SCN1–4, so a weak shell output is not supported.
+- **SCN2's early recovery is captured.** The ramp starts 107 h before washout, from a complete block. SCN3's starts
+  54 h before washout, with a strong rebound (f_wash 7.9, f_post 2.6).
+- **Open problems:**
+  1. SCN1 still has no block at D₀ = 1e-3 (f_ttx = 1). At 5e-4 it has a partial block (f_ttx = 0.47) and a slightly
+     lower loss.
+  2. SCN1's shell drifting ahead under TTX (to +6 h) is not reproduced. A drift from the core–shell frequency
+     difference requires a block, so the Δψ term (weight 1e-3, only where both R > 0.3) is too weak to arbitrate
+     between block and noise.
+  3. Several parameters sit at their bounds: ε, K_g → 0, and the width factors s_c and s_s at 0.05 or 2 in
+     SCN2/4/5.
+  4. The implied noise is large: D₀·q reaches about 0.1 rad/h under TTX (q ≈ 100 in SCN1). This contrasts with the
+     undetectable accumulating phase diffusion in the interval test (§13, T1), and it would make the TTX dephasing
+     noise-dominated rather than set by the frequency distribution.

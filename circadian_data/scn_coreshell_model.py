@@ -31,11 +31,16 @@ noise term (it would count the frequency spread twice). Component m of ensemble 
 Models (D₀ fixed):
   sym     no directed structure: K_cc = K_cs = K, ε = 1, s_c = s_s = s  (9: K, K_g, α, s, f_ttx, u_rec, f_wash, f_post,
                                                                           τ_post)
-  dir     full                                                       (12: K_cc, K_cs, ε, K_g, α, s_c, s_s, f_ttx, u_rec,
+  dir     directed INPUT asymmetry (K_cc ≠ K_cs), ε = 1 (2026-11-18: ε → 1 in the first scan)
+                                                                     (11: K_cc, K_cs, K_g, α, s_c, s_s, f_ttx, u_rec,
                                                                           f_wash, f_post, τ_post)
+  dir_eps directed with the shell output factor ε free                (12)
 Loss over the mask of scn_targets: mean of the squared errors of c_c|Z_c| − R_c, c_s|Z_s| − R_s and c|Z| − R (slice),
-+ the core–shell phase difference Δψ (wrapped, where both R > PSI_RMIN, scale SIGMA_PSI) + the collective frequency
-term of scn_model_fit (pre-TTX and post-washout stretches). Start from the measured state (cells assigned to the most
++ the core–shell PHASE DIFFERENCE Δψ = arg(Z_s Z̄_c) with its sampling error: per hour
+      SIG_R² · wrap(Δψ_model − Δψ_data)² / (1/(2 N_c R_c²) + 1/(2 N_s R_s²) + SIG0²)
+  (N_e cells, R_e the measured coherences; SIG0 = 0.5 h model-error floor; scaled to the R-error scale SIG_R = 0.05),
+  so a drift resolved at low coherence still counts and the term fades where R → 0 (2026-11-18; replaces the R > 0.3
+  threshold) + the collective frequency term of scn_model_fit (pre-TTX and post-washout stretches). Start from the measured state (cells assigned to the most
 likely component of their ensemble). Nelder–Mead in a transformed (log / logit) space from N_STARTS starts, parallel.
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_coreshell_model.py time fit figure [--slices 1,2,3,4,5]
@@ -62,7 +67,9 @@ import scn_coreshell_targets as CT
 
 OUT = CT.OUT
 DT = 0.5
-PSI_RMIN, SIGMA_PSI = 0.3, 0.15          # rad (≈ 0.6 h)
+PSI_RMIN = 0.3                           # Δψ rms diagnostic only
+SIG_R = 0.05                             # R-error scale of the phase term
+SIG0 = 0.5 * 2 * np.pi / 24              # 0.5-h model-error floor of Δψ (rad)
 AMP_WIN = 24                             # h, rolling window of the single-cell amplitude
 Q_MAX = 100.0                            # cap of (A_pre / A)² (amplitudes near the noise floor)
 CPD = 24 / (2 * np.pi)
@@ -73,7 +80,8 @@ PAR = dict(K=(1e-3, 5.0, "log"), K_cc=(1e-3, 5.0, "log"), K_cs=(1e-3, 5.0, "log"
            f_post=(0.02, 10.0, "log"), tau_post=(0.5, 200.0, "log"))
 TC = ("f_ttx", "u_rec", "f_wash", "f_post", "tau_post")
 MODELS = dict(sym=("K", "K_g", "alpha", "s") + TC,
-              dir=("K_cc", "K_cs", "eps", "K_g", "alpha", "s_c", "s_s") + TC)
+              dir=("K_cc", "K_cs", "K_g", "alpha", "s_c", "s_s") + TC,
+              dir_eps=("K_cc", "K_cs", "eps", "K_g", "alpha", "s_c", "s_s") + TC)
 START = dict(K=0.2, K_cc=0.3, K_cs=0.15, eps=0.3, K_g=0.01, alpha=0.0, s=0.6, s_c=0.6, s_s=0.6, f_ttx=0.05,
              u_rec=0.8, f_wash=1.5, f_post=0.8, tau_post=24.0)
 D0 = [5e-4]                               # shared, fixed amplitude-noise strength (set by --d0 / scan)
@@ -107,7 +115,8 @@ def full(p):
         q = dict(K_cc=p["K"], K_cs=p["K"], eps=1.0, K_g=p["K_g"], alpha=p["alpha"], s_c=p["s"], s_s=p["s"])
         q.update({k: p[k] for k in TC})
         return q
-    return dict(p)
+    q = dict(p); q.setdefault("eps", 1.0)
+    return q
 
 
 # ─── data and mixtures ───────────────────────────────────────────────────────────────────────────
@@ -226,15 +235,19 @@ def loss(x, keys, i, detail=False):
     n = msk.sum()
     dps_m = np.angle(Zs * np.conj(Zc)); dps_d = ct["dpsi"][ti]
     pm = msk & (ct["Rc"][ti] > PSI_RMIN) & (ct["Rs"][ti] > PSI_RMIN) & np.isfinite(dps_d)
-    epsi = np.angle(np.exp(1j * (dps_m - dps_d)))[pm] ** 2 / SIGMA_PSI ** 2
+    Nc, Ns = (float(v) for v in ct["n"])
+    var = 1 / (2 * Nc * np.maximum(ct["Rc"][ti], 1e-3) ** 2) + 1 / (2 * Ns * np.maximum(ct["Rs"][ti], 1e-3) ** 2) \
+        + SIG0 ** 2
+    ex = SIG_R ** 2 * np.angle(np.exp(1j * (dps_m - dps_d))) ** 2 / var
+    ex = np.where(msk & np.isfinite(ex), ex, 0.0)
     fterm = sum(((F.collective_frequency(Z[a - ti[0]:b - ti[0]]) - nu) / F.SIGMA_NU) ** 2
                 for (a, b), nu in zip(prep["stretches"], prep["nu"]))
-    L = (e.sum() + 1e-3 * epsi.sum() + fterm) / n
+    L = (e.sum() + ex.sum() + fterm) / n
     if not np.isfinite(L):
         return (1e3, None) if detail else 1e3
     if detail:
         rm = lambda a: float(np.sqrt(np.mean(a[msk])))
-        return L, dict(params=p, Zc=Zc, Zs=Zs, Z=Z, ti=ti, rmse_c=rm(ec), rmse_s=rm(es), rmse_g=rm(eg),
+        return L, dict(params=p, Zc=Zc, Zs=Zs, Z=Z, ti=ti, rmse_c=rm(ec), rmse_s=rm(es), rmse_g=rm(eg), phase_term=float(ex[msk].mean()),
                        psi_rms_h=float(np.sqrt(np.mean(np.angle(np.exp(1j * (dps_m - dps_d)))[pm] ** 2)) * CPD)
                        if pm.any() else np.nan)
     return L
@@ -307,7 +320,7 @@ def figure(slices, models):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(3, len(slices), figsize=(3.1 * len(slices), 7.2), sharex="col", squeeze=False,
                            gridspec_kw=dict(hspace=0.12, wspace=0.3, left=0.06, right=0.99, top=0.92, bottom=0.07))
-    ls = dict(sym=":", dir="-")
+    ls = dict(sym=":", dir="-", dir_eps="--")
     summ = {}
     for col, i in enumerate(slices):
         g, ct, model, prep, z0, ti = context(i)
