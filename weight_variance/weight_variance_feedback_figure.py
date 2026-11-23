@@ -54,6 +54,8 @@ MUS_B = (0.02, 0.04, 0.05)
 COL_B = {0.02: colormaps["viridis"](0.567), 0.04: colormaps["viridis"](0.85), 0.05: "#c1121f"}
 SIN_SHADES = (0.55, 0.9)
 #: RdBu_r restricted to its lighter middle range, so that the black overlay lines stay visible in (f)
+#: light-to-red sequential colormap for the bistability panel (e), likewise keeping the overlay lines visible
+BISTAB_CMAP = LinearSegmentedColormap.from_list("YlOrRd_trunc", colormaps["YlOrRd"](np.linspace(0.0, 0.85, 256)))
 OMEGA_CMAP = LinearSegmentedColormap.from_list("RdBu_r_light", colormaps["RdBu_r"](np.linspace(0.15, 0.85, 256)))
 GRID_FINE_NPZ = dp.mpmf("weight_variance_beta_grid_fine.npz")
 GRID_NPZ = dp.mpmf("weight_variance_beta_grid.npz")
@@ -158,7 +160,7 @@ def panels_beta(axes, gr, p, K, fig):
                        Line2D([], [], color="k", lw=0.9, label="quasi-static")],
               loc="lower right", frameon=True, framealpha=0.8, edgecolor="none", fontsize=4.8)
     ax = axes[1]                                                       # (e) bistability
-    im = ax.pcolormesh(D, bd, gr["R"][..., ic] - gr["R"][..., ia], cmap="magma", vmin=0, vmax=0.8,
+    im = ax.pcolormesh(D, bd, gr["R"][..., ic] - gr["R"][..., ia], cmap=BISTAB_CMAP, vmin=0, vmax=0.8,
                        shading="nearest")
     _beta_overlay(ax, p, K)
     _beta_axes(ax, gr, r"$R_{\mathrm{coh}} - R_{\mathrm{async}}$", im, fig)
