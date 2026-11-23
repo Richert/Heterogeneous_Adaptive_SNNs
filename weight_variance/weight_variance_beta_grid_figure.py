@@ -22,7 +22,8 @@ from prl_style import panel_label, COL_DOUBLE
 import numpy as np
 import matplotlib.pyplot as plt
 
-GRID_NPZ = dp.mpmf("weight_variance_beta_grid.npz")
+GRID_NPZ = (dp.mpmf("weight_variance_beta_grid_fine.npz")
+            if os.path.exists(dp.mpmf("weight_variance_beta_grid_fine.npz")) else dp.mpmf("weight_variance_beta_grid.npz"))
 PLANE_NPZ = dp.mpmf("weight_variance_beta_plane.npz")
 OUT = dp.mpmf("weight_variance_beta_grid")
 

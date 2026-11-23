@@ -13,6 +13,18 @@ One two-column row of three panels:
   (c) G = sin: collective frequency Ω/κ vs κ = μ/γ for Δ = 0.1, 0.3 — network (○), quasi-static
       (solid), first order (dashed) (weight_variance_sin_drift.npz).
 
+and a second row on the Δ–β plane of the general rule G_β(φ) = sin(φ + β) at μ = 0.03, i.e. between the
+antisymmetric (β = 0) and the symmetric (β = 90°, panel a) rule (weight_variance_beta_grid[_fine].npz,
+weight_variance_beta_plane.npz):
+
+  (d) phase coherence R of the network started from a coherent state;
+  (e) bistability: R(coherent init) − R(asynchronous init);
+  (f) collective frequency Ω (coherent init, symmetric-log colour scale; grey where R < 2/√N, where the
+      mean phase is not defined).
+  Overlays: mean-field transcritical point Δ = K/2 (dotted), mean-field fold (dashed), end of the
+  quasi-static synchronized branch (solid); in (d), white circles mark the largest Δ at which the network
+  started on the quasi-static state remains on it (|R − R_QS| < 0.05).
+
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python weight_variance_feedback_figure.py
 """
 
@@ -28,6 +40,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from matplotlib.lines import Line2D
+from matplotlib.colors import SymLogNorm
 
 from weight_variance_bifurcation_rules import ra_branches
 from weight_variance_cos_quasistatic_figure import panel_fold, QS_NPZ, FIG3_NPZ, RAMP_NPZ
@@ -40,6 +53,9 @@ MUS_B = (0.02, 0.04, 0.05)
 #: Fig. 3 colours for μ ∈ {0.02, 0.04} (viridis positions of weight_variance_rule_meanfield.py), red for 0.05
 COL_B = {0.02: colormaps["viridis"](0.567), 0.04: colormaps["viridis"](0.85), 0.05: "#c1121f"}
 SIN_SHADES = (0.55, 0.9)
+GRID_FINE_NPZ = dp.mpmf("weight_variance_beta_grid_fine.npz")
+GRID_NPZ = dp.mpmf("weight_variance_beta_grid.npz")
+PLANE_NPZ = dp.mpmf("weight_variance_beta_plane.npz")
 
 set_prl_style = functools.partial(_set_prl_style, "prl", **{"legend.fontsize": 5.4})
 _panel_label = functools.partial(panel_label, dx=-24, dy=3)
@@ -100,18 +116,75 @@ def panel_sin(ax, s):
               loc="upper left", frameon=False, ncol=2, handlelength=1.6, columnspacing=0.8)
 
 
+def _beta_overlay(ax, p, K, lw=0.9):
+    bd = np.degrees(p["betas"])
+    ax.axvline(K / 2, color="k", ls=":", lw=0.8)
+    ax.plot(p["fold_mf"], bd, color="k", ls="--", lw=lw)
+    ax.plot(p["qs_last"], bd, color="w", lw=lw + 1.0)
+    ax.plot(p["qs_last"], bd, color="k", lw=lw)
+
+
+def _beta_axes(ax, gr, cb_label, im, fig):
+    D = gr["deltas"]
+    ax.set_xlim(D.min() - 0.02, D.max() + 0.02)
+    ax.set_ylim(-3.75, 93.75)
+    ax.set_yticks([0, 30, 60, 90])
+    ax.set_xlabel(r"$\Delta$")
+    cb = fig.colorbar(im, ax=ax, shrink=0.9, pad=0.02)
+    cb.set_label(cb_label, fontsize=6)
+    cb.ax.tick_params(labelsize=5)
+
+
+def panels_beta(axes, gr, p, K, fig):
+    D, bd = gr["deltas"], np.degrees(gr["betas"])
+    inits = list(gr["inits"])
+    ic, ia = inits.index("coherent"), inits.index("async")
+    ax = axes[0]                                                       # (d) R, coherent init
+    im = ax.pcolormesh(D, bd, gr["R"][..., ic], cmap="viridis", vmin=0, vmax=1, shading="nearest")
+    _beta_overlay(ax, p, K)
+    if "qs" in inits:                                                  # network stays on the QS branch up to …
+        iq = inits.index("qs")
+        for a, b in enumerate(bd):
+            Rq = np.interp(D, p["deltas"], p["qs_R"][a], left=np.nan, right=np.nan)
+            ok = np.isfinite(gr["R"][a, :, iq]) & np.isfinite(Rq) & (np.abs(gr["R"][a, :, iq] - Rq) < 0.05)
+            if ok.any():
+                ax.plot(D[ok].max(), b, "o", ms=2.6, mfc="w", mec="k", mew=0.5, zorder=6)
+    ax.set_ylabel(r"phase lag $\beta$ (deg)")
+    _beta_axes(ax, gr, r"$R$", im, fig)
+    ax.legend(handles=[Line2D([], [], color="k", ls=":", lw=0.8, label="MF transcritical"),
+                       Line2D([], [], color="k", ls="--", lw=0.9, label="MF fold"),
+                       Line2D([], [], color="k", lw=0.9, label="quasi-static")],
+              loc="lower right", frameon=True, framealpha=0.8, edgecolor="none", fontsize=4.8)
+    ax = axes[1]                                                       # (e) bistability
+    im = ax.pcolormesh(D, bd, gr["R"][..., ic] - gr["R"][..., ia], cmap="magma", vmin=0, vmax=0.8,
+                       shading="nearest")
+    _beta_overlay(ax, p, K)
+    _beta_axes(ax, gr, r"$R_{\mathrm{coh}} - R_{\mathrm{async}}$", im, fig)
+    ax = axes[2]                                                       # (f) collective frequency
+    Om = np.where(gr["R"][..., ic] > 2.0 / np.sqrt(float(gr["N"])), gr["Omega"][..., ic], np.nan)
+    ax.set_facecolor("0.85")                                          # Ω undefined where R ~ N^{-1/2}
+    im = ax.pcolormesh(D, bd, Om, cmap="RdBu_r", shading="nearest",
+                       norm=SymLogNorm(linthresh=0.02, vmin=-1.3, vmax=1.3, base=10))
+    _beta_overlay(ax, p, K)
+    _beta_axes(ax, gr, r"$\Omega$", im, fig)
+
+
 def main():
     q, val, f3, rp = np.load(QS_NPZ), np.load(VAL_NPZ), np.load(FIG3_NPZ), np.load(RAMP_NPZ)
     bif, s = np.load(BIF_NPZ), np.load(SIN_NPZ)
     K, g = float(q["K"]), float(q["gamma"])
     set_prl_style()
-    fig, axes = plt.subplots(1, 3, figsize=(COL_DOUBLE, 2.2), constrained_layout=True)
+    gr = np.load(GRID_FINE_NPZ if os.path.exists(GRID_FINE_NPZ) else GRID_NPZ)
+    p = np.load(PLANE_NPZ)
+    fig, axs = plt.subplots(2, 3, figsize=(COL_DOUBLE, 4.5), constrained_layout=True)
+    axes = axs[0]
     panel_fold(axes[0], q, rp, K, g)
     axes[0].set_title(r"$G = \cos,\ \mu = 0.03$", fontsize=6.5)
     panel_branches(axes[1], q, val, f3, bif, K, g)
     axes[1].set_title(r"$G = \cos$", fontsize=6.5)
     panel_sin(axes[2], s)
-    for ax, l in zip(axes, "abc"):
+    panels_beta(axs[1], gr, p, K, fig)
+    for ax, l in zip(axs.ravel(), "abcdef"):
         _panel_label(ax, l)
     fig.savefig(OUT + ".svg")
     fig.savefig(OUT + ".png", dpi=300)
