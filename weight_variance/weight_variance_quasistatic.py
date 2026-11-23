@@ -164,3 +164,117 @@ def weight_stats(st, kap, mu, gamma, Delta):
     sg = 0.5 * (1.0 - S ** 2)
     VA = kap ** 2 * sG + mu ** 2 * sg / (gamma * (gamma + 2.0 * Delta))
     return dict(Abar=A, VA=VA, VArel=VA / A ** 2, sG=sG, sg=sg)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  general adaptation phase lag β:  G_β(φ) = sin(φ + β)   (β = π/2: cos,  β = 0: sin)
+# ════════════════════════════════════════════════════════════════════════════
+#  Γ_ij = Im(e^{iβ} c_j c_i*)  →  F_i = R + (κ/2i)(e^{iβ} W c_i* − e^{−iβ} S c_i),  W = ⟨c²⟩ complex,
+#  locked:  ω_i − Ω = K R sin θ + (Kκ/2)(|W| cos(2θ − β − arg W) − S cos β),
+#  Ā = 1 + κ R² sin β,  σ_Γ² = ½(S² − cos 2β |W|²) − R⁴ sin² β,  σ_g² = ½(1 − S²).
+
+def locked_phases_beta(wt, R, W, S, kap, K, beta, n_grid=6000):
+    """Stable locked phases θ* of h(θ) = ω_i − Ω on the increasing branch of h that contains θ = 0.
+    Returns (θ*, nan outside the locking band; (h_min, h_max) of the branch)."""
+    th = np.linspace(-np.pi, np.pi, n_grid)
+    h = K * R * np.sin(th) + 0.5 * K * kap * (np.abs(W) * np.cos(2 * th - beta - np.angle(W))
+                                              - S * np.cos(beta))
+    up = np.diff(h) > 0
+    i0 = int(np.argmin(np.abs(th)))
+    if not up[min(i0, up.size - 1)]:
+        return np.full(wt.size, np.nan), (np.nan, np.nan)
+    lo = i0
+    while lo > 0 and up[lo - 1]:
+        lo -= 1
+    hi = i0
+    while hi < up.size and up[hi]:
+        hi += 1
+    ths, hs = th[lo:hi + 1], h[lo:hi + 1]
+    phi = np.full(wt.size, np.nan)
+    lk = (wt > hs[0]) & (wt < hs[-1])
+    phi[lk] = np.interp(wt[lk], hs, ths)
+    return phi, (hs[0], hs[-1])
+
+
+def state_beta(omega, R, Om, W, kap, K, beta, n_outer=100, n_drift=40, tol=1e-12):
+    """Moments c_i for given (R, Ω, W) with S iterated to self-consistency; residuals of
+    ⟨c⟩ = R (real) and ⟨c²⟩ = W (complex)."""
+    wt = omega - Om
+    S = 1.0
+    eb = np.exp(1j * beta)
+    cd = None
+    for _ in range(n_outer):
+        phi, band = locked_phases_beta(wt, R, W, S, kap, K, beta)
+        lk = np.isfinite(phi)
+        wd = wt[~lk]
+        if cd is None or cd.size != wd.size:
+            cd = np.zeros(wd.size, complex)
+        for _ in range(n_drift):
+            Fd = K * (R + kap / 2j * (eb * W * np.conj(cd) - np.conj(eb) * S * cd))
+            rho = np.minimum(np.abs(Fd), np.abs(wd) * (1 - 1e-12))
+            cn = np.exp(1j * np.angle(Fd)) * 1j * _drift_q(wd, rho)
+            cd = 0.5 * cd + 0.5 * cn
+        S_new = (lk.sum() + np.sum(np.abs(cd) ** 2)) / omega.size
+        done = abs(S_new - S) < tol
+        S = S_new
+        if done:
+            break
+    c = np.empty(omega.size, complex)
+    c[lk] = np.exp(1j * phi[lk])
+    c[~lk] = cd
+    m1, m2 = c.mean(), np.mean(c ** 2)
+    return dict(R=R, Omega=Om, W=W, S=S, c=c, locked=lk, band=band,
+                res=np.array([m1.real - R, m1.imag, m2.real - W.real, m2.imag - W.imag]))
+
+
+def solve_beta(omega, kap, K, beta, x0, n_it=400, damp=0.5, n_avg=50, R_min=0.02, R_tol=2e-3):
+    """Self-consistent (R, Ω, W) for G_β: Powell hybrid root find from x0 = (R, Ω, W), damped
+    fixed-point iteration as fallback (averaged over the last n_avg iterations). None if lost."""
+    from scipy.optimize import root
+    R0, Om0, W0 = x0
+    f = lambda v: state_beta(omega, v[0], v[1], v[2] + 1j * v[3], kap, K, beta)["res"]
+    sol = root(f, [R0, Om0, W0.real, W0.imag], method="hybr", options=dict(xtol=1e-10))
+    if sol.success and sol.x[0] > R_min and np.max(np.abs(sol.fun)) < 1e-7:
+        v = sol.x
+        return state_beta(omega, v[0], v[1], v[2] + 1j * v[3], kap, K, beta)
+    R, Om, W, hist = R0, Om0, complex(W0), []
+    for it in range(n_it):
+        st = state_beta(omega, R, Om, W, kap, K, beta)
+        r = st["res"]
+        R, W = R + damp * r[0], W + damp * (r[2] + 1j * r[3])
+        Om = Om + damp * K * R * r[1]
+        if R < R_min:
+            return None
+        if it >= n_it - n_avg:
+            hist.append((R, Om, W))
+    h = np.array(hist)
+    if np.abs(h[:, 0]).std() > R_tol:
+        return None
+    Rm, Om_m, Wm = h.mean(axis=0)
+    return state_beta(omega, Rm.real, Om_m.real, Wm, kap, K, beta)
+
+
+def weight_stats_beta(st, kap, mu, gamma, Delta, beta):
+    """(Ā, V_A, V_A/Ā², σ_Γ², σ_g²) of a quasi-static state for G_β."""
+    R, S, W = st["R"], st["S"], st["W"]
+    A = 1.0 + kap * R ** 2 * np.sin(beta)
+    sG = 0.5 * (S ** 2 - np.cos(2 * beta) * np.abs(W) ** 2) - R ** 4 * np.sin(beta) ** 2
+    sg = 0.5 * (1.0 - S ** 2)
+    VA = kap ** 2 * sG + mu ** 2 * sg / (gamma * (gamma + 2.0 * Delta))
+    return dict(Abar=A, VA=VA, VArel=VA / A ** 2, sG=sG, sg=sg)
+
+
+def meanfield_beta(Delta, mu, gamma, K, beta):
+    """Synchronized mean-field fixed point (R, Ā, V_A/Ā²) of the closure for G_β (None if absent)."""
+    from weight_variance_analysis import S_order
+    ks = mu / gamma * np.sin(beta)
+    disc = (1 + ks) ** 2 - 8 * ks * Delta / K
+    if disc < 0:
+        return None
+    A = 0.5 * ((1 + ks) + np.sqrt(disc)) if ks != 0 else 1.0
+    R2 = 1 - 2 * Delta / (K * A)
+    if R2 <= 0:
+        return None
+    S = float(np.clip(S_order(np.array([R2]), np.array([A]), np.array([Delta]), K)[0], 0, 1))
+    VA = mu ** 2 / (2 * gamma ** 2 * (gamma + 2 * Delta)) * (gamma * (1 - R2 ** 2) + 2 * Delta * (S ** 2 - R2 ** 2))
+    return dict(R=np.sqrt(R2), Abar=A, VArel=VA / A ** 2)
