@@ -21,6 +21,7 @@ from prl_style import panel_label, COL_DOUBLE
 # ---------------------------------------------------------------------------
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 
 GRID_NPZ = (dp.mpmf("weight_variance_beta_grid_fine.npz")
             if os.path.exists(dp.mpmf("weight_variance_beta_grid_fine.npz")) else dp.mpmf("weight_variance_beta_grid.npz"))
@@ -33,8 +34,9 @@ _panel_label = functools.partial(panel_label, dx=-22, dy=3)
 
 def overlay(ax, p, K):
     bd = np.degrees(p["betas"])
-    ax.axvline(K / 2, color="k", ls=":", lw=0.8)
-    ax.plot(p["fold_mf"], bd, color="k", ls="--", lw=0.9)
+    halo = [pe.withStroke(linewidth=2.0, foreground="w")]             # keep lines visible on dark colours
+    ax.axvline(K / 2, color="k", ls=":", lw=0.8, path_effects=halo)
+    ax.plot(p["fold_mf"], bd, color="k", ls="--", lw=0.9, path_effects=halo)
     ax.plot(p["qs_last"], bd, color="w", lw=1.6)
     ax.plot(p["qs_last"], bd, color="k", lw=0.8)
     ax.axhline(np.degrees(float(p["beta_star"])), color="0.4", lw=0.5)
