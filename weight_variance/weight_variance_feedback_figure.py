@@ -40,7 +40,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from matplotlib.lines import Line2D
-from matplotlib.colors import SymLogNorm
+from matplotlib.colors import SymLogNorm, LinearSegmentedColormap
 
 from weight_variance_bifurcation_rules import ra_branches
 from weight_variance_cos_quasistatic_figure import panel_fold, QS_NPZ, FIG3_NPZ, RAMP_NPZ
@@ -53,6 +53,8 @@ MUS_B = (0.02, 0.04, 0.05)
 #: Fig. 3 colours for μ ∈ {0.02, 0.04} (viridis positions of weight_variance_rule_meanfield.py), red for 0.05
 COL_B = {0.02: colormaps["viridis"](0.567), 0.04: colormaps["viridis"](0.85), 0.05: "#c1121f"}
 SIN_SHADES = (0.55, 0.9)
+#: RdBu_r restricted to its lighter middle range, so that the black overlay lines stay visible in (f)
+OMEGA_CMAP = LinearSegmentedColormap.from_list("RdBu_r_light", colormaps["RdBu_r"](np.linspace(0.15, 0.85, 256)))
 GRID_FINE_NPZ = dp.mpmf("weight_variance_beta_grid_fine.npz")
 GRID_NPZ = dp.mpmf("weight_variance_beta_grid.npz")
 PLANE_NPZ = dp.mpmf("weight_variance_beta_plane.npz")
@@ -163,7 +165,7 @@ def panels_beta(axes, gr, p, K, fig):
     ax = axes[2]                                                       # (f) collective frequency
     Om = np.where(gr["R"][..., ic] > 2.0 / np.sqrt(float(gr["N"])), gr["Omega"][..., ic], np.nan)
     ax.set_facecolor("0.85")                                          # Ω undefined where R ~ N^{-1/2}
-    im = ax.pcolormesh(D, bd, Om, cmap="RdBu_r", shading="nearest",
+    im = ax.pcolormesh(D, bd, Om, cmap=OMEGA_CMAP, shading="nearest",
                        norm=SymLogNorm(linthresh=0.02, vmin=-1.3, vmax=1.3, base=10))
     _beta_overlay(ax, p, K)
     _beta_axes(ax, gr, r"$\Omega$", im, fig)
