@@ -549,3 +549,177 @@ behind the mask.
 - Share one width factor between the ensembles, so that the core–shell frequency differences come from the data.
 - Give each ensemble its own local coupling, K_g,c and K_g,s.
 - Cap f_wash.
+
+## 18. dirg: shared width factor, ensemble-specific local coupling, rebound cap 5 (server, 2026-11-18)
+
+**Total loss:** 10.78e-3 at D₀ = 2.5e-4 and 11.36e-3 at 5e-4, against 11.60e-3 for dir at 5e-4 with the same number
+of parameters. The starts are consistent.
+
+**Slice RMSE at D₀ = 2.5e-4:**
+
+| | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+|---|---|---|---|---|---|
+| Slice RMSE | 0.024 | 0.012 | 0.027 | 0.025 | 0.027 |
+
+SCN1's core–shell drift is reproduced up to +3 h.
+
+**The input asymmetry is now consistent: the core receives more TTX-sensitive coupling than the shell in SCN1–4.**
+
+| | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+|---|---|---|---|---|---|
+| K_cc / K_cs (rad/h) | 0.37 / 0.068 | 2.5 / 1.34 | 0.049 / 0.014 | 2.55 / 0.25 | 0.67 / 0.76 |
+| Ratio | 5.4× | 1.9× | 3.4× | 10× | ≈ 1 |
+
+**Local (TTX-insensitive) coupling is larger in the core** in SCN1, SCN2, SCN4 and SCN5:
+
+| | SCN1 | SCN2 | SCN4 | SCN5 |
+|---|---|---|---|---|
+| K_g,c / K_g,s (rad/h) | 0.11 / 0.065 | 0.045 / 0 | 0.21 / 0.12 | 0.085 / 0 |
+
+SCN3 is reversed (0.005 vs 0.018).
+
+**The width factor exceeds 1:** s = 3.5 (SCN1), 4 (SCN2, at its bound), 1.0 (SCN3), 1.2 (SCN4), 1.3 (SCN5).
+- The model needs more dephasing than the slope-derived widths give.
+- This rises as D₀ falls, so noise and width share one dephasing budget.
+- In SCN1, s = 3.5 widens each cluster to about 0.07 c/d against a separation of 0.09 c/d. That is close to the point
+  where the mixture stops being bimodal, which matters for the bimodal story.
+- Peak-timing error makes the measured slope spread *larger* than the intrinsic one, so s > 1 cannot be measurement
+  error. It points to extra dephasing that the model is missing, or to the fast drop after TTX application being
+  absorbed into the widths.
+
+## 19. dirg at D₀ = 1e-4 and 0 (server, 2026-11-18)
+
+**Total loss** (×1e-3):
+
+| D₀ | 5e-4 | 2.5e-4 | 1e-4 | 0 |
+|---|---|---|---|---|
+| Total loss | 11.36 | 10.78 | **10.56** | 10.94 |
+
+**The amplitude noise barely matters.** D₀ = 0 is within 4 % of the best value, so the noise term can be dropped.
+
+**The width factor goes to its bound** (s = 4) in SCN1 and SCN2 at D₀ ≤ 1e-4.
+- In SCN1 that widens each cluster to a half-width of about 0.076 c/d, against a separation of 0.094 c/d.
+- For equal Lorentzians the mixture is bimodal only if the separation exceeds 2γ/√3 ≈ 0.088, so SCN1's bimodality is
+  effectively gone.
+
+**Robust across D₀:**
+- TTX blocks the coupling completely (f_ttx at its lower bound) in SCN1–3.
+- SCN1 and SCN3 show a strong rebound at washout (f_wash at the cap of 5).
+- The core receives more coupling than the shell in SCN1, SCN3 and SCN4 (about 3.5–11×).
+
+**Not robust:**
+- SCN2's coupling asymmetry (1.9× at 2.5e-4, 0.84× at 0).
+- The core-vs-shell local coupling in SCN3 and SCN4, which flips sign.
+- SCN1's u_rec stays at its start value of 0.8 at every D₀, so the recovery onset is not identifiable there.
+- SCN3's phase term (≈ 2.2e-3) stays the largest single error: the model does not follow the phase wrap at the
+  coherence minimum.
+
+## 20. Intrinsic-frequency figure, step 1 of the revised plan (2026-11-25, `scn_frequency_figure.py`)
+
+Figures: `writeup/scn_frequency_inference_{epoch,wavelet}.{png,pdf,json}`.
+
+**Method.**
+- Per-cell frequencies come from regressing peak times on cycle number. Their SE comes from the residual scatter,
+  shrunk towards the slice pool.
+- Phase prediction uses one minimal Kuramoto model throughout:
+  - for TTX, integrated from the measured phases at the midpoint of the condition;
+  - for pre and post, at its locked fixed point.
+- The synthetic validation feeds known frequencies through the same pipeline.
+- The wavelet peaks follow Abel et al.: a level-4 db8 detail (16–32 h band) and plain band maxima. A prominence
+  threshold rejected real TTX peaks because the whole-trace band leaks into the TTX edges.
+
+**Epoch method:**
+- **Coupled conditions:** the frequency spread equals the SE (pre: spread 0.002–0.014 vs SE 0.006–0.018 c/d; post:
+  0.005–0.008 vs 0.004–0.006), so the cells are locked and the spread is measurement error.
+- **TTX:**
+
+  | | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+  |---|---|---|---|---|---|
+  | Spread (c/d) | 0.040 | 0.090 | 0.085 | 0.020 | 0.013 |
+  | Median SE (c/d) | 0.031 | 0.051 | 0.047 | 0.024 | 0.018 |
+
+  An intrinsic spread is resolvable in SCN1–3; in SCN4–5 it is indistinguishable from the error.
+- **Validation:** the TTX SEs are calibrated in the core (robust z-SD 1.0–1.16; estimated vs true ρ = 0.74; median
+  error 0.017 c/d), but there are heavy tails: 1–22 % of cells have |z| > 3, i.e. cycle slips. SCN1's true bimodal
+  distribution is recovered.
+- **Phase prediction is weak:**
+  - In the coupled conditions, frequencies from the same condition explain a little of the locked pattern (diagonal
+    0.05–0.33).
+  - TTX frequencies explain 0.06–0.10 of the pre and post patterns in SCN1/2.
+  - The TTX diagonal is negative everywhere. Frequencies from half of the TTX window (2–3 cycles) are too noisy
+    relative to the spread, so this is not evidence for unstable frequencies.
+
+**Wavelet method:**
+- The TTX distributions are broader (SCN1 spread 0.094) and distorted. The synthetic test shows spurious mass at
+  0.8–0.9 c/d for SCN1.
+- The SEs are mis-calibrated in pre and post (robust z-SD up to 3.5): the smoothing correlates the timing errors.
+- **The epoch method is the better frequency estimator.**
+
+**Implication for step 2:** the error model needs a heavy-tailed (outlier) component.
+
+## 21. Step 2: deconvolving noise-floor fit, first run (2026-11-25, `scn_deconvolution.py`; outputs in `deconvolution/`)
+
+**Error model**, calibrated on the synthetic validation:
+
+| | Gaussian scale c | Outlier fraction π_o | Outlier scale σ_o (c/d) |
+|---|---|---|---|
+| Epoch | 0.98 | 0.10 | 0.23 |
+| Wavelet | 1.14 | 0.12 | 0.10 |
+
+**Synthetic recovery, epoch method** (true M recovered, naive vs deconvolved):
+- Bimodal: 100 % vs 100 %. Smallest width 0.018 vs 0.004, true 0.012: the naive fit overestimates the width and the
+  deconvolved fit underestimates it.
+- Broad unimodal: 67 % vs 67 %. Width 0.039 vs 0.020, true 0.025.
+- Narrow unimodal: 50 % vs 33 %. The deconvolved fit overcounts with zero-width components.
+
+**Synthetic recovery, wavelet method:** the deconvolved fit fails, with D above the floor and spurious zero-width
+components. The independent-Gaussian error model is wrong for wavelet peaks, whose timing errors are correlated.
+
+**Data, epoch method:**
+
+| | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+|---|---|---|---|---|---|
+| Naive M* | 2 | 2 | 2 | 1 | 2 |
+| Deconvolved M* | 1 | 2 | 2 | 1 | 2 |
+| Deconvolved M* = 1 in bootstrap | 57 % | — | — | — | — |
+
+- **SCN1:** after deconvolution, M* = 1 is preferred (γ = 0.020 c/d), so SCN1's bimodality is MARGINAL given the
+  errors.
+- **SCN2/3:** the second component sits at 0.56–0.64 c/d (≈ 40 h). That looks like cycle-slip artefacts (a missed
+  peak not counted) rather than biology, and the outlier model does not absorb them.
+- **SCN4:** deconvolved width 0.003.
+- **SCN5:** the deconvolved fit is degenerate (zero-width components).
+
+**Conclusions:**
+1. Deconvolving widths smaller than the error is ill-posed. The fit then drives widths to zero and adds components,
+   so it needs regularisation, e.g. a width prior or a profile likelihood with intervals.
+2. The error model should be calibrated per slice. Slices differ in SNR.
+3. Cycle slips must be handled at the source: a missed-peak check, or rejecting cells with an implausible TTX period.
+4. Use the wavelet method only with a correlated-error model, or report it naive.
+
+## 22. Cycle-slip handling + naive noise-floor fits with bootstrap (2026-11-25)
+
+**Cycle-slip handling.** Cycles are now counted against a slice-wide reference period, extra peaks are dropped, and
+cells with out-of-band periods are excluded. The ≈0.6 c/d modes are gone. Epoch frequencies now agree with the
+original phase-slope estimates (per-cell r = 0.65–0.82); wavelet frequencies do not (r = 0.06–0.50). SCN2 (epoch)
+loses 57/261 cells, which have out-of-band periods.
+
+**Naive fits, epoch method** (M*, bootstrap share of M*, B = 50):
+
+| Slice | M* (share) | Centres (c/d) | Widths (c/d) | 95 % CI |
+|---|---|---|---|---|
+| SCN1 | 2 (100 %) | 0.93 / 0.99 | 0.017 / 0.029 | separation 0.053–0.068 |
+| SCN2 | 1 (84 %) | 0.984 | 0.037 | width 0.032–0.043 |
+| SCN3 | 2 (98 %) | 0.95 / 1.05 | 0.030 / 0.039 | separation 0.08–0.13 |
+| SCN4 | 1 (44 %; M = 2 in 56 %) | 0.968 | 0.019 | width 0.016–0.020 |
+| SCN5 | 2 (96 %) | 0.961 / 0.983 | 0.006 / 0.012 | separation 0.016–0.032, overlapping (narrow) |
+
+**Recovery, epoch method (naive):**
+- Bimodal: M = 2 in 100 %, widths overestimated (0.020–0.023 vs a true 0.012).
+- Broad unimodal: M = 1 in 75 %, width 0.030–0.034 vs a true 0.025.
+- Narrow unimodal: M = 1 in 58 %, width about 0.015 vs a true 0.004.
+
+So naive widths are upper bounds, inflated by the per-cell error (≈ 0.015 c/d floor). Modality is reliable for
+separations ≳ 0.05 c/d, and spurious second modes appear when the distribution is narrow (SCN4/5).
+
+**Wavelet method:** recovery is poor (broad unimodal → M = 2 in 92 %).
