@@ -723,3 +723,81 @@ So naive widths are upper bounds, inflated by the per-cell error (≈ 0.015 c/d 
 separations ≳ 0.05 c/d, and spurious second modes appear when the distribution is narrow (SCN4/5).
 
 **Wavelet method:** recovery is poor (broad unimodal → M = 2 in 92 %).
+
+## 23. Core vs shell: frequencies by lobe and position, epoch method (2026-11-25, `scn_coreshell_frequency.py`)
+
+Figure: `writeup/scn_core_shell_frequency.{png,pdf,json}`.
+
+**Method.**
+- Position = radial rank within the lobe.
+- Location test = Mann–Whitney z of the lobe-centred TTX frequencies, shell vs core, scanned over the threshold q*.
+- 2000 within-lobe permutations, maximum over thresholds (scan-corrected).
+
+**Shell faster: pooled max z = 7.2 at q* = 0.35, scan-corrected p = 0.0065.**
+
+| | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+|---|---|---|---|---|---|
+| z at q* | +1.9 | −0.2 | +2.5 | +3.3 | −0.2 |
+| Core / shell median (c/d) | 0.962 / 0.976 | — | 0.966 / 1.002 | 0.963 / 0.973 | — |
+
+q* = 0.35 is near the low edge of the scanned grid (0.30–0.70), so the core boundary may be even more central.
+
+**The measurement error does not depend on position:** median SE in core vs shell is 0.026 vs 0.025 (SCN1) and
+0.034 vs 0.035 (SCN3). So the shell's larger spread is INTRINSIC. Error-corrected spread, core / shell (c/d):
+
+| SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+|---|---|---|---|---|
+| 0.037 / 0.056 | 0.022 / 0.050 | 0.053 / 0.085 | 0 / 0.012 | 0 / 0.004 |
+
+**Lobes do not differ systematically:** median difference |ΔA−B| ≤ 0.015 c/d; p < 0.05 only in SCN4 (0.033).
+
+**Modality lives in the shell.**
+
+| | Core M* (support) | Shell M* (support) | Shell centres (c/d) |
+|---|---|---|---|
+| SCN1 | 1 (60 %) | 2 (100 %) | 0.927 / 0.995 |
+| SCN3 | 1 (77 %) | 2 (100 %) | 0.949 / 1.053 |
+| SCN2 | 1 | 1 | — |
+| SCN4 | 1 | 1 | — |
+| SCN5 | 1 | 2 (73 %; narrow, overlapping, likely spurious) | — |
+
+**Interpretation:** a slow, homogeneous core (≈ 0.96 c/d) and a faster, broader shell. In the bimodal slices the shell
+contains a slow cluster aligned with the core plus a fast cluster (≈ 1.0–1.05 c/d). SCN4/5 are homogeneous throughout.
+
+## 24. Mirror-symmetric core/shell geometry (2026-11-25, `scn_coreshell_geometry.py`; `writeup/scn_core_shell_geometry.*`)
+
+Literature basis: each nucleus has its own ventral(-lateral) core and a dorsomedial shell, and the two nuclei are
+mirror images. Hence per-lobe but mirror-symmetric models. Score = 10-fold CV R² of a two-group step function, with
+1000 within-lobe permutations.
+
+**10-fold CV R²:**
+
+| | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 | Pooled Σ (p) |
+|---|---|---|---|---|---|---|
+| Centred radial | −0.01 | −0.02 | 0.00 | 0.02 | 0.01 | 0.006 (0.025) |
+| Mirror planar | 0.12 (p .001) | −0.03 (ns) | 0.025 (p .03) | 0.14 (p .001) | 0.03 (p .02) | 0.29 (0.001) |
+| Mirror offset radial | 0.08 | — | 0.025 | 0.175 | 0.027 | 0.27 (0.001) |
+
+**The planar model is the parsimonious winner.** The centred radial model explains essentially nothing out of sample.
+
+**What the split finds:** a minority group at one end of the axis, 20–25 % of cells (45 % in SCN5), that is faster by
+0.03–0.05 c/d.
+- In SCN1, SCN4 and SCN5 this group lies within 14–25° of the axis perpendicular to the inter-lobe line, i.e. the
+  dorsoventral axis if the lobes sit side by side. In SCN3 it is at 60°; SCN2 is not significant.
+- **In all five slices the fast group has the lower MIC degree:**
+
+  | | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+  |---|---|---|---|---|---|
+  | Fast group | 5.6 | 1.5 | 0.5 | 3.3 | 2.2 |
+  | Rest | 7.3 | 4.1 | 4.2 | 5.4 | 9.3 |
+
+  So the fast group is SHELL-like (sparsely connected) and the rest contains the hubs. This agrees with the shorter
+  period of isolated dorsal SCN (Noguchi et al. 2004, via Leise et al.).
+
+**Labelling (fixed):** shell = the faster group, MIC-confirmed. After relabelling the core is bimodal in SCN1 (0.927 / 0.981), SCN3 and SCN4 (spread small),
+and the shell is unimodal and fast (SCN1 1.018, SCN3 1.038, SCN4 0.997 c/d).
+
+**Modality:** SCN1 and SCN3 bimodality persists in the slow majority (0.93 / 0.98 and 0.95 / 1.05), so the fast mode
+is only partly spatially segregated.
+
+**R² is modest.** Per-cell error variance is about half of the observed variance, so the attainable R² is ≲ 0.5.
