@@ -801,3 +801,40 @@ and the shell is unimodal and fast (SCN1 1.018, SCN3 1.038, SCN4 0.997 c/d).
 is only partly spatially segregated.
 
 **R² is modest.** Per-cell error variance is about half of the observed variance, so the attainable R² is ≲ 0.5.
+
+## 25. Four-ensemble model, first server fits (2026-11-25, `scn_coreshell4.py`; outputs in `coreshell4/`)
+
+**Setup:** fixed per-ensemble naive mixtures (planar mirror split); literature-constrained coupling; one TTX
+multiplier; no noise and no width factors. Models: base (9 parameters) and tr (+ TTX-onset transient, 11).
+Total loss: base 37.6e-3, tr 33.9e-3. The starts agree.
+
+**Slice RMSE:**
+
+| | SCN1 | SCN2 | SCN3 | SCN4 | SCN5 |
+|---|---|---|---|---|---|
+| base | 0.053 | 0.058 | 0.044 | 0.023 | 0.027 |
+| tr | 0.037 | 0.036 | 0.040 | 0.039 | 0.022 |
+| Model C (with free noise and lobe transient) | 0.019 | 0.021 | 0.024 | 0.026 | — |
+
+The four-ensemble numbers also include core and shell R per lobe.
+
+**What works (base, frequencies alone):**
+- **TTX block:** complete in SCN1–3 (f_ttx at its lower bound); 1 % residual in SCN4/5.
+- **Shell–core drift under TTX** in SCN1/2/3 (shell drifting ahead to +6 h) is reproduced from the measured
+  core/shell frequency difference alone.
+- **The post-washout shell lead** of +2–4 h (SCN1/3) is reproduced.
+- **The small TTX dips of SCN4/5** follow from their narrow distributions.
+
+**Coupling hierarchy:** K_cc ≫ K_cs. The core→shell coupling is WEAK: 0.013–0.035 rad/h in SCN1–3.
+- This is required by the 2–4 h shell lead: φ ≈ Δω / (K_cs R) with Δω ≈ 0.016 rad/h.
+- It conflicts with the "dense core→shell projection" of the literature, unless the projection is anatomically dense
+  but weak in effective phase coupling.
+- K_ss > K_cs in SCN1–3.
+- ε is inconsistent: at its bound of 0.3 in SCN3–5, 0 in SCN2, 0.08 in SCN1.
+
+**Problems:**
+1. The fast early TTX drop in SCN1/2 cores is missed by base; tr needs g_tr = 0.02–0.03 rad/h with τ = 5–24 h there,
+   and none in SCN3.
+2. The shell targets are noisy (21–52 cells per lobe), so shell RMSE is 0.04–0.15.
+3. SCN4/5 coupling levels are not identifiable (homogeneous): parameters at bounds and a washout spike in SCN4.
+4. f_wash sits at its cap (5) in SCN1–3, i.e. a strong rebound.

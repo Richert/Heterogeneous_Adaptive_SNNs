@@ -23,9 +23,11 @@ Models: "base" (9 parameters: K_cc, K_cs, K_ss, ε, α, f_ttx, u_rec, f_wash, f_
 
 Targets (cached, coreshell4/scn<i>_target4.npz): R(t) of the four ensembles and of the slice, the core–shell phase
 difference per lobe, measurement ceilings c_e(t) per ensemble (perfectly synchronised synthetic traces through the same
-pipeline, as scn_targets), the mask of scn_targets. Loss over the mask: mean squared error of c_e|Z_e| − R_e over the
-four ensembles and the slice + the sampling-error-weighted core–shell phase term per lobe (as scn_coreshell_model) +
-the collective-frequency term of scn_model_fit.
+pipeline, as scn_targets), the mask of scn_targets. Loss over the mask: ½ [cell-count-weighted mean of the squared
+errors of c_e|Z_e| − R_e over the four ensembles (v2: small, noisy shells count less) + the slice error] + the
+sampling-error-weighted core–shell phase term per lobe (as scn_coreshell_model) + the collective-frequency term of
+scn_model_fit. Reported per fit: the PRE-TTX coupling matrix K and the POST-washout matrix f_post·K, and their range
+over all starts within NEAR of the best loss (stability of the couplings used downstream).
 
     PATH="$HOME/conda/envs/pycobi/bin:$PATH" python scn_coreshell4.py targets time fit figure [--slices 1,2,3,4,5]
         [--models base,tr] [--starts 32] [--procs 64]
@@ -50,7 +52,9 @@ OUT = dp.ensure(os.path.join(S.OUT, "coreshell4"))
 ENS = ("core A", "shell A", "core B", "shell B")
 DT = 0.5
 TAU_POST = 2.0
-EPS_MAX = 0.3
+EPS_MAX = 1.0                             # v2 (2026-11-25): 0.3 → 1 (ε ran to 0.3 in SCN3–5)
+TAG = "_v2"                               # v2: cell-count-weighted ensemble errors, ε ≤ 1, near-optimum spread
+NEAR = 0.05                               # starts within 5 % of the best loss define the near-optimal set
 SIG_R = 0.05
 SIG0 = 0.5 * 2 * np.pi / 24
 PSI_RMIN = 0.3
@@ -228,7 +232,8 @@ def loss(x, keys, i, detail=False):
     msk = g["mask"][ti] > 0; n = msk.sum()
     err = [(tg["c"][e][ti] * np.abs(Ze[:, e]) - tg["R"][e][ti]) ** 2 for e in range(4)]
     err.append((g["c"][ti] * np.abs(Z) - g["R"][ti]) ** 2)
-    eR = np.where(msk, np.mean(err, axis=0), 0.0)
+    ne = tg["n"].astype(float)
+    eR = np.where(msk, 0.5 * (np.tensordot(ne / ne.sum(), np.array(err[:4]), axes=1) + err[4]), 0.0)
     ph = []
     for L in (0, 1):
         c, s = 2 * L, 2 * L + 1
@@ -257,6 +262,12 @@ def _job(args):
     return i, r.x, float(r.fun)
 
 
+def coupling_summary(p):
+    """Effective coupling strengths (rad/h) before TTX and after washout."""
+    eff = dict(K_cc=p["K_cc"], K_cs=p["K_cs"], K_sc=p["eps"] * p["K_cs"], K_ss=p["K_ss"])
+    return dict(pre=eff, post={k: v * p["f_post"] for k, v in eff.items()})
+
+
 def fit(slices, models, n_starts, procs):
     for i in slices:
         context(i)
@@ -275,14 +286,24 @@ def fit(slices, models, n_starts, procs):
             P = pool.map(_job, [(i, keys, best[i][0], 2 * mi, 1e-5, 1e-8) for i in slices], chunksize=1)
         for i, xb, _ in P:
             L, det = loss(xb, keys, i, detail=True); g = TG.load(i)
+            near = [coupling_summary(det["params"])] + \
+                [coupling_summary(from_x(x, keys)) for j, x, Lj in R if j == i and Lj <= (1 + NEAR) * L]
+            spread = {ph: {k: [float(min(q[ph][k] for q in near)), float(max(q[ph][k] for q in near))]
+                           for k in near[0][ph]} for ph in ("pre", "post")}
             det.update(slice=i, model=name, keys=keys, x=xb, loss=L, n_free=len(keys),
                        t_rec_h=t_rec(det["params"], float(g["ttx"]), float(g["wash"])),
-                       start_losses=sorted(r[2] for r in R if r[0] == i))
-            np.save(os.path.join(OUT, f"scn{i}_{name}_fit.npy"), det, allow_pickle=True)
+                       start_losses=sorted(r[2] for r in R if r[0] == i), coupling=coupling_summary(det["params"]),
+                       coupling_near=spread, n_near=len(near) - 1)
+            np.save(os.path.join(OUT, f"scn{i}_{name}{TAG}_fit.npy"), det, allow_pickle=True)
             print(f"[fit {name}] SCN{i}: loss {L * 1e3:.3f}e-3 | RMSE " +
                   "/".join(f"{v:.3f}" for v in det["rmse_e"]) + f" (cA/sA/cB/sB) slice {det['rmse_g']:.3f} | phase "
                   f"{det['phase_term'] * 1e3:.2f}e-3 | t_rec − t_wash {det['t_rec_h'] - float(g['wash']):.0f} h | " +
                   ", ".join(f"{k}={v:.3g}" for k, v in det["params"].items()), flush=True)
+            cs = det["coupling"]
+            for ph in ("pre", "post"):
+                print(f"      {ph:4s} coupling (rad/h): " + ", ".join(
+                    f"{k} {cs[ph][k]:.3g} [{spread[ph][k][0]:.3g}–{spread[ph][k][1]:.3g}]" for k in cs[ph]) +
+                    f"  ({len(near) - 1} starts within {NEAR:.0%} of the polished optimum)", flush=True)
         print(f"[fit {name}] done in {time.time() - t_:.0f} s", flush=True)
 
 
@@ -307,7 +328,7 @@ def figure(slices, models):
             ax[3, k].plot(td, dd, color=("#1b7837", "#762a83")[L], lw=0.7, alpha=0.6)
         ax[2, k].plot(td, g["R"], color="k", lw=0.7, alpha=0.6)
         for name in models:
-            fp = os.path.join(OUT, f"scn{i}_{name}_fit.npy")
+            fp = os.path.join(OUT, f"scn{i}_{name}{TAG}_fit.npy")
             if not os.path.exists(fp):
                 continue
             r = np.load(fp, allow_pickle=True).item(); tt = r["ti"] / 24
@@ -324,8 +345,7 @@ def figure(slices, models):
     ax[0, 0].set_ylabel("lobe A R"); ax[1, 0].set_ylabel("lobe B R"); ax[2, 0].set_ylabel("slice R")
     ax[3, 0].set_ylabel("shell − core (h)"); ax[2, 0].legend(frameon=False, fontsize=5.5)
     for ext in ("png", "pdf"):
-        fig.savefig(os.path.join(OUT, "scn_coreshell4_fits.png" if ext == "png" else "scn_coreshell4_fits.pdf"),
-                    dpi=250)
+        fig.savefig(os.path.join(OUT, f"scn_coreshell4_fits{TAG}.{ext}"), dpi=250)
 
 
 if __name__ == "__main__":
